@@ -25,4 +25,5 @@ Thumbs.db
 .idea/
 .vscode/
 scripts/__pycache__/
+samples/**/output
 截图/
