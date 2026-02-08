@@ -1166,7 +1166,7 @@ async function parseCgiDataNewOnServer(html: string): Promise<any> {
 export async function parseCgiDataNew(html: string): Promise<any> {
   html = unwrapViewSourceHtml(html);
 
-  if (process.client && document) {
+  if (process.client && typeof document === 'object') {
     return parseCgiDataNewOnClient(html);
   } else {
     return parseCgiDataNewOnServer(html);
