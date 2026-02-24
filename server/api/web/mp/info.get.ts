@@ -60,6 +60,9 @@ function buildIdentityKey(info: { user_name?: string; biz_uin?: string; alias?: 
 export default defineEventHandler(async event => {
   const authKey = getAuthKeyFromRequest(event);
   const token = await getTokenFromStore(event);
+  if (!token) {
+    return { nick_name: '', head_img: '', error: '未登录或登录已过期，请重新扫码登录' };
+  }
 
   const html: string = await proxyMpRequest({
     event,
@@ -67,7 +70,7 @@ export default defineEventHandler(async event => {
     endpoint: 'https://mp.weixin.qq.com/cgi-bin/home',
     query: {
       t: 'home/index',
-      token: token!,
+      token: token,
       lang: 'zh_CN',
     },
   }).then(resp => resp.text());
