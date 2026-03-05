@@ -358,7 +358,7 @@ watch(hideDeleted, () => {
 async function switchTableData(fakeid: string) {
   loading.value = true;
   const articles: Article[] = [];
-  const data = await getArticleCache(fakeid, Date.now());
+  const data = await getArticleCache(fakeid, Math.floor(Date.now() / 1000));
   for (const article of data) {
     const contentDownload = (await getHtmlCache(article.link)) !== undefined;
     const commentDownload = (await getCommentCache(article.link)) !== undefined;
