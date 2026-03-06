@@ -6,7 +6,6 @@ services:
       dockerfile: Dockerfile
       args:
         VERSION: local
-    image: mason-x/wxrss:local
     restart: unless-stopped
     ports:
       - "${WXRSS_PORT:-13000}:3000"
