@@ -1,0 +1,22 @@
+services:
+  wxrss:
+    container_name: wxrss
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: local
+    image: mason-x/wxrss:local
+    restart: unless-stopped
+    ports:
+      - "${WXRSS_PORT:-13000}:3000"
+    environment:
+      TZ: Asia/Shanghai
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      SQLITE_DB_PATH: .data/sqlite/app.db
+      NITRO_KV_DRIVER: fs
+      NITRO_KV_BASE: .data/kv
+    volumes:
+      - ./docker-data:/app/.data
