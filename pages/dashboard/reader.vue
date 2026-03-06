@@ -1,0 +1,2361 @@
+﻿<script setup lang="ts">
+import { format } from 'date-fns';
+import { formatTimeStamp } from '#shared/utils/helpers';
+import { request } from '#shared/utils/request';
+import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
+import ButtonGroup from '~/components/ButtonGroup.vue';
+import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
+import ConfirmModal from '~/components/modal/Confirm.vue';
+import LoginModal from '~/components/modal/Login.vue';
+import HtmlRenderer from '~/components/preview/HtmlRenderer.vue';
+import toastFactory from '~/composables/toast';
+import useLoginCheck from '~/composables/useLoginCheck';
+import { getArticleList } from '~/apis';
+import { IMAGE_PROXY, websiteName } from '~/config';
+import ApiPage from '~/pages/dashboard/api.vue';
+import ProxyPage from '~/pages/dashboard/proxy.vue';
+import SettingsPage from '~/pages/dashboard/settings.vue';
+import { deleteAccountData } from '~/store/v2';
+import {
+  articleDeleted,
+  buildArticleStorageKey,
+  getArticleCacheSummary,
+  updateArticleStatus,
+  upsertArticlesFromRemote,
+} from '~/store/v2/article';
+import { getHtmlCache } from '~/store/v2/html';
+import {
+  getAllInfo,
+  getInfoCache,
+  importMpAccounts,
+  type MpAccount,
+  updateAccountCategory,
+  updateAccountFocused,
+} from '~/store/v2/info';
+import { migrateLegacyIndexedDbToServer, migrateLegacyLargeCacheToServer } from '~/store/v2/legacy-migration';
+import type { AccountManifest } from '~/types/account';
+import type { Preferences } from '~/types/preferences';
+import { exportAccountJsonFile } from '~/utils/exporter';
+
+useHead({
+  title: `聚合阅读 | ${websiteName}`,
+});
+
+interface ReaderCategory {
+  id: string;
+  label: string;
+  count: number;
+}
+
+interface ReaderArticle extends AppMsgExWithFakeID {
+  accountName: string;
+  category: string;
+  contentDownload?: boolean;
+  commentDownload?: boolean;
+}
+
+interface PromiseInstance {
+  resolve: (value: unknown) => void;
+  reject: (reason?: any) => void;
+}
+
+type SystemMenuId = 'proxy' | 'api' | 'settings';
+
+interface SystemMenuItem {
+  id: SystemMenuId;
+  label: string;
+  icon: string;
+}
+
+interface ReaderRuntimeState {
+  knownArticleKeys: string[];
+  unreadArticleKeys: string[];
+  accountNewArticleFakeids: string[];
+}
+
+interface AccountSyncProgress {
+  fakeid: string;
+  running: boolean;
+  syncedMessages: number;
+  totalMessages: number;
+  syncedArticles: number;
+  updatedAt: number;
+}
+
+interface BatchSyncProgress {
+  running: boolean;
+  completedAccounts: number;
+  totalAccounts: number;
+}
+
+interface RemoteBatchSyncAccountSnapshot {
+  fakeid: string;
+  nickname: string;
+  status: 'pending' | 'running' | 'success' | 'error' | 'canceled';
+  syncedMessages: number;
+  totalMessages: number;
+  syncedArticles: number;
+  updatedAt: number;
+  message?: string;
+}
+
+interface RemoteBatchSyncJobSnapshot {
+  jobId: string;
+  status: 'running' | 'success' | 'error' | 'canceled';
+  totalAccounts: number;
+  completedAccounts: number;
+  successCount: number;
+  failedCount: number;
+  currentFakeid: string;
+  currentNickname: string;
+  message: string;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt: number;
+  currentAccount: RemoteBatchSyncAccountSnapshot | null;
+  heapUsedMb: number;
+  pollAfterMs: number;
+}
+
+interface SchedulerArticleEntry {
+  fakeid: string;
+  articles: any[];
+  totalCount: number;
+  updatedAt: number;
+}
+
+type SchedulerArticleMap = Record<string, SchedulerArticleEntry>;
+
+const toast = toastFactory();
+const modal = useModal();
+const { checkLogin } = useLoginCheck();
+const loginAccount = useLoginAccount();
+const preferences = usePreferences();
+const { getSyncTimestamp } = useSyncDeadline();
+const FOCUS_CATEGORY_ID = '__focus__';
+const FOCUS_CATEGORY_LABEL = '重点关注';
+
+const loading = ref(false);
+const contentLoading = ref(false);
+const addBtnLoading = ref(false);
+const importBtnLoading = ref(false);
+const exportBtnLoading = ref(false);
+const isDeleting = ref(false);
+const isSyncing = ref(false);
+const isCanceled = ref(false);
+const syncingRowId = ref<string | null>(null);
+const syncTimer = ref<number | null>(null);
+const logoutBtnLoading = ref(false);
+const nowTick = ref(Date.now());
+const schedulerSyncTimer = ref<number | null>(null);
+const schedulerHydrationStarted = ref(false);
+const schedulerHydrationRunning = ref(false);
+const syncProgressByFakeid = ref<Record<string, AccountSyncProgress>>({});
+const batchSyncProgress = ref<BatchSyncProgress>({
+  running: false,
+  completedAccounts: 0,
+  totalAccounts: 0,
+});
+
+const accounts = ref<MpAccount[]>([]);
+const articleRows = ref<ReaderArticle[]>([]);
+const articleTotalCount = ref(0);
+const articlePageOffset = ref(0);
+const articlePageLimit = 80;
+const articlePageLoading = ref(false);
+const articlePageHasMore = ref(true);
+let articleLoadSeq = 0;
+const runtimeState = useLocalStorage<ReaderRuntimeState>('reader-runtime-state', {
+  knownArticleKeys: [],
+  unreadArticleKeys: [],
+  accountNewArticleFakeids: [],
+});
+const legacyMigrationDone = useLocalStorage<boolean>('reader-legacy-migration-v2', false);
+const legacyLargeCacheMigrationDone = useLocalStorage<boolean>('reader-legacy-large-cache-migration-v1', false);
+const schedulerHydrationDone = useLocalStorage<boolean>('reader-scheduler-hydration-v1', false);
+const knownArticleMap = ref<Record<string, true>>({});
+const unreadArticleMap = ref<Record<string, true>>({});
+const accountNewArticleMap = ref<Record<string, true>>({});
+
+const selectedCategory = ref('__all__');
+const selectedAccount = ref<string | null>(null);
+const selectedArticle = ref<ReaderArticle | null>(null);
+const selectedArticleHtml = ref('');
+const selectedArticleKeys = ref<Set<string>>(new Set());
+const selectionMode = ref(false);
+const accountKeyword = ref('');
+const categoryEditorOpen = ref(false);
+const categoryEditorAccount = ref<MpAccount | null>(null);
+const categoryEditorValue = ref('未分类');
+const categoryEditorNewValue = ref('');
+const categoryEditorSaving = ref(false);
+const categoryEditorAdding = ref(false);
+const categoryDeleting = ref<string | null>(null);
+const systemMenuOpen = ref(false);
+const systemMenuActive = ref<SystemMenuId>('proxy');
+
+const fileRef = ref<HTMLInputElement | null>(null);
+const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
+
+const systemMenuItems: SystemMenuItem[] = [
+  { id: 'proxy', label: '公共代理', icon: 'i-lucide:network' },
+  { id: 'api', label: 'API 说明', icon: 'i-lucide:file-code-2' },
+  { id: 'settings', label: '设置', icon: 'i-lucide:settings-2' },
+];
+
+const { accountEventBus } = useAccountEventBus();
+accountEventBus.on(event => {
+  if (event === 'account-added' || event === 'account-removed') {
+    refreshData();
+  }
+});
+
+function normalizeCategory(account: MpAccount): string {
+  const raw = account.category || '';
+  const value = raw.trim();
+  return value.length > 0 ? value : '未分类';
+}
+
+function articleKey(article: ReaderArticle) {
+  return buildArticleStorageKey(article.fakeid, article);
+}
+
+function normalizeDisplayTitle(title?: string, digest?: string): string {
+  const normalizedLines = (title || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  let candidate = normalizedLines[0] || (digest || '').trim();
+  if (!candidate) {
+    return '无标题';
+  }
+
+  candidate = candidate.replace(/\s+/g, ' ');
+  const maxLength = 110;
+  if (candidate.length > maxLength) {
+    return `${candidate.slice(0, maxLength)}...`;
+  }
+
+  return candidate;
+}
+
+function articleDisplayTitle(article: ReaderArticle): string {
+  return normalizeDisplayTitle(article.title, article.digest);
+}
+
+function normalizeRuntimeErrorMessage(rawMessage: string): string {
+  if (rawMessage.includes('Worker terminated due to reaching memory limit')) {
+    return '服务进程内存不足，请重启开发服务并使用 yarn dev --no-fork';
+  }
+  if (rawMessage.includes('heap pressure') || rawMessage.includes('内存接近上限')) {
+    return '服务进程内存接近上限，已自动停止同步，请稍后重试或重启开发服务';
+  }
+  return rawMessage;
+}
+
+function isMemoryPressureSyncMessage(message: string): boolean {
+  return message.includes('heap pressure') || message.includes('内存接近上限');
+}
+
+function findAccount(fakeid: string | null) {
+  if (!fakeid) return undefined;
+  return accounts.value.find(account => account.fakeid === fakeid);
+}
+
+function upsertSyncProgress(fakeid: string, patch: Partial<AccountSyncProgress>) {
+  const previous = syncProgressByFakeid.value[fakeid];
+  syncProgressByFakeid.value = {
+    ...syncProgressByFakeid.value,
+    [fakeid]: {
+      fakeid,
+      running: patch.running ?? previous?.running ?? false,
+      syncedMessages: Number(patch.syncedMessages ?? previous?.syncedMessages ?? 0),
+      totalMessages: Number(patch.totalMessages ?? previous?.totalMessages ?? 0),
+      syncedArticles: Number(patch.syncedArticles ?? previous?.syncedArticles ?? 0),
+      updatedAt: Date.now(),
+    },
+  };
+}
+
+async function refreshAccountSnapshot(fakeid: string, running = true) {
+  const latest = await getInfoCache(fakeid);
+  if (!latest) {
+    return;
+  }
+
+  const target = accounts.value.find(account => account.fakeid === fakeid);
+  if (target) {
+    Object.assign(target, latest);
+  } else {
+    accounts.value = [latest, ...accounts.value];
+  }
+
+  upsertSyncProgress(fakeid, {
+    running,
+    syncedMessages: Number(latest.count) || 0,
+    totalMessages: Number(latest.total_count) || 0,
+    syncedArticles: Number(latest.articles) || 0,
+  });
+}
+
+function isAccountVisibleInCurrentScope(account: MpAccount): boolean {
+  if (selectedAccount.value) {
+    return selectedAccount.value === account.fakeid;
+  }
+  if (selectedCategory.value === FOCUS_CATEGORY_ID) {
+    return isFocusedAccount(account);
+  }
+  if (selectedCategory.value === '__all__') {
+    return true;
+  }
+  return normalizeCategory(account) === selectedCategory.value;
+}
+
+function normalizeSyncArticle(account: MpAccount, article: any): ReaderArticle {
+  return {
+    ...(article || {}),
+    fakeid: account.fakeid,
+    accountName: account.nickname || account.fakeid,
+    category: normalizeCategory(account),
+    _status: String(article?._status || ''),
+    is_deleted: Boolean(article?.is_deleted),
+    contentDownload: false,
+    commentDownload: false,
+  } as ReaderArticle;
+}
+
+function mergeSyncedArticlesIntoView(account: MpAccount, incoming: any[]) {
+  if (!Array.isArray(incoming) || incoming.length === 0) {
+    return;
+  }
+  if (!isAccountVisibleInCurrentScope(account)) {
+    return;
+  }
+
+  const nextRows = [...articleRows.value];
+  const indexByKey = new Map<string, number>();
+  nextRows.forEach((article, index) => {
+    indexByKey.set(articleKey(article), index);
+  });
+
+  let inserted = 0;
+  incoming.forEach(rawArticle => {
+    const normalized = normalizeSyncArticle(account, rawArticle);
+    const key = articleKey(normalized);
+    const index = indexByKey.get(key);
+    if (index === undefined) {
+      indexByKey.set(key, nextRows.length);
+      nextRows.push(normalized);
+      inserted += 1;
+      return;
+    }
+
+    const previous = nextRows[index];
+    nextRows[index] = {
+      ...previous,
+      ...normalized,
+      contentDownload: previous.contentDownload,
+      commentDownload: previous.commentDownload,
+    };
+  });
+
+  nextRows.sort((a, b) => {
+    const aTime = Number(a.update_time || a.create_time || 0);
+    const bTime = Number(b.update_time || b.create_time || 0);
+    return bTime - aTime;
+  });
+
+  articleRows.value = nextRows;
+  if (inserted > 0) {
+    articleTotalCount.value = Math.max(articleTotalCount.value + inserted, nextRows.length);
+    articlePageOffset.value = nextRows.length;
+    articlePageHasMore.value = articlePageOffset.value < articleTotalCount.value;
+  }
+
+  const latestArticleKeys = new Set(nextRows.map(article => articleKey(article)));
+  syncUnreadStateByLatest(latestArticleKeys, false);
+}
+
+function persistRuntimeState() {
+  runtimeState.value = {
+    knownArticleKeys: Object.keys(knownArticleMap.value),
+    unreadArticleKeys: Object.keys(unreadArticleMap.value),
+    accountNewArticleFakeids: Object.keys(accountNewArticleMap.value),
+  };
+}
+
+function initializeRuntimeState() {
+  const knownMap: Record<string, true> = {};
+  const unreadMap: Record<string, true> = {};
+  const accountMap: Record<string, true> = {};
+
+  (runtimeState.value.knownArticleKeys || []).forEach(key => {
+    knownMap[key] = true;
+  });
+  (runtimeState.value.unreadArticleKeys || []).forEach(key => {
+    unreadMap[key] = true;
+  });
+  (runtimeState.value.accountNewArticleFakeids || []).forEach(fakeid => {
+    accountMap[fakeid] = true;
+  });
+
+  knownArticleMap.value = knownMap;
+  unreadArticleMap.value = unreadMap;
+  accountNewArticleMap.value = accountMap;
+}
+
+function markAccountHasNewArticles(fakeid: string) {
+  if (!fakeid || accountNewArticleMap.value[fakeid]) {
+    return;
+  }
+  accountNewArticleMap.value = {
+    ...accountNewArticleMap.value,
+    [fakeid]: true,
+  };
+  persistRuntimeState();
+}
+
+function clearAccountNewArticles(fakeid: string | null) {
+  if (!fakeid || !accountNewArticleMap.value[fakeid]) {
+    return;
+  }
+  const next = { ...accountNewArticleMap.value };
+  delete next[fakeid];
+  accountNewArticleMap.value = next;
+  persistRuntimeState();
+}
+
+function hasAccountNewArticles(account: MpAccount): boolean {
+  return Boolean(accountNewArticleMap.value[account.fakeid]);
+}
+
+const categories = computed<ReaderCategory[]>(() => {
+  const focusedCount = accounts.value.filter(account => isFocusedAccount(account)).length;
+  const map = new Map<string, number>();
+  accounts.value.forEach(account => {
+    const category = normalizeCategory(account);
+    if (category === FOCUS_CATEGORY_LABEL) {
+      return;
+    }
+    map.set(category, (map.get(category) || 0) + 1);
+  });
+
+  const items = Array.from(map.entries())
+    .map(([label, count]) => ({ id: label, label, count }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN'));
+
+  return [
+    { id: '__all__', label: '全部分类', count: accounts.value.length },
+    { id: FOCUS_CATEGORY_ID, label: FOCUS_CATEGORY_LABEL, count: focusedCount },
+    ...items,
+  ];
+});
+
+const editableCategoryNames = computed(() =>
+  categories.value.filter(item => item.id !== '__all__' && item.id !== FOCUS_CATEGORY_ID).map(item => item.label)
+);
+
+const activeSystemMenuItem = computed(
+  () => systemMenuItems.find(item => item.id === systemMenuActive.value) || systemMenuItems[0]
+);
+const activeSystemMenuComponent = computed(() => {
+  if (systemMenuActive.value === 'api') return ApiPage;
+  if (systemMenuActive.value === 'settings') return SettingsPage;
+  return ProxyPage;
+});
+
+const selectedAccountInfo = computed(() => findAccount(selectedAccount.value));
+const activeAccountSyncProgress = computed(() => {
+  const fakeid = selectedAccount.value;
+  if (!fakeid) {
+    return null;
+  }
+  return syncProgressByFakeid.value[fakeid] || null;
+});
+const activeAccountSyncStatus = computed(() => {
+  const progress = activeAccountSyncProgress.value;
+  if (!progress || !progress.running) {
+    return '';
+  }
+  const total = progress.totalMessages > 0 ? String(progress.totalMessages) : '--';
+  return `同步中 ${progress.syncedMessages}/${total} · 文章 ${progress.syncedArticles}`;
+});
+const headerBatchSyncProgressText = computed(() => {
+  if (selectedAccount.value || selectedCategory.value !== '__all__') {
+    return '';
+  }
+  const progress = batchSyncProgress.value;
+  if (!progress.running || progress.totalAccounts <= 0) {
+    return '';
+  }
+  return `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个公众号`;
+});
+
+const accountsInSelectedCategory = computed(() => {
+  let targets: MpAccount[] = [];
+  if (selectedCategory.value === '__all__') {
+    targets = accounts.value;
+  } else if (selectedCategory.value === FOCUS_CATEGORY_ID) {
+    targets = accounts.value.filter(account => isFocusedAccount(account));
+  } else {
+    targets = accounts.value.filter(account => normalizeCategory(account) === selectedCategory.value);
+  }
+
+  return targets.sort((a, b) => (b.articles || 0) - (a.articles || 0));
+});
+
+const accountsInCategory = computed(() => {
+  const keyword = accountKeyword.value.trim().toLowerCase();
+  if (!keyword) {
+    return accountsInSelectedCategory.value;
+  }
+
+  return accountsInSelectedCategory.value.filter(account => {
+    const name = (account.nickname || '').toLowerCase();
+    return name.includes(keyword);
+  });
+});
+
+const displayedArticles = computed<ReaderArticle[]>(() => articleRows.value);
+
+const { list: virtualDisplayedArticles, containerProps: articleContainerProps, wrapperProps: articleWrapperProps } = useVirtualList(displayedArticles, {
+  itemHeight: 84,
+  overscan: 10,
+});
+
+const articleListTitle = computed(() => {
+  const selected = findAccount(selectedAccount.value);
+  if (selected) {
+    return selected.nickname || selected.fakeid;
+  }
+  if (selectedCategory.value === '__all__') {
+    return '全部文章';
+  }
+  if (selectedCategory.value === FOCUS_CATEGORY_ID) {
+    return `分类：${FOCUS_CATEGORY_LABEL}`;
+  }
+  return `分类：${selectedCategory.value}`;
+});
+
+const canSyncFromHeader = computed(() => {
+  if (selectedAccount.value) {
+    return true;
+  }
+  return selectedCategory.value === '__all__' && accounts.value.length > 0;
+});
+
+const syncHeaderTooltip = computed(() => {
+  if (selectedAccount.value) {
+    return '同步当前公众号';
+  }
+  if (selectedCategory.value === '__all__') {
+    return '同步全部公众号';
+  }
+  return '请选择公众号后同步';
+});
+
+const selectedArticleDisplayTitle = computed(() => {
+  if (!selectedArticle.value) return '';
+  return articleDisplayTitle(selectedArticle.value);
+});
+
+const selectedArticleUrls = computed(() => {
+  if (selectedArticleKeys.value.size === 0) {
+    return [] as string[];
+  }
+  return displayedArticles.value
+    .filter(article => selectedArticleKeys.value.has(articleKey(article)))
+    .map(article => article.link);
+});
+
+const effectiveArticleUrls = computed(() => {
+  if (selectedArticleUrls.value.length > 0) {
+    return selectedArticleUrls.value;
+  }
+  return displayedArticles.value.map(article => article.link);
+});
+
+const visibleArticleKeys = computed(() => displayedArticles.value.map(article => articleKey(article)));
+const allVisibleArticlesSelected = computed(() => {
+  if (!selectionMode.value || visibleArticleKeys.value.length === 0) {
+    return false;
+  }
+  return selectedArticleKeys.value.size === visibleArticleKeys.value.length;
+});
+
+const selectionBtnIcon = computed(() => {
+  if (!selectionMode.value) return 'i-lucide:list-checks';
+  return allVisibleArticlesSelected.value ? 'i-lucide:x' : 'i-lucide:check';
+});
+
+const selectionBtnTooltip = computed(() => {
+  if (!selectionMode.value) return '开启选择';
+  return allVisibleArticlesSelected.value ? '取消全选并退出选择' : '全选';
+});
+
+const cookieRemainText = computed(() => {
+  if (!loginAccount.value?.expires) {
+    return '未登录';
+  }
+
+  const remain = new Date(loginAccount.value.expires).getTime() - nowTick.value;
+  if (remain <= 0) {
+    return '已过期';
+  }
+
+  const totalSeconds = Math.floor(remain / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) {
+    return `${days}天 ${hours}小时`;
+  }
+  if (hours > 0) {
+    return `${hours}小时 ${minutes}分钟`;
+  }
+  if (minutes > 0) {
+    return `${minutes}分钟 ${seconds}秒`;
+  }
+  return `${seconds}秒`;
+});
+
+const cookieExpireAt = computed(() => {
+  if (!loginAccount.value?.expires) {
+    return '--';
+  }
+  return format(new Date(loginAccount.value.expires), 'yyyy-MM-dd HH:mm:ss');
+});
+
+const {
+  loading: downloadBtnLoading,
+  completed_count: downloadCompletedCount,
+  total_count: downloadTotalCount,
+  download,
+  stop: stopDownload,
+} = useDownloader({
+  onContent(url: string) {
+    patchArticleByUrl(url, article => {
+      article.contentDownload = true;
+      article._status = '正常';
+      article.is_deleted = false;
+    });
+    updateArticleStatus(url, '正常');
+    articleDeleted(url, false);
+  },
+  onStatusChange(url: string, status: string) {
+    patchArticleByUrl(url, article => {
+      article._status = status;
+    });
+    updateArticleStatus(url, status);
+  },
+  onDelete(url: string) {
+    patchArticleByUrl(url, article => {
+      article.is_deleted = true;
+      article._status = '已删除';
+    });
+    updateArticleStatus(url, '已删除');
+    articleDeleted(url, true);
+  },
+  onComment(url: string) {
+    patchArticleByUrl(url, article => {
+      article.commentDownload = true;
+    });
+  },
+});
+
+const {
+  loading: exportFileLoading,
+  phase: exportPhase,
+  completed_count: exportCompletedCount,
+  total_count: exportTotalCount,
+  exportFile,
+} = useExporter();
+
+function patchArticleByUrl(url: string, updater: (article: ReaderArticle) => void) {
+  const target = articleRows.value.find(item => item.link === url);
+  if (target) {
+    updater(target);
+    if (selectedArticle.value && selectedArticle.value.link === url) {
+      selectedArticle.value = { ...target };
+    }
+  }
+}
+
+function syncUnreadStateByLatest(latestArticleKeys: Set<string>, fullSnapshot = true) {
+  const known = { ...knownArticleMap.value };
+  const unread = { ...unreadArticleMap.value };
+  let changed = false;
+
+  const knownCount = Object.keys(known).length;
+  const unreadCount = Object.keys(unread).length;
+
+  if (knownCount === 0 && unreadCount === 0) {
+    latestArticleKeys.forEach(key => {
+      known[key] = true;
+    });
+    changed = latestArticleKeys.size > 0;
+  } else {
+    latestArticleKeys.forEach(key => {
+      if (!known[key]) {
+        known[key] = true;
+        unread[key] = true;
+        changed = true;
+      }
+    });
+  }
+
+  if (fullSnapshot) {
+    Object.keys(known).forEach(key => {
+      if (!latestArticleKeys.has(key)) {
+        delete known[key];
+        changed = true;
+      }
+    });
+
+    Object.keys(unread).forEach(key => {
+      if (!latestArticleKeys.has(key)) {
+        delete unread[key];
+        changed = true;
+      }
+    });
+  }
+
+  if (changed) {
+    knownArticleMap.value = known;
+    unreadArticleMap.value = unread;
+    persistRuntimeState();
+  }
+}
+
+async function loadArticlePage(reset = false) {
+  if (articlePageLoading.value) {
+    return;
+  }
+
+  if (reset) {
+    articleRows.value = [];
+    articleTotalCount.value = 0;
+    articlePageOffset.value = 0;
+    articlePageHasMore.value = true;
+  } else if (!articlePageHasMore.value) {
+    return;
+  }
+
+  const seq = ++articleLoadSeq;
+  articlePageLoading.value = true;
+  try {
+    const query: Record<string, string | number> = {
+      offset: articlePageOffset.value,
+      limit: articlePageLimit,
+    };
+    if (selectedAccount.value) {
+      query.fakeid = selectedAccount.value;
+    } else if (selectedCategory.value === FOCUS_CATEGORY_ID) {
+      query.focused = 1;
+    } else if (selectedCategory.value !== '__all__') {
+      query.category = selectedCategory.value;
+    }
+
+    const resp = await request<{
+      list: ReaderArticle[];
+      total: number;
+      offset: number;
+      limit: number;
+    }>('/api/web/reader/articles-page', { query });
+
+    if (seq !== articleLoadSeq) {
+      return;
+    }
+
+    const incoming = Array.isArray(resp.list) ? resp.list : [];
+    const normalized = incoming.map(item => ({
+      ...item,
+      accountName: item.accountName || findAccount(item.fakeid)?.nickname || item.fakeid,
+      category: item.category || normalizeCategory(findAccount(item.fakeid) || ({ category: '' } as MpAccount)),
+      contentDownload: false,
+      commentDownload: false,
+    }));
+
+    if (reset) {
+      articleRows.value = normalized;
+    } else {
+      const next = [...articleRows.value];
+      const keySet = new Set(next.map(article => articleKey(article)));
+      normalized.forEach(article => {
+        const key = articleKey(article);
+        if (!keySet.has(key)) {
+          keySet.add(key);
+          next.push(article);
+        }
+      });
+      articleRows.value = next;
+    }
+
+    articleTotalCount.value = Number(resp.total) || articleRows.value.length;
+    articlePageOffset.value = articleRows.value.length;
+    articlePageHasMore.value = articleRows.value.length < articleTotalCount.value && normalized.length > 0;
+
+    const latestArticleKeys = new Set(articleRows.value.map(article => articleKey(article)));
+    syncUnreadStateByLatest(latestArticleKeys, false);
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode || error?.response?.status || 0);
+    if (statusCode === 401) {
+      articleRows.value = [];
+      articleTotalCount.value = 0;
+      articlePageOffset.value = 0;
+      articlePageHasMore.value = false;
+      return;
+    }
+    throw error;
+  } finally {
+    if (seq === articleLoadSeq) {
+      articlePageLoading.value = false;
+    }
+  }
+}
+
+function isArticleUnread(article: ReaderArticle) {
+  return Boolean(unreadArticleMap.value[articleKey(article)]);
+}
+
+function markArticleAsRead(article: ReaderArticle) {
+  const key = articleKey(article);
+  if (!unreadArticleMap.value[key]) {
+    return;
+  }
+
+  const unread = { ...unreadArticleMap.value };
+  delete unread[key];
+  unreadArticleMap.value = unread;
+  persistRuntimeState();
+}
+
+async function syncSchedulerState(accountList: MpAccount[]) {
+  try {
+    await request('/api/web/scheduler/upsert', {
+      method: 'POST',
+      body: {
+        config: {
+          dailySyncEnabled: Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
+          dailySyncTime: String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
+          accountSyncSeconds: Number((preferences.value as unknown as Preferences).accountSyncSeconds || 3),
+          syncDateRange: (preferences.value as unknown as Preferences).syncDateRange,
+          syncDatePoint: Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
+        },
+        accounts: accountList.map(account => ({
+          fakeid: account.fakeid,
+          nickname: account.nickname || '',
+          round_head_img: account.round_head_img || '',
+          category: account.category || '',
+          focused: Boolean(account.focused),
+        })),
+      },
+    });
+  } catch {
+    // Ignore when user has not logged in or auth-key is unavailable.
+  }
+}
+
+async function pullSchedulerArticles(accountList: MpAccount[]) {
+  if (accountList.length === 0) {
+    return;
+  }
+  if (isSyncing.value) {
+    return;
+  }
+
+  try {
+    for (const account of accountList) {
+      if (isSyncing.value) {
+        break;
+      }
+      const resp = await request<{ data: SchedulerArticleMap }>('/api/web/scheduler/articles', {
+        query: {
+          fakeid: account.fakeid,
+        },
+        timeout: 20000,
+      });
+      const map = (resp?.data || {}) as SchedulerArticleMap;
+      const entry = map[account.fakeid];
+      if (!entry || !Array.isArray(entry.articles) || entry.articles.length === 0) {
+        continue;
+      }
+
+      const totalCount = Number(entry.totalCount || 0);
+      const source = entry.articles as any[];
+      const batchSize = 30;
+      for (let offset = 0; offset < source.length; offset += batchSize) {
+        if (isSyncing.value) {
+          return;
+        }
+        const chunk = source.slice(offset, offset + batchSize);
+        await upsertArticlesFromRemote(account, chunk, totalCount);
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  } catch {
+    // Ignore when user has not logged in or no scheduler data is available.
+  }
+}
+
+async function hydrateSchedulerArticlesInBackground(accountList: MpAccount[]) {
+  if (
+    accountList.length === 0
+    || schedulerHydrationDone.value
+    || schedulerHydrationStarted.value
+    || schedulerHydrationRunning.value
+  ) {
+    return;
+  }
+
+  // Scheduler backfill is a one-off bootstrap task and should not run on every startup.
+  schedulerHydrationDone.value = true;
+  schedulerHydrationStarted.value = true;
+  schedulerHydrationRunning.value = true;
+  try {
+    await pullSchedulerArticles(accountList);
+
+    const refreshed = await getAllInfo();
+    accounts.value = refreshed;
+    await loadArticlePage(true);
+    clearSelectionOutOfScope();
+  } catch {
+    // Ignore when user has not logged in or scheduler payload is unavailable.
+  } finally {
+    schedulerHydrationRunning.value = false;
+  }
+}
+
+function scheduleSyncSchedulerState() {
+  if (schedulerSyncTimer.value) {
+    window.clearTimeout(schedulerSyncTimer.value);
+  }
+
+  schedulerSyncTimer.value = window.setTimeout(() => {
+    syncSchedulerState(accounts.value);
+  }, 300);
+}
+
+function clearSelectionOutOfScope() {
+  if (!selectionMode.value) {
+    if (selectedArticleKeys.value.size > 0) {
+      selectedArticleKeys.value.clear();
+    }
+  }
+
+  if (selectedArticleKeys.value.size > 0) {
+    const visibleKeys = new Set(visibleArticleKeys.value);
+    const staleKeys: string[] = [];
+    selectedArticleKeys.value.forEach(key => {
+      if (!visibleKeys.has(key)) {
+        staleKeys.push(key);
+      }
+    });
+    staleKeys.forEach(key => selectedArticleKeys.value.delete(key));
+  }
+
+  if (selectedArticle.value) {
+    const currentKey = articleKey(selectedArticle.value);
+    const exists = displayedArticles.value.some(item => articleKey(item) === currentKey);
+    if (!exists) {
+      selectedArticle.value = null;
+      selectedArticleHtml.value = '';
+    }
+  }
+}
+
+watch(displayedArticles, () => {
+  clearSelectionOutOfScope();
+});
+
+watch(selectionMode, enabled => {
+  if (!enabled) {
+    selectedArticleKeys.value.clear();
+  }
+});
+
+watch(accountsInSelectedCategory, list => {
+  if (selectedAccount.value && !list.some(account => account.fakeid === selectedAccount.value)) {
+    selectedAccount.value = null;
+  }
+});
+
+watch(
+  () => [selectedCategory.value, selectedAccount.value],
+  async () => {
+    await loadArticlePage(true);
+    clearSelectionOutOfScope();
+  }
+);
+
+watch(
+  () => [
+    Number((preferences.value as unknown as Preferences).accountSyncSeconds || 3),
+    Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
+    String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
+    String((preferences.value as unknown as Preferences).syncDateRange || 'all'),
+    Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
+  ],
+  () => {
+    scheduleSyncSchedulerState();
+  }
+);
+
+watch(
+  () => Boolean(loginAccount.value),
+  async loggedIn => {
+    if (!loggedIn) {
+      schedulerHydrationStarted.value = false;
+      schedulerHydrationRunning.value = false;
+      syncProgressByFakeid.value = {};
+      return;
+    }
+    await refreshData();
+  }
+);
+
+async function refreshData() {
+  loading.value = true;
+  try {
+    await migrateLegacyDataIfNeeded();
+    await migrateLegacyLargeCacheIfNeeded();
+
+    const accountList = await getAllInfo();
+    accounts.value = accountList;
+    await loadArticlePage(true);
+    clearSelectionOutOfScope();
+
+    void syncSchedulerState(accountList);
+    if (articleTotalCount.value === 0 && !schedulerHydrationDone.value) {
+      void hydrateSchedulerArticlesInBackground(accountList);
+    }
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode || error?.response?.status || 0);
+    if (statusCode === 401) {
+      modal.open(LoginModal);
+    }
+    const message = normalizeRuntimeErrorMessage(String(error?.message || '未知错误'));
+    toast.error('加载数据失败', message);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function migrateLegacyDataIfNeeded() {
+  if (legacyMigrationDone.value) {
+    return;
+  }
+  if (!loginAccount.value) {
+    return;
+  }
+
+  try {
+    const result = await migrateLegacyIndexedDbToServer();
+    if (result.markDone) {
+      legacyMigrationDone.value = true;
+    }
+    if (result.reason === 'migrated' && result.accountCount > 0) {
+      toast.success('历史数据迁移完成', `已迁移 ${result.accountCount} 个公众号，${result.articleCount} 篇文章`);
+    }
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode || error?.response?.status || 0);
+    if (statusCode !== 401) {
+      console.error('legacy data migration failed:', error);
+    }
+  }
+}
+
+async function migrateLegacyLargeCacheIfNeeded() {
+  if (legacyLargeCacheMigrationDone.value) {
+    return;
+  }
+  if (!loginAccount.value) {
+    return;
+  }
+
+  try {
+    const result = await migrateLegacyLargeCacheToServer();
+    if (result.markDone) {
+      legacyLargeCacheMigrationDone.value = true;
+    }
+    if (result.reason === 'migrated' && result.assetCount + result.commentReplyCount + result.debugCount > 0) {
+      toast.success(
+        '大缓存迁移完成',
+        `asset ${result.assetCount} 条，comment_reply ${result.commentReplyCount} 条，debug ${result.debugCount} 条`
+      );
+    }
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode || error?.response?.status || 0);
+    if (statusCode !== 401) {
+      console.error('legacy large cache migration failed:', error);
+    }
+  }
+}
+
+async function openArticle(article: ReaderArticle) {
+  selectedArticle.value = article;
+  markArticleAsRead(article);
+  selectedArticleHtml.value = '';
+  contentLoading.value = true;
+
+  try {
+    const html = await request<string>('/api/public/v1/download', {
+      query: {
+        url: article.link,
+        format: 'html',
+      },
+    });
+    selectedArticleHtml.value = stripWechatHeader(html);
+  } catch {
+    try {
+      const htmlCache = await getHtmlCache(article.link);
+      if (htmlCache) {
+        selectedArticleHtml.value = stripWechatHeader(await htmlCache.file.text());
+      } else {
+        selectedArticleHtml.value =
+          '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
+      }
+    } catch {
+      selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
+    }
+  } finally {
+    contentLoading.value = false;
+  }
+}
+
+function stripWechatHeader(html: string) {
+  try {
+    if (typeof window === 'undefined') {
+      return html;
+    }
+    const parser = new window.DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    const selectors = [
+      '#js_row_immersive_cover_img',
+      '#js_cover',
+      '.rich_media_cover',
+      '#activity-name',
+      '.rich_media_title',
+      '#meta_content',
+      '.rich_media_meta_list',
+      '#js_top_profile',
+      '#js_profile_card',
+      '#js_author_name',
+      '#js_name',
+      '#publish_time',
+    ];
+
+    selectors.forEach(selector => {
+      doc.querySelectorAll(selector).forEach(node => node.remove());
+    });
+
+    return '<!doctype html>\n' + doc.documentElement.outerHTML;
+  } catch {
+    return html;
+  }
+}
+
+function openOriginalArticle(link: string) {
+  window.open(link, '_blank');
+}
+
+function isArticleSelected(article: ReaderArticle) {
+  return selectedArticleKeys.value.has(articleKey(article));
+}
+
+function toggleArticleSelection(article: ReaderArticle, checked: boolean) {
+  if (!selectionMode.value) {
+    return;
+  }
+  const key = articleKey(article);
+  if (checked) {
+    selectedArticleKeys.value.add(key);
+  } else {
+    selectedArticleKeys.value.delete(key);
+  }
+}
+
+function onSelectionAction() {
+  if (!selectionMode.value) {
+    selectionMode.value = true;
+    selectedArticleKeys.value.clear();
+    return;
+  }
+
+  if (!allVisibleArticlesSelected.value) {
+    selectedArticleKeys.value = new Set(visibleArticleKeys.value);
+    return;
+  }
+
+  selectedArticleKeys.value.clear();
+  selectionMode.value = false;
+}
+
+async function loadMoreArticles() {
+  await loadArticlePage(false);
+}
+
+function onClickCategory(categoryId: string) {
+  selectedCategory.value = categoryId;
+  selectedAccount.value = null;
+}
+
+function onClickAccount(account: MpAccount) {
+  clearAccountNewArticles(account.fakeid);
+  selectedAccount.value = account.fakeid;
+}
+
+function isFocusedAccount(account: MpAccount) {
+  return Boolean(account.focused);
+}
+
+async function markAccountAsFocused(account: MpAccount) {
+  const focused = isFocusedAccount(account);
+  const nextFocused = !focused;
+
+  try {
+    await updateAccountFocused(account.fakeid, nextFocused);
+    account.focused = nextFocused;
+    toast.success(focused ? '已取消重点关注' : '已加入重点关注', account.nickname || account.fakeid);
+  } catch (error) {
+    toast.error(focused ? '取消重点关注失败' : '设置重点关注失败', (error as Error).message);
+  }
+}
+
+function editSelectedAccountCategory() {
+  if (!selectedAccountInfo.value) return;
+  editAccountCategory(selectedAccountInfo.value);
+}
+
+function openSystemMenu(menu?: SystemMenuId) {
+  if (menu) {
+    systemMenuActive.value = menu;
+  }
+  systemMenuOpen.value = true;
+}
+
+function openLogin() {
+  modal.open(LoginModal);
+}
+
+async function logoutMp() {
+  logoutBtnLoading.value = true;
+  try {
+    const result = await request<LogoutResponse>('/api/web/mp/logout');
+    if (result.statusCode === 200) {
+      loginAccount.value = null;
+      toast.success('已退出登录');
+    }
+  } catch (error) {
+    toast.error('退出失败', (error as Error).message);
+  } finally {
+    logoutBtnLoading.value = false;
+  }
+}
+
+function addAccount() {
+  if (!checkLogin()) return;
+  searchAccountDialogRef.value?.open();
+}
+
+async function onSelectAccount(account: AccountInfo | MpAccount) {
+  addBtnLoading.value = true;
+  try {
+    await loadAccountArticle(
+      {
+        fakeid: account.fakeid,
+        nickname: account.nickname,
+        round_head_img: account.round_head_img,
+        completed: false,
+        count: 0,
+        articles: 0,
+        total_count: 0,
+      },
+      false
+    );
+    await refreshData();
+    selectedAccount.value = account.fakeid;
+    toast.success('公众号添加成功', `已成功添加公众号【${account.nickname}】并完成首页同步`);
+    accountEventBus.emit('account-added', { fakeid: account.fakeid });
+  } catch (error) {
+    toast.error('添加公众号失败', (error as Error).message);
+  } finally {
+    addBtnLoading.value = false;
+  }
+}
+
+function deleteCurrentAccount() {
+  const fakeid = selectedAccount.value;
+  if (!fakeid) return;
+
+  const account = findAccount(fakeid);
+  modal.open(ConfirmModal, {
+    title: '确定删除当前公众号吗？',
+    description: `将删除【${account?.nickname || fakeid}】的全部缓存数据（文章、留言和资源）。`,
+    async onConfirm() {
+      try {
+        isDeleting.value = true;
+        await deleteAccountData([fakeid]);
+        accountEventBus.emit('account-removed', { fakeid });
+        selectedAccount.value = null;
+        selectedArticle.value = null;
+        selectedArticleHtml.value = '';
+      } finally {
+        isDeleting.value = false;
+        await refreshData();
+      }
+    },
+  });
+}
+
+async function editAccountCategory(account: MpAccount) {
+  categoryEditorAccount.value = account;
+  categoryEditorValue.value = normalizeCategory(account);
+  categoryEditorNewValue.value = '';
+  categoryEditorOpen.value = true;
+}
+
+async function saveCategoryEditor() {
+  const account = categoryEditorAccount.value;
+  if (!account) return;
+  const value = categoryEditorValue.value.trim();
+  const category = value === '未分类' ? '' : value;
+  categoryEditorSaving.value = true;
+  try {
+    await updateAccountCategory(account.fakeid, category);
+    account.category = category;
+    await refreshData();
+    categoryEditorOpen.value = false;
+    toast.success('分类已更新');
+  } catch (error) {
+    toast.error('更新分类失败', (error as Error).message);
+  } finally {
+    categoryEditorSaving.value = false;
+  }
+}
+
+async function addCategoryForEditor() {
+  const account = categoryEditorAccount.value;
+  if (!account) return;
+
+  const value = categoryEditorNewValue.value.trim();
+  if (!value) {
+    toast.warning('提示', '请输入分类名称');
+    return;
+  }
+
+  if (value === '全部分类') {
+    toast.warning('提示', '分类名称不能为“全部分类”');
+    return;
+  }
+  if (value === FOCUS_CATEGORY_LABEL) {
+    toast.warning('提示', '分类名称不能为“重点关注”');
+    return;
+  }
+
+  if (editableCategoryNames.value.includes(value)) {
+    categoryEditorValue.value = value;
+    categoryEditorNewValue.value = '';
+    toast.success('已选择已有分类');
+    return;
+  }
+
+  categoryEditorAdding.value = true;
+  try {
+    await updateAccountCategory(account.fakeid, value);
+    account.category = value;
+    categoryEditorValue.value = value;
+    categoryEditorNewValue.value = '';
+    await refreshData();
+    toast.success('分类已新增');
+  } catch (error) {
+    toast.error('新增分类失败', (error as Error).message);
+  } finally {
+    categoryEditorAdding.value = false;
+  }
+}
+
+function deleteCategoryFromEditor(category: string) {
+  if (category === '未分类') {
+    toast.warning('提示', '未分类不能删除');
+    return;
+  }
+
+  const affected = accounts.value.filter(account => normalizeCategory(account) === category);
+  modal.open(ConfirmModal, {
+    title: `删除分类【${category}】？`,
+    description: `将把 ${affected.length} 个公众号移动到未分类。`,
+    async onConfirm() {
+      categoryDeleting.value = category;
+      try {
+        await Promise.all(affected.map(account => updateAccountCategory(account.fakeid, '')));
+        affected.forEach(account => {
+          account.category = '';
+        });
+
+        if (selectedCategory.value === category) {
+          selectedCategory.value = '__all__';
+        }
+        if (categoryEditorValue.value === category) {
+          categoryEditorValue.value = '未分类';
+        }
+
+        await refreshData();
+        toast.success('分类已删除');
+      } catch (error) {
+        toast.error('删除分类失败', (error as Error).message);
+      } finally {
+        categoryDeleting.value = null;
+      }
+    },
+  });
+}
+
+async function _load(account: MpAccount, begin: number, loadMore: boolean, promise: PromiseInstance) {
+  if (isCanceled.value) {
+    isCanceled.value = false;
+    upsertSyncProgress(account.fakeid, { running: false });
+    promise.reject(new Error('已取消同步'));
+    return;
+  }
+
+  syncingRowId.value = account.fakeid;
+  isSyncing.value = true;
+  upsertSyncProgress(account.fakeid, {
+    running: true,
+    syncedMessages: Number(account.count) || 0,
+    totalMessages: Number(account.total_count) || 0,
+    syncedArticles: Number(account.articles) || 0,
+  });
+
+  const [articles, completed, totalCount, pageMessageCount, inserted] = await getArticleList(account, begin);
+  const fetchedArticles = Array.isArray(articles) ? [...articles] : [];
+  if (inserted > 0) {
+    markAccountHasNewArticles(account.fakeid);
+  }
+  mergeSyncedArticlesIntoView(account, fetchedArticles);
+  upsertSyncProgress(account.fakeid, {
+    running: true,
+    totalMessages: Number(totalCount) || Number(account.total_count) || 0,
+  });
+
+  if (isCanceled.value) {
+    isCanceled.value = false;
+    upsertSyncProgress(account.fakeid, { running: false });
+    promise.reject(new Error('已取消同步'));
+    return;
+  }
+
+  const noNewOnThisPage = Number(pageMessageCount) > 0 && inserted === 0;
+  if (completed || noNewOnThisPage) {
+    upsertSyncProgress(account.fakeid, {
+      running: false,
+      totalMessages: Number(totalCount) || Number(account.total_count) || 0,
+    });
+    syncingRowId.value = null;
+    isSyncing.value = false;
+    promise.resolve(account);
+    return;
+  }
+
+  const countByItemidx = articles.filter(article => Number(article.itemidx) === 1).length;
+  const countByAppmsg = new Set(
+    articles.map(article => Number(article.appmsgid)).filter(appmsgid => Number.isFinite(appmsgid) && appmsgid > 0)
+  ).size;
+  const count = Number(pageMessageCount) > 0 ? Number(pageMessageCount) : countByItemidx || countByAppmsg || 1;
+  begin += count;
+  upsertSyncProgress(account.fakeid, {
+    running: true,
+    syncedMessages: begin,
+    totalMessages: Number(totalCount) || Number(account.total_count) || 0,
+  });
+
+  let cacheBoundaryCreateTime = 0;
+  const lastArticle = articles.at(-1);
+  if (lastArticle && account.last_update_time && lastArticle.create_time < account.last_update_time) {
+    const summary = await getArticleCacheSummary(account.fakeid, lastArticle.create_time);
+    if (summary.cachedRows > 0) {
+      begin += summary.cachedMessageCount;
+      cacheBoundaryCreateTime = summary.oldestCreateTime;
+    }
+  }
+
+  const tailCreateTime = cacheBoundaryCreateTime > 0
+    ? cacheBoundaryCreateTime
+    : Number(articles.at(-1)?.create_time) || 0;
+  const syncToTimestamp = getSyncTimestamp();
+  if (tailCreateTime > 0 && tailCreateTime < syncToTimestamp) {
+    loadMore = false;
+  }
+
+  if (loadMore) {
+    syncTimer.value = window.setTimeout(
+      () => {
+        if (isCanceled.value) {
+          isCanceled.value = false;
+          upsertSyncProgress(account.fakeid, { running: false });
+          promise.reject(new Error('已取消同步'));
+          return;
+        }
+        _load(account, begin, true, promise);
+      },
+      ((preferences.value as unknown as Preferences).accountSyncSeconds || 5) * 1000
+    );
+  } else {
+    upsertSyncProgress(account.fakeid, {
+      running: false,
+      totalMessages: Number(totalCount) || Number(account.total_count) || 0,
+    });
+    syncingRowId.value = null;
+    isSyncing.value = false;
+    promise.resolve(account);
+  }
+}
+
+async function loadAccountArticle(account: MpAccount, loadMore = true) {
+  return new Promise((resolve, reject) => {
+    const promise: PromiseInstance = { resolve, reject };
+    _load(account, 0, loadMore, promise).catch(e => {
+      syncingRowId.value = null;
+      isSyncing.value = false;
+      upsertSyncProgress(account.fakeid, { running: false });
+      if (e.message === 'session expired') {
+        modal.open(LoginModal);
+      }
+      reject(e);
+    });
+  });
+}
+
+function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | null) {
+  if (!snapshot) {
+    return;
+  }
+
+  if (snapshot.currentAccount) {
+    const account = snapshot.currentAccount;
+    const previousSyncedArticles = Number(
+      syncProgressByFakeid.value[account.fakeid]?.syncedArticles
+      ?? findAccount(account.fakeid)?.articles
+      ?? 0
+    ) || 0;
+    if ((Number(account.syncedArticles) || 0) > previousSyncedArticles) {
+      markAccountHasNewArticles(account.fakeid);
+    }
+    syncProgressByFakeid.value = {
+      ...syncProgressByFakeid.value,
+      [account.fakeid]: {
+        fakeid: account.fakeid,
+        running: account.status === 'running',
+        syncedMessages: Number(account.syncedMessages) || 0,
+        totalMessages: Number(account.totalMessages) || 0,
+        syncedArticles: Number(account.syncedArticles) || 0,
+        updatedAt: Number(account.updatedAt) || Date.now(),
+      },
+    };
+  }
+  batchSyncProgress.value = {
+    running: snapshot.status === 'running',
+    completedAccounts: Number(snapshot.completedAccounts) || 0,
+    totalAccounts: Number(snapshot.totalAccounts) || 0,
+  };
+  syncingRowId.value = snapshot.status === 'running' ? snapshot.currentFakeid || null : null;
+  isSyncing.value = snapshot.status === 'running';
+}
+
+async function startRemoteBatchSync(targets: MpAccount[]): Promise<RemoteBatchSyncJobSnapshot> {
+  const resp = await request<{ data: RemoteBatchSyncJobSnapshot }>('/api/web/reader/batch-sync-start', {
+    method: 'POST',
+    body: {
+      fakeids: targets.map(account => account.fakeid),
+      syncTimestamp: getSyncTimestamp(),
+      accountSyncSeconds: 0,
+    },
+  });
+  return resp.data;
+}
+
+async function getRemoteBatchSyncStatus(): Promise<RemoteBatchSyncJobSnapshot | null> {
+  const resp = await request<{ data: RemoteBatchSyncJobSnapshot | null }>('/api/web/reader/batch-sync-status');
+  return resp.data || null;
+}
+
+async function cancelRemoteBatchSync(): Promise<void> {
+  await request('/api/web/reader/batch-sync-cancel', {
+    method: 'POST',
+  });
+}
+
+async function syncCurrentAccount() {
+  if (!checkLogin()) return;
+  if (!selectedAccount.value) return;
+
+  const account = findAccount(selectedAccount.value);
+  if (!account) return;
+
+  try {
+    isCanceled.value = false;
+    await loadAccountArticle(account, true);
+    toast.success('同步完成', `公众号【${account.nickname || account.fakeid}】文章已同步`);
+  } catch (error) {
+    toast.error('同步失败', (error as Error).message);
+  } finally {
+    await refreshAccountSnapshot(account.fakeid, false);
+    await loadArticlePage(true);
+    clearSelectionOutOfScope();
+  }
+}
+
+async function syncAllAccountsInCurrentScope() {
+  if (!checkLogin()) return;
+  if (selectedCategory.value !== '__all__') return;
+
+  const targets = [...accounts.value];
+  if (targets.length === 0) {
+    toast.warning('提示', '当前没有可同步公众号');
+    return;
+  }
+
+  batchSyncProgress.value = {
+    running: true,
+    completedAccounts: 0,
+    totalAccounts: targets.length,
+  };
+  isCanceled.value = false;
+  isSyncing.value = true;
+  let finalSnapshot: RemoteBatchSyncJobSnapshot | null = null;
+
+  try {
+    let snapshot = await startRemoteBatchSync(targets);
+    applyRemoteBatchSyncSnapshot(snapshot);
+
+    for (;;) {
+      if (snapshot.status !== 'running') {
+        break;
+      }
+
+      if (isCanceled.value) {
+        isCanceled.value = false;
+        await cancelRemoteBatchSync();
+      }
+
+      await new Promise(resolve => setTimeout(resolve, Math.max(1000, Number(snapshot.pollAfterMs) || 3000)));
+      snapshot = await getRemoteBatchSyncStatus() as RemoteBatchSyncJobSnapshot;
+      if (!snapshot) {
+        throw new Error('batch sync status missing');
+      }
+      applyRemoteBatchSyncSnapshot(snapshot);
+    }
+    finalSnapshot = snapshot;
+
+    if (snapshot.status === 'success') {
+      toast.success('同步完成', `已同步 ${snapshot.successCount} 个公众号`);
+    } else if (snapshot.status === 'canceled') {
+      toast.warning('同步已取消', `已完成 ${snapshot.completedAccounts}/${snapshot.totalAccounts} 个公众号`);
+    } else if (snapshot.successCount === 0) {
+      const firstMessage = normalizeRuntimeErrorMessage(String(snapshot.message || '未知错误'));
+      if (firstMessage === 'session expired') {
+        toast.error('同步失败', '登录状态已失效，请重新登录后重试');
+      } else {
+        toast.error('同步失败', firstMessage);
+      }
+    } else {
+      toast.warning('部分同步失败', `成功 ${snapshot.successCount} 个，失败 ${snapshot.failedCount} 个`);
+    }
+  } finally {
+    batchSyncProgress.value = {
+      ...batchSyncProgress.value,
+      running: false,
+    };
+    isSyncing.value = false;
+    syncingRowId.value = null;
+    const shouldDeferRefresh = Number(finalSnapshot?.heapUsedMb || 0) >= 2500;
+    if (shouldDeferRefresh) {
+      toast.warning('已完成同步', '后台已写入缓存。当前服务端内存较高，先跳过自动刷新，稍后再手动刷新列表。');
+    } else {
+      const refreshed = await getAllInfo();
+      accounts.value = refreshed;
+      await loadArticlePage(true);
+      clearSelectionOutOfScope();
+    }
+  }
+}
+
+async function onHeaderSyncClick() {
+  if (selectedAccount.value) {
+    await syncCurrentAccount();
+    return;
+  }
+  if (selectedCategory.value === '__all__') {
+    await syncAllAccountsInCurrentScope();
+  }
+}
+
+function importAccount() {
+  fileRef.value?.click();
+}
+
+async function handleFileChange(evt: Event) {
+  const files = (evt.target as HTMLInputElement).files;
+  if (!files || files.length === 0) return;
+
+  const file = files[0];
+  try {
+    importBtnLoading.value = true;
+    const jsonData = JSON.parse(await file.text());
+    if (jsonData.usefor !== 'wechat-article-exporter') {
+      toast.error('导入公众号失败', '导入文件格式不正确，请选择本站导出的文件。');
+      return;
+    }
+
+    const infos = jsonData.accounts;
+    if (!infos || infos.length <= 0) {
+      toast.error('导入公众号失败', '导入文件格式不正确，请选择本站导出的文件。');
+      return;
+    }
+
+    await importMpAccounts(infos);
+    await refreshData();
+    toast.success('批量导入成功', `已导入 ${infos.length} 个公众号`);
+  } catch (error) {
+    toast.error('导入公众号失败', (error as Error).message);
+  } finally {
+    importBtnLoading.value = false;
+    (evt.target as HTMLInputElement).value = '';
+  }
+}
+
+function exportAccount() {
+  const rows = [...accountsInCategory.value];
+  if (rows.length === 0) {
+    toast.warning('提示', '当前没有可导出的公众号');
+    return;
+  }
+
+  exportBtnLoading.value = true;
+  try {
+    const data: AccountManifest = {
+      version: '1.0',
+      usefor: 'wechat-article-exporter',
+      accounts: rows,
+    };
+    exportAccountJsonFile(data, '公众号');
+    toast.success('批量导出成功', `已导出 ${rows.length} 个公众号`);
+  } finally {
+    exportBtnLoading.value = false;
+  }
+}
+
+function downloadArticles(type: 'html' | 'metadata' | 'comment') {
+  download(type, effectiveArticleUrls.value);
+}
+
+function exportArticles(type: 'excel' | 'json' | 'html' | 'text' | 'markdown' | 'word') {
+  exportFile(type, effectiveArticleUrls.value);
+}
+
+let cookieTimer: number | null = null;
+onMounted(async () => {
+  initializeRuntimeState();
+  await refreshData();
+  cookieTimer = window.setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
+});
+
+onUnmounted(() => {
+  if (cookieTimer) {
+    window.clearInterval(cookieTimer);
+    cookieTimer = null;
+  }
+  if (schedulerSyncTimer.value) {
+    window.clearTimeout(schedulerSyncTimer.value);
+    schedulerSyncTimer.value = null;
+  }
+});
+</script>
+
+<template>
+  <div class="h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <aside class="w-[320px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+      <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <UTooltip text="系统菜单">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:layout-grid"
+                class="icon-btn"
+                @click="openSystemMenu()"
+              />
+            </UTooltip>
+          </div>
+
+          <div class="flex items-center justify-end gap-2">
+            <UPopover v-if="loginAccount" :popper="{ placement: 'bottom-end' }">
+              <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
+              <button type="button" class="avatar-btn">
+                <img
+                  v-if="loginAccount.avatar"
+                  :src="IMAGE_PROXY + loginAccount.avatar"
+                  alt=""
+                  class="size-7 rounded-full object-cover"
+                />
+                <UIcon v-else name="i-lucide:user-round" class="size-4 text-slate-500" />
+              </button>
+              <template #panel>
+                <div class="p-3 w-[240px] space-y-2">
+                  <p class="text-sm font-semibold truncate">{{ loginAccount.nickname || '已登录账号' }}</p>
+                  <p class="text-xs text-slate-500">Cookie 剩余：{{ cookieRemainText }}</p>
+                  <p class="text-xs text-slate-500">到期时间：{{ cookieExpireAt }}</p>
+                  <UButton
+                    size="xs"
+                    color="rose"
+                    variant="soft"
+                    icon="i-lucide:log-out"
+                    :loading="logoutBtnLoading"
+                    @click="logoutMp"
+                  >
+                    退出登录
+                  </UButton>
+                </div>
+              </template>
+            </UPopover>
+            <UTooltip v-else text="登录公众号">
+              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:log-in" class="icon-btn" @click="openLogin" />
+            </UTooltip>
+          </div>
+        </div>
+
+        <UInput v-model="accountKeyword" size="sm" icon="i-lucide:search" placeholder="仅搜索公众号名称" />
+
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <UTooltip text="添加公众号">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:plus"
+                :loading="addBtnLoading"
+                class="icon-btn"
+                @click="addAccount"
+              />
+            </UTooltip>
+
+            <UTooltip text="删除当前公众号">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:minus"
+                :disabled="!selectedAccount"
+                :loading="isDeleting"
+                class="icon-btn"
+                @click="deleteCurrentAccount"
+              />
+            </UTooltip>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <UTooltip text="批量导入公众号">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:arrow-down-to-line"
+                :loading="importBtnLoading"
+                class="icon-btn"
+                @click="importAccount"
+              >
+                <input ref="fileRef" type="file" accept=".json" class="hidden" @change="handleFileChange" />
+              </UButton>
+            </UTooltip>
+            <UTooltip text="批量导出公众号">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:arrow-up-from-line"
+                :loading="exportBtnLoading"
+                class="icon-btn"
+                @click="exportAccount"
+              />
+            </UTooltip>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-1 max-h-[108px] overflow-y-auto">
+          <button
+            v-for="category in categories"
+            :key="category.id"
+            type="button"
+            class="px-2.5 py-1 rounded-full text-xs border transition-colors"
+            :class="
+              selectedCategory === category.id
+                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+            "
+            @click="onClickCategory(category.id)"
+          >
+            {{ category.label }} · {{ category.count }}
+          </button>
+        </div>
+
+      </header>
+
+      <ul class="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+        <li
+          v-for="account in accountsInCategory"
+          :key="account.fakeid"
+          class="px-3 py-2.5 transition-colors cursor-pointer"
+          :class="
+            selectedAccount === account.fakeid
+              ? 'bg-slate-100 dark:bg-slate-800'
+              : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/70'
+          "
+          @click="onClickAccount(account)"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="size-9 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700 shrink-0">
+                <img
+                  v-if="account.round_head_img"
+                  :src="IMAGE_PROXY + account.round_head_img"
+                  alt=""
+                  class="size-full object-cover"
+                />
+                <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold truncate">{{ account.nickname || account.fakeid }}</p>
+                <div v-if="hasAccountNewArticles(account)" class="mt-1">
+                  <span class="account-new-badge">新文章</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">
+                  {{ normalizeCategory(account) }}
+                  <span v-if="isFocusedAccount(account)"> · 重点关注</span>
+                  <span> · {{ account.articles || 0 }} 篇</span>
+                </p>
+              </div>
+            </div>
+            <UTooltip :text="isFocusedAccount(account) ? '取消重点关注' : '设为重点关注'">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                class="icon-btn account-star-btn"
+                :class="isFocusedAccount(account) ? 'is-active' : ''"
+                @click.stop="markAccountAsFocused(account)"
+              />
+            </UTooltip>
+          </div>
+        </li>
+      </ul>
+    </aside>
+
+    <section class="w-[430px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+      <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
+            <span class="text-xs text-slate-500 shrink-0">{{ articleTotalCount }} 篇</span>
+            <span v-if="activeAccountSyncStatus" class="text-xs text-emerald-600 shrink-0">
+              {{ activeAccountSyncStatus }}
+            </span>
+            <UTooltip text="编辑当前公众号分类">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:square-pen"
+                :disabled="!selectedAccountInfo"
+                class="icon-btn"
+                @click="editSelectedAccountCategory"
+              />
+            </UTooltip>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span v-if="headerBatchSyncProgressText" class="text-xs text-slate-500 shrink-0">
+              {{ headerBatchSyncProgressText }}
+            </span>
+            <UTooltip :text="syncHeaderTooltip">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                :disabled="!canSyncFromHeader"
+                :loading="isSyncing"
+                class="icon-btn"
+                @click="onHeaderSyncClick"
+              />
+            </UTooltip>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex flex-wrap gap-2 items-center">
+            <UTooltip :text="selectionBtnTooltip">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                :icon="selectionBtnIcon"
+                class="icon-btn"
+                @click="onSelectionAction"
+              />
+            </UTooltip>
+
+            <UTooltip v-if="downloadBtnLoading" text="停止抓取">
+              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:square" class="icon-btn" @click="stopDownload" />
+            </UTooltip>
+
+            <UTooltip text="抓取文章数据">
+              <ButtonGroup
+                :items="[
+                  { label: '文章内容', event: 'download-html' },
+                  { label: '阅读量(需登录)', event: 'download-metadata' },
+                  { label: '留言(需登录)', event: 'download-comment' },
+                ]"
+                @download-html="downloadArticles('html')"
+                @download-metadata="downloadArticles('metadata')"
+                @download-comment="downloadArticles('comment')"
+              >
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:download"
+                  :loading="downloadBtnLoading"
+                  class="icon-btn"
+                />
+              </ButtonGroup>
+            </UTooltip>
+
+            <span class="text-[11px] text-slate-500 self-center">
+              <template v-if="downloadBtnLoading">抓取 {{ downloadCompletedCount }}/{{ downloadTotalCount }}</template>
+              <template v-if="exportFileLoading">
+                <template v-if="downloadBtnLoading"> · </template>
+                {{ exportPhase }} {{ exportCompletedCount }}/{{ exportTotalCount }}
+              </template>
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2 ml-auto">
+            <UTooltip text="导出文章">
+              <ButtonGroup
+                :items="[
+                  { label: 'Excel', event: 'export-excel' },
+                  { label: 'JSON', event: 'export-json' },
+                  { label: 'HTML', event: 'export-html' },
+                  { label: 'Txt', event: 'export-text' },
+                  { label: 'Markdown', event: 'export-markdown' },
+                  { label: 'Word', event: 'export-word' },
+                ]"
+                @export-excel="exportArticles('excel')"
+                @export-json="exportArticles('json')"
+                @export-html="exportArticles('html')"
+                @export-text="exportArticles('text')"
+                @export-markdown="exportArticles('markdown')"
+                @export-word="exportArticles('word')"
+              >
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:file-output"
+                  :loading="exportFileLoading"
+                  class="icon-btn"
+                />
+              </ButtonGroup>
+            </UTooltip>
+          </div>
+        </div>
+      </header>
+
+      <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-500">加载中...</div>
+
+      <div v-else v-bind="articleContainerProps" class="flex-1 h-0 overflow-y-auto">
+      <ul v-bind="articleWrapperProps" class="divide-y divide-slate-100 dark:divide-slate-800">
+        <li
+          v-for="row in virtualDisplayedArticles"
+          :key="articleKey(row.data)"
+          class="px-3 py-2.5 transition-colors cursor-pointer"
+          :class="
+            selectedArticle && articleKey(selectedArticle) === articleKey(row.data)
+              ? 'bg-slate-100 dark:bg-slate-800'
+              : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/70'
+          "
+          @click="openArticle(row.data)"
+        >
+          <div class="flex items-start" :class="selectionMode ? 'gap-2' : ''">
+            <input
+              v-if="selectionMode"
+              type="checkbox"
+              class="mt-1"
+              :checked="isArticleSelected(row.data)"
+              @click.stop
+              @change="toggleArticleSelection(row.data, ($event.target as HTMLInputElement).checked)"
+            />
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium line-clamp-2">{{ articleDisplayTitle(row.data) }}</p>
+              <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
+                <span class="truncate">{{ row.data.accountName }}</span>
+                <span class="shrink-0 inline-flex items-center gap-1.5">
+                  <span v-if="isArticleUnread(row.data)" class="unread-dot" />
+                  <span>{{ formatTimeStamp(row.data.update_time || row.data.create_time) }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </li>
+      </ul>
+      </div>
+      <div v-if="!loading && (articlePageHasMore || articlePageLoading)" class="px-3 py-2 border-t border-slate-200 dark:border-slate-800">
+        <UButton
+          size="2xs"
+          color="gray"
+          variant="ghost"
+          block
+          :loading="articlePageLoading"
+          :disabled="!articlePageHasMore"
+          @click="loadMoreArticles"
+        >
+          {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+        </UButton>
+      </div>
+    </section>
+
+    <main class="flex-1 overflow-hidden flex flex-col">
+      <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+        <template v-if="selectedArticle">
+          <h1 class="text-[30px] leading-tight font-bold">{{ selectedArticleDisplayTitle }}</h1>
+          <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
+            <span>{{ selectedArticle.author_name || selectedArticle.accountName }}</span>
+            <span>{{ formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}</span>
+            <button type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
+              查看原文
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <p class="text-slate-500">选择文章后在这里阅读内容</p>
+        </template>
+      </div>
+
+      <div v-if="!selectedArticle" class="flex-1 flex items-center justify-center text-slate-500">请选择左侧文章</div>
+      <div v-else-if="contentLoading" class="flex-1 flex items-center justify-center text-slate-500">内容加载中...</div>
+      <div v-else class="flex-1 overflow-y-auto p-4">
+        <HtmlRenderer :html="selectedArticleHtml" />
+      </div>
+    </main>
+
+    <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
+
+    <UModal v-model="categoryEditorOpen" :ui="{ width: 'sm:max-w-[720px]' }">
+      <UCard>
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-semibold">编辑分类</h3>
+            <UButton
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:x"
+              class="icon-btn"
+              @click="categoryEditorOpen = false"
+            />
+          </div>
+        </template>
+
+        <div class="space-y-4">
+          <p class="text-sm text-slate-500 truncate">
+            当前公众号：{{ categoryEditorAccount?.nickname || categoryEditorAccount?.fakeid || '-' }}
+          </p>
+
+          <div class="space-y-2">
+            <p class="text-sm font-medium">已有分类</p>
+            <div class="flex flex-wrap gap-2 max-h-[140px] overflow-y-auto">
+              <button
+                type="button"
+                class="px-2.5 py-1 rounded-full text-xs border transition-colors"
+                :class="
+                  categoryEditorValue === '未分类'
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+                "
+                @click="categoryEditorValue = '未分类'"
+              >
+                未分类
+              </button>
+              <button
+                v-for="name in editableCategoryNames.filter(item => item !== '未分类')"
+                :key="name"
+                type="button"
+                class="px-2.5 py-1 rounded-full text-xs border transition-colors"
+                :class="
+                  categoryEditorValue === name
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+                "
+                @click="categoryEditorValue = name"
+              >
+                {{ name }}
+              </button>
+              <span v-if="editableCategoryNames.length === 0" class="text-xs text-slate-400">暂无可选分类</span>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <p class="text-sm font-medium">新增分类</p>
+            <div class="flex items-center gap-2">
+              <UInput
+                v-model="categoryEditorNewValue"
+                size="sm"
+                placeholder="输入分类名称后新增"
+                class="flex-1"
+                @keyup.enter="addCategoryForEditor"
+              />
+              <UButton
+                size="xs"
+                color="gray"
+                variant="soft"
+                icon="i-lucide:plus"
+                :loading="categoryEditorAdding"
+                @click="addCategoryForEditor"
+              >
+                新增
+              </UButton>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <p class="text-sm font-medium">删除分类</p>
+            <div class="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto">
+              <UButton
+                v-for="name in editableCategoryNames.filter(item => item !== '未分类')"
+                :key="`delete-${name}`"
+                size="2xs"
+                color="rose"
+                variant="soft"
+                icon="i-lucide:trash-2"
+                :loading="categoryDeleting === name"
+                @click="deleteCategoryFromEditor(name)"
+              >
+                {{ name }}
+              </UButton>
+              <span
+                v-if="editableCategoryNames.filter(item => item !== '未分类').length === 0"
+                class="text-xs text-slate-400"
+              >
+                暂无可删除分类
+              </span>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2">
+            <UButton size="xs" color="gray" variant="ghost" @click="categoryEditorOpen = false">取消</UButton>
+            <UButton size="xs" color="primary" :loading="categoryEditorSaving" @click="saveCategoryEditor">保存</UButton>
+          </div>
+        </div>
+      </UCard>
+    </UModal>
+
+    <UModal v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1120px]' }">
+      <UCard :ui="{ body: { padding: 'p-0 sm:p-0' } }">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-semibold">系统菜单</h3>
+            <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
+          </div>
+        </template>
+
+        <div class="h-[72vh] min-h-[520px] flex">
+          <aside class="w-48 border-r border-slate-200 dark:border-slate-800 p-2 bg-slate-50/70 dark:bg-slate-900/70">
+            <button
+              v-for="item in systemMenuItems"
+              :key="item.id"
+              type="button"
+              class="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left"
+              :class="
+                systemMenuActive === item.id
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              "
+              @click="openSystemMenu(item.id)"
+            >
+              <UIcon :name="item.icon" class="size-4 shrink-0" />
+              <span class="truncate">{{ item.label }}</span>
+            </button>
+          </aside>
+
+          <section class="flex-1 bg-white dark:bg-slate-950">
+            <div id="title" class="hidden" />
+            <KeepAlive>
+              <component :is="activeSystemMenuComponent" class="h-full" />
+            </KeepAlive>
+          </section>
+        </div>
+      </UCard>
+    </UModal>
+  </div>
+</template>
+
+<style scoped>
+.icon-btn {
+  @apply !inline-flex size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200 dark:border-slate-700
+    bg-white/80 dark:bg-slate-900/80 text-slate-600 dark:text-slate-300
+    hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900
+    hover:border-slate-300 dark:hover:border-slate-500 transition-colors;
+}
+
+.icon-btn :deep(.iconify),
+.icon-btn :deep([class*='i-']) {
+  margin: 0 !important;
+  width: 11px !important;
+  height: 11px !important;
+  font-size: 11px !important;
+}
+
+.icon-btn :deep(.i-lucide\:plus),
+.icon-btn :deep(.i-lucide\:minus) {
+  transform: translateY(-0.5px);
+}
+
+.avatar-btn {
+  @apply size-8 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700
+    bg-white dark:bg-slate-900 flex items-center justify-center hover:ring-2 hover:ring-blue-400/40 transition;
+}
+
+.cookie-inline-text {
+  @apply inline-flex h-8 items-center text-[11px] text-slate-500 whitespace-nowrap;
+}
+
+.account-star-btn {
+  @apply size-6;
+}
+
+.account-star-btn.is-active {
+  @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
+}
+
+.account-new-badge {
+  @apply inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-emerald-700
+    dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300;
+}
+
+.unread-dot {
+  @apply inline-block size-2 rounded-full bg-red-500;
+}
+</style>

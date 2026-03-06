@@ -1,0 +1,1573 @@
+---
+url: /advanced/api.md
+---
+# API 使用说明
+
+## Postman 在线文档
+
+https://documenter.getpostman.com/view/1276582/2sB3QDuXUa
+
+> `X-Auth-Key`即登录之后获取的的`API密钥`
+
+## 如何使用这个文档
+
+在下面这个红框的地方选择你的目标语言，右边的示例代码即会按照你的语言生成请求代码：
+
+![](/assets/postman-document.Dyw1shjy.png)
+
+---
+
+---
+url: /misc/features.md
+---
+# Features
+
+目前该工具为 [网站](https://down.mptext.top/) 形式，具有下面这些功能。
+
+## 已实现的功能
+
+* 搜索公众号，支持关键字搜索
+* 抓取文章链接
+* 抓取文章内容
+* 抓取阅读量与评论数据
+* 导出 html / txt / markdown / excel / json / docx 等格式
+* 缓存文章数据
+* 批量下载时支持文章过滤，包括作者、标题、发布时间、是否原创等等
+* 支持合集下载
+* 支持图片分享消息下载（有bug）
+* 支持视频分享消息下载（有bug）
+* 支持 API 调用
+* 支持 docker 部署
+* 支持 Cloudflare 部署
+
+## 计划中的功能
+
+以下这些功能已经列入计划中了：
+
+* 合集文章下载为 EPUB 电子书格式
+* 订阅多个公众号，每天定时抓取当天发布的文章
+
+## 更多
+
+如果上面没有你想要的功能，可以在评论区留言，根据实际情况会纳入到开发计划中。
+
+---
+
+---
+url: /misc/qq-group.md
+---
+# 交流群
+
+目前在 QQ 上开通了交流群，有需要的小伙伴可以进来和大家交流使用体验。
+
+![](/assets/qq-group.BZLDZtaU.png)
+
+---
+
+---
+url: /get-started/introduction.md
+---
+# 介绍
+
+> 目前该项目已完全开源，可通过 docker 进行私有部署。
+> 可查看 [部署教程](../advanced/private-deploy)。
+
+欢迎大家使用这个工具，该工具是我在业余时间开发的，开发进度时快时慢(主要取决于空闲时间和兴趣使然)，目前该工具已能满足基本的使用需求，后续会对各个方面进行优化。
+
+由于本人的 **精力和能力有限**，你可能会发现在使用这个工具的过程中会遇到各种各样的问题和bug，特别是对于电脑小白来说更是困难重重。如果遇到有什么使用上的问题，可以在qq群寻求帮助，我也会在空闲时间帮忙解答使用方面的问题(**前提是问题描述要具体、精确，最好能有截图说明**)。
+
+另外，如果想要更详细和专业的使用帮助，也可以考虑 **[赞助](https://down.mptext.top/dashboard/support)该项目**，我可以提供一对一的使用指导。
+当然，后续我也打算录制一系列免费视频来详细讲解该工具的使用方法，帮助小白快速上手使用。
+
+## 公共网站 vs 私有部署
+
+不管是公共网站，还是私有部署，都是用的相同的程序，因此他们的 **功能是完全一致的**。
+
+它们的区别主要有下面几点：
+
+|     | 公共网站 | 私有部署 |
+|-----|------|------|
+| 可用性 | 较高   | 高    |
+| 隐私性 | 中    | 高    |
+| 稳定性 | 较高   | 高    |
+
+公共网站部署在 [Cloudflare](https://www.cloudflare.com) 上，国内某些地区访问可能会有限制。\
+而私有部署在本地运行，可随时访问。
+
+公共网站由于某些功能(比如API调用)的需要，网站后端会存储你所登录/授权的公众号的cookie数据。\
+而私有部署通过 docker 的磁盘映射，数据完全存储在本地，对于想要数据隐私的用户更友好。
+
+公共网站由于各种原因，有可能会更换域名、更换部署平台等，会导致稳定性下降。\
+而私有部署，可通过 docker 的端口映射固定访问链接，稳定性更高。
+
+::: info 关于更换域名会导致稳定性下降的解释
+这个工具采用网站的形式使用，抓取和下载的所有数据都保存在浏览器的 IndexedDB 中，这是浏览器本地的一个缓存数据库，而 IndexedDB 中的数据只能通过对应域名进行访问，如果域名对应的网站关闭了，那么对应的 IndexedDB 中的数据就很难再取出来了。
+
+所以保持访问域名一致性是至关重要的。
+:::
+
+***
+
+最后，希望这个工具能帮助到你。
+
+---
+
+---
+url: /get-started/proxy.md
+---
+# 关于代理节点
+
+数据的下载采用代理池的思路，以便解决跨域、防盗链、加速等一系列问题。
+
+目前公共代理有以下节点（根据实际部署情况，可能会有增删，具体可查看网站后台的公共代理页面）:
+
+```
+https://00.workers-proxy.top
+https://01.workers-proxy.top
+https://02.workers-proxy.top
+https://03.workers-proxy.top
+https://04.workers-proxy.top
+https://05.workers-proxy.top
+https://06.workers-proxy.top
+https://07.workers-proxy.top
+https://08.workers-proxy.top
+https://09.workers-proxy.top
+https://10.workers-proxy.top
+https://11.workers-proxy.top
+https://12.workers-proxy.top
+https://13.workers-proxy.top
+https://14.workers-proxy.top
+https://15.workers-proxy.top
+https://00.workers-proxy.ggff.net
+https://01.workers-proxy.ggff.net
+https://02.workers-proxy.ggff.net
+https://03.workers-proxy.ggff.net
+https://04.workers-proxy.ggff.net
+https://05.workers-proxy.ggff.net
+https://06.workers-proxy.ggff.net
+https://07.workers-proxy.ggff.net
+https://08.workers-proxy.ggff.net
+https://09.workers-proxy.ggff.net
+https://10.workers-proxy.ggff.net
+https://11.workers-proxy.ggff.net
+https://12.workers-proxy.ggff.net
+https://13.workers-proxy.ggff.net
+https://14.workers-proxy.ggff.net
+https://15.workers-proxy.ggff.net
+```
+
+::: warning 注意
+这些节点全部部署在 CF 的免费账户中，每天有 100K 的请求量，超过额度之后需要等到下个周期刷新。
+
+**这些节点仅供官网使用，私有部署时请搭建自己的节点。**
+
+查看 [搭建私有代理节点](private-proxy) 教程。
+:::
+
+---
+
+---
+url: /misc/domain.md
+---
+# 关于更换域名的一些事
+
+这篇文章我想聊聊关于这个项目的域名变化背后的故事，也作为到目前为止我本人对这个项目的一个总结。
+
+## 项目的起源
+
+这个项目起源于在一个微信群中群友关于公众号文章下载的一个工具的分享，如下：
+
+![](/assets/project-origin._WVcyJt8.png)
+
+我在之前也没想过公众号文章还能有这种接口可以获取，所以看到这个项目的原理后很是激动，虽然我本人对公众号文章下载本身没什么兴趣，但是由于对 js 逆向很感兴趣，所以就打算搞搞看（之前曾搞过微信读书的书籍下载，所以对微信的web端产品都想研究一番）。
+
+经过一个月的努力，终于做出了第一个可使用版本：
+![](/assets/mvp-release.DfuRKlcT.png)
+
+贴一下当时的效果图：
+![](/assets/v1-demo.d4CGFUsk.png)
+
+这就是该工具的第一版(v1.0)。
+
+## 域名的变化
+
+这个项目起初是部署在 Deno Deploy 上面的（地址是 https://wechat-article-exporter.deno.dev 现在已经重定向到了 https://exporter.wxdown.online,当然后面也会重定向到新的域名），因为我之前的几个工具项目都是在 Deno 上面的，所以比较熟悉这个平台。
+
+刚开始完全就是对逆向的兴趣所驱动，但是真的做出来之后就会希望被更多人使用，会为了star数而去不断的完善它。
+
+随着功能不断的增多，文档部分也变得越来越多，所以就独立出单独的一个 docs 项目，用 vitepress 搭建，地址是 https://wechat-article-docs.deno.dev
+
+但是后面随着 deno.dev 域名被墙，导致 Deno 平台相比 Cloudflare 没什么优势了，所以就把项目部署到了 Cloudflare 上面了，借这个机会也注册了新的域名`wxdown.online`，就是现在大家看到的 https://exporter.wxdown.online 和 https://docs.wxdown.online。
+
+但是，由于当时部署这个项目所创建的 Cloudflare 用的是临时邮箱注册的，所以导致后面电脑出了一点问题，浏览器自动记住的密码丢失了，现在已经无法登录那个账号了。由于`wxdown.online`已经关联了那个账号上面的项目，所以就导致现在无法再绑定另一个 Cloudflare 账号下的项目。所以我就又注册了一个域名`mptext.top`，这次就用了我的主邮箱注册了 Cloudflare 并部署了该项目。
+
+所以，总的来说，后面这个项目的公共网站地址为 https://down.mptext.top，文档地址为 https://docs.mptext.top。
+
+现在的这个域名(`wxdown.online`)会一直到域名到期(2026年4月2日)，之后将不再续期。对应的网站也将不可用，**请妥善处理已缓存的数据**。
+
+## 项目后续的发展
+
+首先我不确定这种项目能够存活多久，但我会尽力去更新维护它，也是我对赞助我的朋友们的一个交代(后续我也打算用赞助的费用开一个 Cloudflare 的付费计划，毕竟“取之于民，用之于民”嘛)。
+
+等新域名上线之后，更新频率会回到正轨上来(之前曾因为密码丢失问题断更了好久)，后面会优化各种bug与细节。
+
+很多人比较关注的订阅功能，我打算另起一个项目去做，这个项目就专心做历史文章的下载了，新项目暂时不打算开源，根据后续具体的结果会出会员版(如果我觉得效果不好，可能就不会出了，到时希望朋友们多多支持)。
+
+---
+
+---
+url: /tutorials/export-article-links.md
+---
+# 如何批量导出某个公众号的全部文章链接？
+
+:::info 本文需要的工具
+
+1. 一个微信 **订阅号** 或 **服务号** (没有的话，可以去 [微信公众平台](https://mp.weixin.qq.com/cgi-bin/registermidpage?action=index\&lang=zh_CN) 免费注册)
+2. [微信公众号文章导出工具](https://down.mptext.top/)
+   :::
+
+:::warning 注意
+如果目标公众号关闭了搜索功能，则本文的方法无效。
+
+![公众号隐私设置](/assets/account-privacy-setting.DtmwMyTs.png)
+:::
+
+## 1. 注册公众号
+
+::: tip 提示
+若你已经有一个可用的 **订阅号** 或者 **服务号** 的话可跳过该步骤。
+:::
+
+前往 [微信公众平台](https://mp.weixin.qq.com/cgi-bin/registermidpage?action=index\&lang=zh_CN) 进行注册，公众号(原订阅号)和服务号皆可。
+
+![微信公众号类型](/assets/wechat-account.WYPVtpfC.png)
+
+## 2. 扫码登录网站
+
+注册完公众号之后，进入网站的 [登录页面](https://down.mptext.top/)，用微信扫描页面上的二维码，选择自己注册的 **公众号** 进行登录。
+
+::: tip 提示
+注意，这里必须选择 **公众号** 或者 **服务号** 进行登录，不能使用 **小程序** 登录，否则后续无法获取数据。
+:::
+
+![使用公众号登录](/assets/wechat-login.D4yvJ5Gy.png)
+
+## 3. 添加公众号，开始抓取文章链接
+
+在 [公众号管理](https://down.mptext.top/dashboard/account) 页面添加一个公众号，通过同步按钮拉取该公众号的所有文章链接。
+
+![同步文章链接](/assets/sync-article-links.rN3FIjr1.png)
+
+## 4. 导出链接
+
+在 [文章下载](https://down.mptext.top/dashboard/article) 页面选择目标公众号，勾选对应的文章，通过右上角的【导出】选择导出excel/json，如下图所示：
+
+![导出文章链接](/assets/export-article-links.BkrJG_R4.png)
+
+---
+
+---
+url: /faq.md
+---
+# 常见问题 (FAQ)
+
+\[\[toc]]
+
+## 出现 `200002:invalid args` 如何解决？
+
+出现该错误的原因可能是多方面的，需要逐一排查。
+
+首先确认扫码登录时使用的是 **服务号** 或者 **公众号**，而非 **小程序**，如下图所示：
+
+![使用公众号登录](/assets/wechat-login.D4yvJ5Gy.png)
+
+其次，由于该项目的原理是基于公众号后台的公众号文章搜索功能，因此目标公众号必须开启 **允许通过名称搜索** 才能获取到文章数据，如下图所示：
+
+![公众号隐私设置](/assets/account-privacy-setting.DtmwMyTs.png)
+
+某些公众号搜索不到也可能是因为没有开启这个选项导致的。
+
+## 登录页面为什么不显示二维码？
+
+这通常出现在私有部署的网站，由于微信返回的相关 cookie 使用了 `secure` 属性，所以要求网站必须开启 https 才能携带 cookie。
+
+> `localhost`和`127.0.0.1`访问不受该规则限制。
+
+## 如何获取评论和阅读量、点赞量、转发量这些数据？
+
+这些数据都需要使用微信用户的信息才能抓取到，所以需要先获取用户的这些信息(本程序称之为 **Credentials**)，然后设置到网站中，才能抓取这些数据。
+
+具体如何获取微信用户的信息(Credentials)，可以查看 [抓取 Credentials](advanced/wxdown-service.md)。
+
+## 下载文章时提示 "无可用代理" 是怎么回事？
+
+由于公共代理资源有限(一个月只有500GB的流量)，仅支持测试时使用。如果想要正式使用，请根据教程搭建自己的私有下载节点，并配置进系统中。
+
+查看 [搭建私有代理节点](get-started/private-proxy) 教程。
+
+## 为什么已加载的消息数和消息总数会差几条呢？
+
+![account list](/assets/account-list.5svR6KGW.png)
+
+首先要弄清楚 **消息** 和 **文章** 的区别。
+
+下面这个图里框选的就是2条消息，每条消息可能会包含多篇文章。
+
+![wechat message](/assets/wechat-message.iZvKiWbZ.png)
+
+网站的【公众号管理】这个列表里面【已加载消息数】就是指的抓取到的这个消息数量，是准确的，【消息总数】是微信接口返回的一个字段，叫`total_count`，这个是我猜的消息总数，所以不一定准确。
+
+## 文章下载页面的文章数量为什么不一样？
+
+![](/assets/download-count-not-match.C4W-YWtw.png)
+
+这是因为网站设置里默认启用了【隐藏已删除文章】的选项，可以手动关闭这个选项，这两个数字就一致了。
+
+![](/assets/setting-hide-deleted.DFgq24KI.png)
+
+## 如何检查请求失败原因？
+
+有时候可能因为各种原因导致获取数据失败，此时需要一步步进行排查，其中最主要的就是检查网络请求。
+
+下面就说明一下如何自行排查网络请求
+
+### 第一步，打开浏览器的开发者工具面板
+
+菜单如下：
+![](/assets/devtools-menu.D_qdwHBh.png)
+
+或者在网页上右键，选择【inspect】
+![](/assets/devtools-contextmenu.B8k7DmTp.png)
+
+### 第二步，捕获请求
+
+切换到【网络】面板，然后点击左边的清空按钮，将之前的网络请求清空，进行全新的捕获。
+![](/assets/network-panel.CUM6tCIf.png)
+
+这一步做完之后，就可以在页面上进行操作了，比如抓取评论。操作完成后，网络面板就会记录所有的网络请求，可以点开对应的网络请求查看返回的具体内容。
+如果对网络请求不了解，也可以将请求的内容截图发群里咨询大佬们解答。
+
+## 请求出现`429`状态码
+
+公共代理当天的额度用完了，要么搭建自己专属的私有代理([搭建私有代理](get-started/private-proxy.md))，要么等第二天8点刷新额度。
+
+参考 https://github.com/wechat-article/wechat-article-exporter/issues/119
+
+## 目标公众号 Credential 未设置
+
+出现在抓取【阅读量】或【留言内容】时，表示该公众号对应的`Credential`还未获取到，或者已过期。
+参考 [抓取 Credential](advanced/wxdown-service.md) 教程设置该公众号的Credential，然后再抓取相关数据。
+
+## 无法打开此文件夹，因为其中含有系统文件
+
+在导出时选择了包含有系统文件的目录，比如【下载目录】、【文档目录】等，可以自己手动创建一个目录用于存放导出文件。
+
+---
+
+---
+url: /others/公众号登录原理.md
+---
+# 微信公众号二维码登录原理
+
+页面展示的二维码图片地址如下:
+
+```
+https://mp.weixin.qq.com/cgi-bin/scanloginqrcode?action=getqrcode&random=
+```
+
+其中，`random`参数为系统当前的时间戳:
+
+```js
+const random = new Date().getTime()
+```
+
+该链接返回的二维码图片内部编码了一个 url 地址，如下所示:
+
+```
+http://mp.weixin.qq.com/mp/scanlogin?action=index&qrticket=b5e94c8689978a087986ef0bb00fe2ea&scanscene=0#wechat_redirect
+```
+
+页面加载时，首先调用`getIngorePassList`接口，参数如下:
+
+```http request
+POST /cgi-bin/bizlogin
+Host: https://mp.weixin.qq.com
+
+action=prelogin
+```
+
+根据返回结果，会调用`report`接口，如下:
+
+```http request
+POST /cgi-bin/webreport
+Host: https://mp.weixin.qq.com
+
+reportJson={"devicetype":1,"newsessionid":"172059629456827","optype":1,"page_state":3,"log_id":19015}
+```
+
+`newsessionid`的取值逻辑如下:
+
+```js
+this.sessionid = new Date().getTime() + "" + Math.floor(Math.random() * 100);
+```
+
+然后调用`this.getQrcode()`方法获取二维码，如下:
+
+```http request
+POST /cgi-bin/bizlogin?action=startlogin
+Host: https://mp.weixin.qq.com
+
+userlang=zh_CN
+redirect_url=
+login_type=3
+sessionid=sessionid
+```
+
+接口返回:
+
+```json
+{"base_resp":{"err_msg":"ok","ret":0}}
+```
+
+表示正常。
+
+此时页面会把`this.hasStartLogin`标志改为`true`，表示登录流程已开始。同时调用`this.refreshQrcode()`获取二维码图片并展示
+
+未扫码：
+
+```json
+{
+  "acct_size": 0,
+  "base_resp": {
+    "err_msg": "ok",
+    "ret": 0
+  },
+  "binduin": 0,
+  "status": 0,
+  "user_category": 0
+}
+```
+
+已扫码：
+
+```json
+{
+  "acct_size": 19,
+  "base_resp": {
+    "err_msg": "ok",
+    "ret": 0
+  },
+  "binduin": 0,
+  "status": 4,
+  "user_category": 0
+}
+```
+
+已登录：
+
+```json
+{
+  "acct_size": 19,
+  "base_resp": {
+    "err_msg": "ok",
+    "ret": 0
+  },
+  "binduin": 0,
+  "status": 1,
+  "user_category": 2
+}
+```
+
+---
+
+---
+url: /others/微信接口频率限制.md
+---
+# 微信获取文章列表接口的频率限制研究
+
+目前测试结果，短时间内获取超过 600 条文章数据就很容易触发`200013 freq control`限制，然后会导致 24 小时内不能再调用该接口。
+
+目前正在确定这个时间范围是多少。
+
+17:20 左右出现
+
+```json
+{
+  "base_resp": {
+    "err_msg": "freq control",
+    "ret": 200013
+  }
+}
+```
+
+19:00 解封了
+
+1~2个小时
+
+> 注意：该接口被限制后仍然可以通过关键字搜索继续调用该接口，但不确定搜索是否也会触发`freq control`限制。
+
+几个因素:
+
+* 数据量
+* 请求次数
+
+根据测试，数据量在达到 1100 时达到了限制
+
+触发限流的示例:
+
+* 20分钟请求了 1100 条数据量
+
+cookie登录有效期4d
+
+---
+
+---
+url: /get-started/usage.md
+---
+# 快速上手
+
+## 1. 注册一个微信公众号
+
+::: tip 提示
+若你已经有一个可用的 **订阅号** 或者 **服务号** 的话可跳过该步骤。
+:::
+
+前往 [微信公众平台](https://mp.weixin.qq.com/cgi-bin/registermidpage?action=index\&lang=zh_CN) 进行注册，公众号(原订阅号)和服务号皆可。
+
+![微信公众号类型](/assets/wechat-account.WYPVtpfC.png)
+
+## 2. 二维码扫码登录
+
+注册完公众号之后，进入网站的 [登录页面](https://down.mptext.top/login)，用微信扫描页面上的二维码，选择自己注册的 **公众号** 进行登录。
+
+::: tip 提示
+注意，这里必须选择 **公众号** 或者 **服务号** 进行登录，不能使用 **小程序** 登录，否则后续无法获取数据。
+:::
+
+![使用公众号登录](/assets/wechat-login.D4yvJ5Gy.png)
+
+## 3. 配置私有代理 (推荐)
+
+::: tip 提示
+该步骤为可选项，若不配置的话，默认走公共代理 (公共代理资源有限，参考 [代理节点](proxy))
+
+查看 [搭建私有代理节点](private-proxy) 教程来搭建自己的私有代理。
+
+配置的代理越多，下载文章内容时就越快，因此尽量配置多一些代理 (**推荐不少于5条**)。
+:::
+
+在设置页面配置私有代理地址，如下所示：
+
+![配置私有代理](/assets/config-private-proxy.DxzSWko2.png)
+
+## 4. 添加公众号，开始抓取文章链接
+
+在 [公众号管理](https://down.mptext.top/dashboard/account) 页面添加一个公众号，通过同步按钮拉取该公众号的所有文章链接。
+
+![同步文章链接](/assets/sync-article-links.rN3FIjr1.png)
+
+## 5. 下载文章内容并导出数据
+
+在 [文章下载](https://down.mptext.top/dashboard/article) 页面选择目标公众号，勾选对应的文章，通过右上角的【抓取】下载文章内容，如下图所示：
+
+![抓取文章内容](/assets/download-article-content.DoCvsGI0.png)
+
+::: tip 提示
+如果配置了该公众号的 Credentials，也可以抓取该公众号文章的 **阅读量** 和 **评论** 数据。
+:::
+
+最后，选择导出，可导出的格式有 **excel / json / html / txt / markdown / word**，如下图所示：
+
+![导出文章数据](/assets/export-article-data.CptiRpoK.png)
+
+::: tip 提示
+当导出 **html / txt / markdown / word** 等格式时，选择导出目录后浏览器会提示【是否允许网站编辑指定目录的文件】，如下图所示：
+
+![浏览器提示](/assets/browser-warning.DUBQ2G8L.png)
+
+这里需要选择允许，这样在导出时网站会实时写入文件到该目录。
+
+技术细节可以参考 [File\_System\_API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
+:::
+
+---
+
+---
+url: /advanced/auto-detect-credential.md
+---
+# 抓取 Credential - mitmproxy 插件版
+
+> 注意：本文档内容可能已过时。
+
+这是一个 mitmproxy 插件，用来获取公众号的 Credential 数据，从而省去了手动抓包并解析相关参数的繁琐步骤，具体操作可查看以下内容：
+
+打开网站的任意一个页面，都会发现右上角有一个4个小方块的图标，如下图所示：
+
+![](/assets/img.CFUCGkBi.png)
+
+该图标可在页面上任意拖动位置，松开时会自动停靠在窗口边缘，点击时会打开【自动抓取 Credential】的信息面板，如下图所示：
+
+![](/assets/img_3.NKWomf7c.png)
+
+我们需要下载这个 mitmproxy 插件，该插件的名字为`credential.py`，下载后，执行以下命令启动`mitmproxy`并加载该插件：
+
+```shell
+mitmdump -s credential.py -q
+```
+
+执行后的结果如下：
+
+![](/assets/img_4.uJ4FgUkR.png)
+
+可以看到输出一个会话密钥，我们将该密钥填入上面弹框中的`API Key`的输入框中，然后点击【认证】按钮，认证成功后就可以开始进行监控了，如下图所示：
+
+![](/assets/img_5.DZwjTTxu.png)
+
+此时我们需要将系统的代理设置为 mitmproxy 的代理，地址为`127.0.0.1:8080`，如下所示：
+
+![](/assets/img_6.C6hU7WaC.png)
+
+然后我们就可以在微信中打开目标公众号的任意一篇文章（注意，必须在微信内置浏览器中打开），如果没有监控到的话，就手动刷新一下文章页面，如下图所示：
+
+![](/assets/img_7.DEegUrBL.png)
+
+表示成功抓取到了公众号的 Credential 数据了。
+
+**之后如果发现某个公众号的 Credential 过期了，直接在微信内重新打开他的一篇文章，就可以自动获取到他的最新 Credential 数据了。**
+
+这样在下载文章及评论数据时，就会自动使用该信息进行抓取。
+
+::: warning 注意
+由于浏览器对定时器执行频率会有限频，所以最好打开页面的控制台，这样可以防止浏览器休眠页面上的定时器
+:::
+
+## 特别说明
+
+上面提到的那个四个方块的图标共有3种状态，对应不同颜色
+
+1. 灰色
+   表示非监听状态
+
+2. 蓝色
+   表示正在进行监听，且有效数据大于0
+
+3. 橙色
+   表示正在监听，且有效数据等于0
+
+---
+
+---
+url: /advanced/wxdown-service.md
+---
+# 抓取 Credential - wxdown 程序版
+
+为了更方便的获取`Credential`，我用 python 编写了一个独立的控制台程序，该程序打包了 mitmproxy，可独立运行，具体操作可查看以下内容：
+
+::: tip 提示
+本程序代码开源，项目地址 https://github.com/wechat-article/wxdown-service
+:::
+
+## 下载软件
+
+根据你的操作系统，下载对应的软件程序。该软件是一个控制台程序，不需要进行安装，可直接运行。
+
+下载地址: https://github.com/wechat-article/wxdown-service/releases
+
+> 注意：macOS用户可能需要下载源码在本地用 python 运行
+
+## Windows 运行
+
+下载并解压后程序如下图所示：
+
+![](/assets/img.CFUCGkBi.png)
+
+### 1. 启动软件
+
+可直接双击`wxdown-service.exe`启动，启动过程中可能需要一些权限，请全部允许。
+
+启动成功后如下所示：
+
+![](/assets/img_1.DAX5ivYG.png)
+
+### 2. 安装证书
+
+提示需要安装 mitmproxy 的证书，用管理员启动 cmd 程序，执行下面的代码，如下：
+
+![](/assets/img_2.CVI7PODy.png)
+
+在 cmd 中执行下面的代码：
+
+```cmd
+certutil -addstore root %userprofile%\.mitmproxy\mitmproxy-ca-cert.cer
+```
+
+执行结果如下：
+
+![](/assets/img_3.NKWomf7c.png)
+
+如果对命令行不熟悉，也可以找到证书文件手动安装。
+
+证书文件路径为`%userprofile%\.mitmproxy\mitmproxy-ca-cert.cer`
+在文件管理器中打开上面这个地址，如下：
+
+![](/assets/img_4.uJ4FgUkR.png)
+
+安装证书：
+
+![](/assets/img_5.DZwjTTxu.png)
+
+选择本地计算机：
+
+![](/assets/img_6.C6hU7WaC.png)
+
+证书位置选择【受信任的根证书颁发机构】：
+
+![](/assets/img_7.DEegUrBL.png)
+
+证书安装完成之后，软件界面如下：
+
+![](/assets/img_8.DNlKldp-.png)
+
+### 3. 设置操作系统代理
+
+![](/assets/img_9.Dt0YEfwE.png)
+
+![](/assets/img_10.nLcpwWGC.png)
+
+设置成功后软件界面如下：
+
+![](/assets/img_11.DWsJVjVh.png)
+
+## macOS 运行
+
+下载源码，在根目录执行
+
+```shell
+pip install -r requirements.txt
+python main.py
+```
+
+跟上面 Windows 一样，需要安装证书和设置操作系统代理。
+
+安装证书命令：
+
+```shell
+sudo security add-trusted-cert -d -p ssl -p basic -k /Library/Keychains/System.keychain ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
+
+设置操作系统代理：
+
+![](/assets/img_12.a7HLpFeW.png)
+
+设置成功后界面如下：
+
+![](/assets/img_13.DmqmTsBc.png)
+
+## 抓取 Credentials
+
+当你的`wxdown-service`程序成功启动之后，网站的图标会变成绿色，如下图所示：
+
+![](/assets/img_14.B26sOa76.png)
+
+点开之后如下所示：
+
+![](/assets/img_15.LoZ22lb-.png)
+
+现在，你需要在电脑端的微信客户端打开目标公众号的一篇文章
+
+> 注意，这里必须使用微信内置浏览器打开
+
+![](/assets/img_16.JSydhCUN.png)
+
+如果网站上没有出现你打开的公众号信息，则点击微信浏览器左上角的刷新按钮，这时就成功抓取到了该公众号的 Credentials 数据了。
+
+接着就可以开始抓取该公众号的阅读量和留言数据了。
+
+> 注意：
+>
+> 1. 抓取到的 Credentials 数据有效期为30分钟，过期后就无法再抓取阅读量和留言了。
+> 2. 成功抓取到 Credentials 之后，该数据会缓存在浏览器中，此时你可以关闭 wxdown-service 程序。
+> 3. Credentials 过期后，你只需要重新刷新下微信浏览器的文章，就会自动获取新的 Credentials (前提是你没有关闭 wxdown-service 程序，并且也没有修改过操作系统代理)。
+
+---
+
+---
+url: /get-started/private-proxy.md
+---
+# 搭建私有代理节点
+
+私有代理节点部署在各种 serverless 环境（**都是国外的平台，所以在使用时最好配合翻墙软件**），可以加速资源的下载进度。但由于目前节点代码并没有进行身份验证，所以请避免部署后的节点地址遭到泄露。如若发现节点流量异常，请销毁节点重新进行搭建(即更换节点地址)。
+
+如果使用的 Cloudflare 部署的节点，也可以使用自定义规则限制可访问的域名，详情见下面的安全设置。
+
+::: details 点我查看节点代码
+
+```js
+const UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36";
+
+const PRESETS = {
+    mp: {
+        Referer: "https://mp.weixin.qq.com",
+    },
+};
+
+
+function error(msg, status = 400) {
+    return new Response(msg, {
+        status: status,
+    });
+}
+
+
+/**
+ * 解析请求
+ */
+async function parseRequest(req) {
+    const origin = req.headers.get("origin") || '*';
+
+    // 代理目标的请求参数
+    let targetURL = '';
+    let targetMethod = "GET";
+    let targetBody = '';
+    let targetHeaders = {};
+    let preset = '';
+
+    const method = req.method.toLowerCase();
+    if (method === "get") {
+        // GET
+        // ?url=${encodeURIComponent(https://example.com?a=b)}&method=GET&headers=${encodeURIComponent(JSON.stringify(headers))}
+        const {searchParams} = new URL(req.url);
+        if (searchParams.has("url")) {
+            targetURL = decodeURIComponent(searchParams.get("url"));
+        }
+        if (searchParams.has("method")) {
+            targetMethod = searchParams.get("method");
+        }
+        if (searchParams.has("body")) {
+            targetBody = decodeURIComponent(searchParams.get("body"));
+        }
+        if (searchParams.has("headers")) {
+            try {
+                targetHeaders = JSON.parse(
+                    decodeURIComponent(searchParams.get("headers")),
+                );
+            } catch (_) {
+                throw new Error("headers not valid");
+            }
+        }
+        if (searchParams.has("preset")) {
+            preset = decodeURIComponent(searchParams.get("preset"));
+        }
+    } else if (method === "post") {
+        // POST
+        /**
+         * payload(json):
+         * {
+         *   url: 'https://example.com',
+         *   method: 'PUT',
+         *   body: 'a=1&b=2',
+         *   headers: {
+         *     Cookie: 'name=root'
+         *   },
+         *   preset: '',
+         * }
+         */
+        const payload = await req.json();
+        if (payload.url) {
+            targetURL = payload.url;
+        }
+        if (payload.method) {
+            targetMethod = payload.method;
+        }
+        if (payload.body) {
+            targetBody = payload.body;
+        }
+        if (payload.headers) {
+            targetHeaders = payload.headers;
+        }
+        if (payload.preset) {
+            preset = payload.preset;
+        }
+    } else {
+        throw new Error("Method not implemented");
+    }
+
+    if (!targetURL) {
+        throw new Error("URL not found");
+    }
+    if (!/^https?:\/\//.test(targetURL)) {
+        throw new Error("URL not valid");
+    }
+    if (targetMethod === "GET" && targetBody) {
+        throw new Error("GET method can't has body");
+    }
+    if (Object.prototype.toString.call(targetHeaders) !== "[object Object]") {
+        throw new Error("Headers not valid");
+    }
+    if (!targetHeaders["User-Agent"]) {
+        targetHeaders["User-Agent"] = UA;
+    }
+
+    // 增加预设
+    if (preset in PRESETS) {
+        Object.assign(targetHeaders, PRESETS[preset]);
+    }
+
+    return {
+        origin,
+        targetURL,
+        targetMethod,
+        targetBody,
+        targetHeaders,
+    };
+}
+
+/**
+ * 代理请求
+ */
+function wfetch(url, method, body, headers = {}) {
+    return fetch(url, {
+        method: method,
+        body: body || undefined,
+        headers: {
+            ...headers,
+        },
+    });
+}
+
+export default {
+    async fetch(request) {
+        try {
+            const {
+                origin,
+                targetURL,
+                targetMethod,
+                targetBody,
+                targetHeaders,
+            } = await parseRequest(request);
+
+            // 代理请求
+            const response = await wfetch(
+                targetURL,
+                targetMethod,
+                targetBody,
+                targetHeaders,
+            );
+
+            return new Response(response.body, {
+                headers: {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Max-Age": "86400",
+                    "Content-Type": response.headers.get("Content-Type"),
+                },
+            });
+        } catch (err) {
+            return error(err.message);
+        }
+    }
+}
+```
+
+:::
+
+目前该节点代码可部署在以下平台：
+
+* [Cloudflare Worker](https://workers.cloudflare.com/)
+* [Deno Deploy](https://deno.com/deploy)
+
+> 注意：
+> Deno Deploy 改版后要求 **绑定信用卡** 才可使用之前的免费额度，所以 **推荐使用 Cloudflare 平台搭建节点**。
+> ![](/assets/deno_img.DQXZP8jF.png)
+
+## 部署到 Cloudflare Workers
+
+打开控制台的左侧【计算和AI】下面的【Workers 和 Pages】菜单，点击【创建应用程序】，创建一个新的 worker，如下所示：
+
+![](/assets/cf_img_6.DNdZWnT3.png)
+
+选择【从 Hello World! 开始】
+
+![](/assets/cf_img_5.B5QV7TPS.png)
+![](/assets/cf_img_4.WiaC-Q66.png)
+
+部署之后，点击【编辑代码】，将节点的代码替换为我们自己的代码（节点代码从本文档上面拷贝）：
+
+![](/assets/cf_img_7.Co_qebSX.png)
+
+![](/assets/cf_img_8.oGZ7Lf0v.png)
+
+返回【URL not found】就表示节点部署成功了，我们的节点地址(url)就可以配置到网站中进行使用了。
+
+### 绑定自定义域名
+
+> worker 自动生成的域名(比如上面例子中的`https://gentle-firefly-af03.markortese3.workers.dev`)通常需要翻墙才能访问，通过配置自定义域名，可缓解 cloudflare 域名被墙的问题。
+>
+> 实测下来，虽然用自定义域名不需要翻墙即可访问，但速度会有一些下降。如果有条件的话，还是开启翻墙软件进行使用。
+
+#### 1. 购买域名
+
+若手里还没有自己的域名，则推荐从 [SpaceShip](https://www.spaceship.com/zh/domain-search/?tab=domains\&query=) 处购买，支持支付宝支付。
+可以选择`.site`或者`.online`等后缀的域名，首年价格较低。
+
+#### 2. 将域名添加到 Cloudflare
+
+在【账户主页】点击【加入域】，如下所示：
+
+![](/assets/img.CFUCGkBi.png)
+
+将域名填入，其他保留默认设置，点【继续】：
+
+![](/assets/img_1.DAX5ivYG.png)
+
+选择免费计划：
+
+![](/assets/img_2.CVI7PODy.png)
+
+最后，需要修改 SpaceShip 上面的设置，如下：
+
+![](/assets/img_3.NKWomf7c.png)
+
+打开 SpaceShip 上面你刚购买的那个域名的高级DNS设置页面，如下：
+
+![](/assets/img_4.uJ4FgUkR.png)
+
+这两处设置对应 Cloudflare 上面要求修改的两处。
+
+![](/assets/img_5.DZwjTTxu.png)
+
+这两处设置完之后，需要等待一段时间，等 Cloudflare 更新就可以了。
+
+之后如果想重新启用域名的 DNSSEC，可以在 Cloudflare 中点下面这里，如下所示：
+
+![](/assets/img_6.C6hU7WaC.png)
+
+会得到一些配置值，如下：
+
+![](/assets/img_7.DEegUrBL.png)
+
+回到 SpaceShip，在【高级DNS】中添加一条DS记录，如下所示：
+
+![](/assets/img_8.DNlKldp-.png)
+
+> 【关键标签】对应【密钥标记】
+
+![](/assets/img_9.Dt0YEfwE.png)
+
+设置完之后等待就可以了。
+
+到此，我们已成功的将我们的域名托管给 Cloudflare 进行管理了。
+
+#### 3. 给 worker 添加自定义域
+
+在 worker 的设置里，添加【自定义域】，如下：
+
+![](/assets/img_10.nLcpwWGC.png)
+
+这里可以输入任意的二级域名，比如`1235566.space`是我刚注册的域名，我可以在前面添加`00.`表示一条访问节点地址，如下所示：
+
+![](/assets/img_11.DWsJVjVh.png)
+
+添加完之后，我就可以通过`00.1235566.space`访问这个代理节点了，如下：
+
+![](/assets/img_12.a7HLpFeW.png)
+
+你可以在同一个 worker 上面添加多个这样的【自定义域】，这样就会得到多个节点地址。
+比如，公共代理节点的配置如下：
+
+![](/assets/img_13.DmqmTsBc.png)
+
+### 安全设置
+
+> 针对绑定了自定义域名的账户
+
+如果想限制你的私有节点只能被特定域名使用，可以在 Cloudflare 控制台添加过滤规则，如下所示：
+
+![](/assets/cf_img_1.D_3patIV.png)
+
+通过限制【引用方】，也就是 HTTP 请求中的`referer`必须为特定域名才可访问。
+
+![](/assets/cf_img_2.CYUABodO.png)
+上面这个示例配置表示，只有`https://www.example.com`网站可以使用该节点，其他网站使用时会自动被阻止，一般会返回下面这样的错误：
+
+![](/assets/cf_img_3.BLX_pVr2.png)
+
+## 部署到 Deno Deploy
+
+### 视频版
+
+### 文字版
+
+在 Deno Deploy 控制台点击`New Playground`，创建一个项目，如下：
+![img.png](/assets/img.CFUCGkBi.png)
+![img\_1.png](/assets/img_1.DAX5ivYG.png)
+
+将上面的节点代码拷贝到左侧代码编辑区，并点击`Save & Deploy`按钮：
+
+![img\_2.png](/assets/img_2.CVI7PODy.png)
+
+保存成功后，右侧会出现`URL not found`提示，表示代理搭建完成。
+
+复制右侧地址栏中的地址( https://deep-boa-76.deno.dev )，配置进页面中即可使用。
+
+---
+
+---
+url: /misc/architecture.md
+---
+# 整体架构
+
+> coming soon
+
+---
+
+---
+url: /others/下载流量分析.md
+---
+# 流量分析
+
+## 接口的流量
+
+服务器主要是通过`proxyMpRequest`函数代理微信接口，包括:
+
+* 登录流程
+* 获取登录公众号头像/昵称(从 html 中提取)
+* 获取公众号列表
+* 获取文章列表
+
+## 资源下载的流量
+
+这部分是代理流量的消耗大户，资源采用代理池并行下载，包括:
+
+* 下载文章 html 文本
+* 下载 html 中的资源文件(图片/样式)
+
+## 页面上图片的显示
+
+通过`service worker`技术规避掉图片的防盗链，这样就可以直接在客户端下载显示，不需要消耗代理流量。
+
+* 公众号头像显示
+* 文章封面图的显示
+
+---
+
+---
+url: /advanced/private-deploy.md
+---
+# 私有部署
+
+::: warning 注意
+公共代理节点仅限于以下域名使用:
+
+* https://down.mptext.top
+* http://localhost
+* http://127.0.0.1
+
+如果私有部署后访问的域名不在以上名单中，则需要使用自己搭建的节点。
+:::
+
+## 本地运行
+
+> 需要 node >=22 环境
+
+### 拉取代码
+
+```shell
+git clone git@github.com:wechat-article/wechat-article-exporter.git
+```
+
+### 安装依赖
+
+```shell
+yarn
+```
+
+### 启动
+
+```shell
+yarn dev
+```
+
+## docker 运行
+
+### 拉取镜像
+
+```shell
+docker pull ghcr.io/wechat-article/wechat-article-exporter:latest
+```
+
+### 启动容器
+
+> 容器暴露的端口号为3000，内部存储目录为/app/.data
+
+```shell
+docker run -d --rm \
+  --restart always \
+  --network host \
+  --name wechat-article-exporter \
+  -p 3000:3000 \
+  -v .data:/app/.data \
+  ghcr.io/wechat-article/wechat-article-exporter:latest
+```
+
+## 浏览器访问
+
+浏览器打开 `http://localhost:3000` 即可使用专业版功能。
+
+## docker compose + mkcert 自签名证书
+
+### 使用`mkcert`生成自签名证书
+
+> `mkcert`的安装及使用可以查看[官方文档](https://github.com/FiloSottile/mkcert?tab=readme-ov-file#mkcert)
+
+```shell
+# 在系统中安装根证书(只需执行一次)
+mkcert -install
+```
+
+执行以下代码生成本地 IP 对应的证书文件:
+
+```shell
+# 这里可以列出你最终访问的ip
+mkcert localhost 127.0.0.1 ::1
+```
+
+该命令会生成2个`pem`文件，分别对应证书和密钥文件，如下图所示:
+![](/assets/mkcert-snapshot.C12X1Hh9.png)
+
+将这两个文件重命名为`cert.pem`和`key.pem`，并放在`certs`目录中。
+
+### 拷贝`nginx.conf`和`docker-compose.yaml`文件
+
+```nginx configuration
+# nginx.conf 文件
+server {
+    listen 80;
+    server_name localhost;
+
+    # HTTP 自动重定向到 HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name localhost;
+
+    # SSL 证书路径（根据你实际文件名调整）
+    ssl_certificate /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    # 推荐的 SSL 配置（增强安全性）
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+        proxy_pass http://app:3000;  # 代理到应用容器
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+}
+```
+
+```yaml
+# docker-compose.yml 文件
+services:
+  app:
+    image: ghcr.io/wechat-article/wechat-article-exporter:latest
+    restart: always
+    volumes:
+      # 持久化 KV 数据（防止容器重启丢失）
+      - .data:/app/.data
+
+  nginx:
+    image: nginx:alpine
+    container_name: wechat-article-nginx
+    restart: always
+    ports:
+      - "80:80"    # HTTP（会自动重定向到 HTTPS）
+      - "443:443"  # HTTPS
+    volumes:
+      - ./certs:/etc/nginx/certs:ro          # 挂载证书（只读）
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro  # 挂载配置
+    depends_on:
+      - app
+```
+
+将以上所有文件放在一个目录中，比如`app`目录，最终的目录结构如下:
+
+```text
+app
+├── certs
+│   ├── cert.pem
+│   └── key.pem
+├── docker-compose.yml
+└── nginx.conf
+```
+
+在该目录中执行`docker compose up -d`启动，然后就可以通过`https://localhost`(或者你的本地ip)访问 https 网站程序了。
+
+## Vercel 快速部署
+
+### 一键部署
+
+点击下方按钮一键部署到 Vercel：
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/wechat-article/wechat-article-exporter)
+
+### 手动部署
+
+1. Fork 本项目到你的 GitHub 账号
+
+2. 在 Vercel 中导入项目
+   * 访问 [Vercel](https://vercel.com)
+   * 点击 "Add New..." → "Project"
+   * 选择你 Fork 的项目仓库
+
+3. 配置项目
+   * Framework Preset: 选择 `Nuxt.js`
+   * Root Directory: 保持默认 `./`
+   * Build Command: 保持默认或使用 `yarn build`
+   * Output Directory: 保持默认 `.output/public`
+
+4. 配置环境变量（可选）
+   * 在项目设置中添加所需的环境变量（见下方环境变量说明）
+
+5. 点击 "Deploy" 完成部署
+
+## 环境变量
+
+某些功能需要设置环境变量，比如访客统计、错误日志上报、AG-Grid授权码等。
+
+以下列出了所有支持的环境变量，本地运行时可直接在项目根目录创建`.env`文件，docker运行时可通过`--env-file .env`选项传入环境变量启动。
+
+### AG-Grid 企业版授权
+
+```dotenv
+# AG-Grid 企业版授权
+NUXT_AGGRID_LICENSE=
+```
+
+### 调试微信代理请求(仅开发环境支持)
+
+```dotenv
+# 调试微信代理请求 (仅开发环境(development)支持)
+NUXT_DEBUG_MP_REQUEST=true
+```
+
+### umami 网站统计
+
+```dotenv
+# umami 网站统计
+# https://umami.nuxt.dev/api/configuration
+NUXT_UMAMI_ID=
+NUXT_UMAMI_HOST=
+```
+
+### sentry
+
+```dotenv
+# sentry
+# https://docs.sentry.io/platforms/javascript/guides/nuxt/manual-setup/
+NUXT_SENTRY_DSN=
+NUXT_SENTRY_ORG=
+NUXT_SENTRY_PROJECT=
+NUXT_SENTRY_AUTH_TOKEN=
+```
+
+### kv绑定
+
+```dotenv
+# KV绑定(本地/docker)
+NITRO_KV_DRIVER=fs
+NITRO_KV_BASE=.data/kv
+
+# KV绑定(cloudflare)
+#NITRO_KV_DRIVER=cloudflare-kv-binding
+```
+
+---
+
+---
+url: /others/database.md
+---
+# 缓存数据库设计
+
+数据库名: `wechat-article-exporter`
+
+## version: 1
+
+### `article` store
+
+用于存储文章列表接口的数据，减少接口请求次数。
+
+对象数据结构如下:
+
+```ts
+import {AppMsgEx} from "../types";
+
+declare const article: AppMsgEx
+
+
+// key 采用【公众号id】与【文章id】组合的形式
+const key = `${fakeid}:${article.aid}`
+
+// value 除了文章相关字段外，增加了 fakeid 字段
+type StoreObjectValue = AppMsgEx & {
+    fakeid: string
+}
+```
+
+需要的索引:
+
+* fakeid
+* fakeid\_create\_time (复合索引)
+
+### `asset` store
+
+用于存储 css 文件，因为大部分文章的样式文件都相同，所以缓存该文件对于减少下载速度有重要意义。
+
+对象数据结构如下:
+
+```ts
+interface Asset {
+    /**
+     * css文件路径 (keyPath)
+     */
+    url: string
+
+    /**
+     * 文件对象
+     */
+    file: File
+}
+```
+
+### `info` store
+
+用于统计公众号已缓存信息。
+
+对象数据结构如下:
+
+```ts
+interface Info {
+    /**
+     * 公众号id (keyPath)
+     */
+    fakeid: string
+    
+    /**
+     * 文章是否已全部加载
+     * 
+     * 公众号文章的加载逻辑是从最新的文章开始往前加载，越早的文章越靠后
+     */
+    completed: boolean
+
+    /**
+     * 缓存的消息数
+     * 
+     * 一条消息可能会包含多篇文章
+     * 分页查询采用的是消息条数，而不是文章条数
+     */
+    count: number
+
+    /**
+     * 缓存的文章数
+     */
+    articles: number
+}
+```
+
+## version: 2
+
+### `api` store
+
+用于统计接口调用情况，帮助分析微信接口频率限制规则。
+
+该项目涉及到的可能会被微信限制调用频率的有如下接口:
+
+* `/api/searchbiz` 公众号列表 (调用频次相对较低，不容易出现限制)
+* `/api/appmsgpublish` 历史文章列表 (调用频次高，很容易出现限频)
+
+### 注意
+
+1. 文章下载不涉及到微信接口调用，因为文章链接是公开可访问的，不需要携带cookie
+2. 即使`/api/appmsgpublish`接口被限频，仍可以通过带关键字进行调用
+
+对象数据结构如下:
+
+```ts
+type ApiName = 'searchbiz' | 'appmsgpublish'
+
+
+interface APICall {
+    /**
+     * 接口名称
+     */
+    name: ApiName
+
+    /**
+     * 调用账号(nickname)
+     */
+    account: string
+
+    /**
+     * 调用时间
+     */
+    call_time: number
+
+    /**
+     * 调用结果是否正常
+     * 
+     * true: 正常
+     * false: 被封禁
+     */
+    is_normal: boolean
+
+    /**
+     * 请求参数
+     */
+    payload: Record<string, any>
+}
+```
+
+需要的索引:
+
+* account
+* account\_call\_time (复合索引)
+
+## version: 3
+
+### `proxy` store
+
+用于统计代理使用情况。
+
+对象数据结构如下:
+
+```ts
+interface Proxy {
+    // 代理地址 (keyPath)
+    address: string
+
+    // 是否正在被使用
+    busy: boolean
+
+    // 是否处于冷静期
+    cooldown: boolean
+
+    // 使用次数
+    usageCount: number
+
+    // 成功次数
+    successCount: number
+
+    // 失败次数
+    failureCount: number
+
+    // 下载流量
+    traffic: number
+}
+```
