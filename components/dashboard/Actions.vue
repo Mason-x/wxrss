@@ -1,11 +1,18 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import type { ChipColor } from '#ui/types';
 import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import { docsWebSite } from '~/config';
 import { gotoLink } from '~/utils';
 
+const props = withDefaults(
+  defineProps<{
+    mobile?: boolean;
+  }>(),
+  {
+    mobile: false,
+  }
+);
 
-// CredentialDialog 鐩稿叧鍙橀噺
 const credentialsDialogOpen = ref(false);
 const credentialState = ref<CredentialState>('inactive');
 const credentialPendingCount = ref(0);
@@ -31,24 +38,14 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
 </script>
 
 <template>
-  <ul class="hidden md:flex items-center gap-5">
-    <!-- 閫氱煡 -->
-    <!--    <li>-->
-    <!--      <UTooltip text="閫氱煡">-->
-    <!--        <UChip text="3" size="2xl" color="amber">-->
-    <!--          <UIcon name="i-lucide:bell" class="action-icon" />-->
-    <!--        </UChip>-->
-    <!--      </UTooltip>-->
-    <!--    </li>-->
-
-    <!-- Credential -->
+  <ul :class="props.mobile ? 'flex flex-wrap items-center gap-5' : 'hidden md:flex items-center gap-5'">
     <li>
       <CredentialsDialog
         v-model:open="credentialsDialogOpen"
         v-model:state="credentialState"
         @update:pending-count="credentialPendingCount = $event"
       />
-      <UTooltip text="鎶撳彇 Credentials">
+      <UTooltip text="抓取 Credentials">
         <div class="relative">
           <UIcon
             @click="credentialsDialogOpen = true"
@@ -61,7 +58,7 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
           />
           <span
             v-if="credentialBadgeText"
-            class="absolute -top-1 -right-1 text-[10px] leading-none rounded-full bg-rose-500 text-white px-1.5 py-0.5 min-w-[16px] text-center"
+            class="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[10px] leading-none text-white"
           >
             {{ credentialBadgeText }}
           </span>
@@ -69,17 +66,14 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
       </UTooltip>
     </li>
 
-    <!-- 鏂囨。 -->
     <li>
-      <UTooltip text="鏂囨。">
+      <UTooltip text="文档">
         <UIcon
           name="i-lucide:book-open"
           @click="gotoLink(docsWebSite)"
-          class="size-7 text-zinc-400 hover:text-blue-500 cursor-pointer transition-colors"
+          class="size-7 cursor-pointer text-zinc-400 transition-colors hover:text-blue-500"
         />
       </UTooltip>
     </li>
   </ul>
 </template>
-
-

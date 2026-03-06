@@ -15,9 +15,12 @@ import dayjs from 'dayjs';
 import { onMounted } from 'vue';
 import { formatElapsedTime, formatTimeStamp } from '#shared/utils/helpers';
 import { request } from '#shared/utils/request';
+import { websiteName } from '~/config';
 import GridArticleActions from '~/components/grid/ArticleActions.vue';
 import GridLoading from '~/components/grid/Loading.vue';
 import GridNoRows from '~/components/grid/NoRows.vue';
+import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
+import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import PreviewArticle from '~/components/preview/Article.vue';
 import toastFactory from '~/composables/toast';
 import { deleteHtmlCache, getHtmlCache } from '~/store/v2/html';
@@ -25,7 +28,6 @@ import type { AppMsgExWithFakeID } from '~/types/types';
 import { Downloader } from '~/utils/download/Downloader';
 import { Exporter } from '~/utils/download/Exporter';
 import type { ArticleMetadata, DownloaderStatus } from '~/utils/download/types';
-import { websiteName } from '~/config';
 
 useHead({
   title: `单篇文章下载 | ${websiteName}`,
@@ -156,14 +158,26 @@ const gridOptions: GridOptions = {
 };
 
 const gridApi = shallowRef<GridApi | null>(null);
-const hasSelectedRows = ref(false);
+const selectedRowIds = ref<string[]>([]);
+const hasSelectedRows = computed(() => selectedRowIds.value.length > 0);
+const selectedCount = computed(() => selectedRowIds.value.length);
+const rowCount = computed(() => rows.value.length);
 const previewArticleRef = ref<typeof PreviewArticle | null>(null);
+const mobileListRef = ref<HTMLElement | null>(null);
+const showScrollTop = ref(false);
 
 const downloadBtnLoading = ref(false);
 const exportBtnLoading = ref(false);
 const exportPhase = ref('');
 const downloadProgressCurrent = ref(0);
 const downloadProgressTotal = ref(0);
+
+const progressText = computed(() => {
+  if (downloadProgressTotal.value > 0) {
+    return `抓取进度 ${downloadProgressCurrent.value}/${downloadProgressTotal.value}`;
+  }
+  return `已添加 ${rowCount.value} 篇`;
+});
 
 function refreshGrid() {
   gridApi.value?.setGridOption('rowData', rows.value);
@@ -181,19 +195,38 @@ function onGridReady(event: GridReadyEvent) {
       headerFontWeight: 600,
     })
   );
+  if (selectedRowIds.value.length > 0) {
+    const idSet = new Set(selectedRowIds.value);
+    gridApi.value.forEachNode(node => {
+      node.setSelected(idSet.has(String(node.data?.id)));
+    });
+  }
 }
 
 function onSelectionChanged(event: SelectionChangedEvent) {
-  hasSelectedRows.value = event.api.getSelectedRows().length > 0;
+  selectedRowIds.value = event.api.getSelectedRows().map(row => String((row as SingleArticleRow).id));
 }
 
 watch(
   rows,
   () => {
     refreshGrid();
+    const rowIdSet = new Set(rows.value.map(row => row.id));
+    selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
   },
   { deep: true }
 );
+
+watch(selectedRowIds, ids => {
+  if (!gridApi.value) return;
+  const idSet = new Set(ids);
+  gridApi.value.forEachNode(node => {
+    const shouldSelect = idSet.has(String(node.data?.id));
+    if (node.isSelected() !== shouldSelect) {
+      node.setSelected(shouldSelect);
+    }
+  });
+});
 
 onMounted(() => {
   rows.value.forEach(row => {
@@ -208,7 +241,7 @@ function normalizeUrl(url: string) {
   const normalized = hasProtocol ? trimmed : `https://${trimmed}`;
   const parsed = new URL(normalized);
   if (parsed.hostname !== 'mp.weixin.qq.com') {
-    throw new Error('请输入有效的公众号文章链接!');
+    throw new Error('请输入有效的公众号文章链接');
   }
   return parsed.toString();
 }
@@ -318,8 +351,38 @@ function upsertArticleStub(row: SingleArticleRow) {
 }
 
 function getSelectedRows(): SingleArticleRow[] {
-  if (!gridApi.value) return [];
-  return gridApi.value.getSelectedRows() as SingleArticleRow[];
+  const selectedIdSet = new Set(selectedRowIds.value);
+  return rows.value.filter(row => selectedIdSet.has(row.id));
+}
+
+function isRowSelected(row: SingleArticleRow) {
+  return selectedRowIds.value.includes(row.id);
+}
+
+function toggleRowSelection(row: SingleArticleRow, checked: boolean) {
+  if (checked) {
+    if (!selectedRowIds.value.includes(row.id)) {
+      selectedRowIds.value = [...selectedRowIds.value, row.id];
+    }
+    return;
+  }
+  selectedRowIds.value = selectedRowIds.value.filter(id => id !== row.id);
+}
+
+function toggleRowSelectionByClick(row: SingleArticleRow) {
+  toggleRowSelection(row, !isRowSelected(row));
+}
+
+function toggleRowSelectionFromInput(row: SingleArticleRow) {
+  toggleRowSelection(row, !isRowSelected(row));
+}
+
+function onMobileListScroll() {
+  showScrollTop.value = (mobileListRef.value?.scrollTop || 0) > 320;
+}
+
+function scrollMobileListToTop() {
+  mobileListRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function downloadSelectedArticles() {
@@ -455,7 +518,7 @@ async function updateRowFromHtml(row: SingleArticleRow) {
         {
           ...buildVirtualArticle(row),
           digest: row.digest,
-          cover: cover,
+          cover,
           cover_img: cover,
           pic_cdn_url_1_1: cover,
           pic_cdn_url_3_4: cover,
@@ -534,11 +597,15 @@ async function removeRows() {
     rows.value = rows.value.filter(row => !selected.some(sel => sel.id === row.id));
     gridApi.value?.deselectAll();
     refreshGrid();
-    hasSelectedRows.value = false;
+    selectedRowIds.value = [];
     toast.success('移除成功', `已移除 ${selected.length} 篇文章`);
   } catch (error: any) {
     toast.error('移除失败', error?.message || '删除本地缓存时出错');
   }
+}
+
+function openOriginalArticle(row: SingleArticleRow) {
+  window.open(row.link, '_blank', 'noopener');
 }
 
 function refreshActionCells() {
@@ -555,47 +622,174 @@ function refreshActionCells() {
       <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">单篇文章下载</h1>
     </Teleport>
 
-    <div class="flex flex-col h-full divide-y divide-gray-200">
-      <header class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between px-3 py-3">
-        <div class="flex flex-1 gap-3">
-          <UInput v-model="inputUrl" placeholder="请输入公众号文章链接" class="flex-1" @keyup.enter="addArticle" />
-          <UButton color="blue" @click="addArticle">下载</UButton>
-        </div>
-        <div class="flex items-center gap-3">
-          <ButtonGroup
-            :items="[
-              { label: 'HTML', event: 'export-html' },
-              { label: 'Excel', event: 'export-excel' },
-              { label: 'JSON', event: 'export-json' },
-            ]"
-            @export-html="() => handleExport('html')"
-            @export-excel="() => handleExport('excel')"
-            @export-json="() => handleExport('json')"
-          >
-            <UButton
-              :loading="exportBtnLoading"
-              :disabled="!hasSelectedRows"
-              color="white"
-              class="font-mono"
-              :label="exportBtnLoading ? `${exportPhase} 导出中` : '导出'"
-              trailing-icon="i-heroicons-chevron-down-20-solid"
+    <div class="flex h-full flex-col divide-y divide-gray-200">
+      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex flex-1 flex-col gap-3 sm:flex-row">
+            <UInput
+              v-model="inputUrl"
+              placeholder="请输入公众号文章链接"
+              class="flex-1"
+              @keyup.enter="addArticle"
             />
-          </ButtonGroup>
+            <UButton size="sm" color="blue" class="justify-center" @click="addArticle">添加并抓取</UButton>
+          </div>
 
-          <UButton color="rose" variant="soft" :disabled="!hasSelectedRows" @click="removeRows">移除</UButton>
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              color="blue"
+              variant="soft"
+              :disabled="!hasSelectedRows"
+              :loading="downloadBtnLoading"
+              @click="downloadSelectedArticles"
+            >
+              抓取选中
+            </UButton>
+
+            <ButtonGroup
+              :items="[
+                { label: 'HTML', event: 'export-html' },
+                { label: 'Excel', event: 'export-excel' },
+                { label: 'JSON', event: 'export-json' },
+              ]"
+              @export-html="() => handleExport('html')"
+              @export-excel="() => handleExport('excel')"
+              @export-json="() => handleExport('json')"
+            >
+              <UButton
+                size="sm"
+                :loading="exportBtnLoading"
+                :disabled="!hasSelectedRows"
+                color="white"
+                class="font-mono"
+                :label="exportBtnLoading ? `${exportPhase} 导出中` : '导出'"
+                trailing-icon="i-heroicons-chevron-down-20-solid"
+              />
+            </ButtonGroup>
+
+            <UButton size="sm" color="rose" variant="soft" :disabled="!hasSelectedRows" @click="removeRows">移除</UButton>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span class="rounded-full bg-slate-100 px-3 py-1">{{ progressText }}</span>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600">已选择 {{ selectedCount }} 篇</span>
         </div>
       </header>
 
-      <ag-grid-vue
-        style="width: 100%; height: 100%"
-        class="ag-theme-quartz"
-        :columnDefs="columnDefs"
-        :gridOptions="gridOptions"
-        @grid-ready="onGridReady"
-        @selection-changed="onSelectionChanged"
-      />
+      <div class="min-h-0 flex-1">
+        <div v-if="rows.length === 0" class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+          <EmptyStatePanel
+            icon="i-mingcute-link-line"
+            title="还没有单篇文章"
+            description="粘贴公众号文章链接后，会自动抓取内容并加入本地列表。"
+          />
+        </div>
+
+        <div v-else class="h-full">
+          <div
+            ref="mobileListRef"
+            class="h-full overflow-y-auto px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:hidden"
+            @scroll.passive="onMobileListScroll"
+          >
+            <div class="space-y-3">
+              <article
+                v-for="row in rows"
+                :key="row.id"
+                class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+                :class="isRowSelected(row) ? 'border-blue-300 ring-2 ring-blue-100' : ''"
+                role="button"
+                tabindex="0"
+                @click="toggleRowSelectionByClick(row)"
+                @keydown.enter.prevent="toggleRowSelectionByClick(row)"
+                @keydown.space.prevent="toggleRowSelectionByClick(row)"
+              >
+                <div class="flex items-start gap-3">
+                  <input
+                    :checked="isRowSelected(row)"
+                    type="checkbox"
+                    class="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    @click.stop
+                    @change="toggleRowSelectionFromInput(row)"
+                  />
+
+                  <div class="min-w-0 flex-1 space-y-3">
+                    <div class="space-y-2">
+                      <div class="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span
+                          class="rounded-full px-2.5 py-1 font-medium"
+                          :class="
+                            row.downloading
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : row.contentDownload
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-slate-100 text-slate-500'
+                          "
+                        >
+                          {{ row.downloading ? '抓取中' : row.contentDownload ? '已抓取' : '未抓取' }}
+                        </span>
+                        <span v-if="row.accountName" class="rounded-full bg-sky-50 px-2.5 py-1 text-sky-600">
+                          {{ row.accountName }}
+                        </span>
+                      </div>
+
+                      <h2 class="line-clamp-2 text-sm font-semibold leading-6 text-slate-800">
+                        {{ row.title || '未命名文章' }}
+                      </h2>
+                    </div>
+
+                    <div class="space-y-1 text-xs leading-5 text-slate-500">
+                      <p>作者：{{ row.author_name || '--' }}</p>
+                      <p>发布时间：{{ row.update_time ? formatTimeStamp(row.update_time) : '--' }}</p>
+                      <p class="line-clamp-2 break-all font-mono text-[11px] text-slate-400">{{ row.link }}</p>
+                    </div>
+
+                    <p v-if="row.digest" class="line-clamp-3 text-xs leading-5 text-slate-600">
+                      {{ row.digest }}
+                    </p>
+
+                    <div class="flex flex-wrap gap-2">
+                      <UButton
+                        size="sm"
+                        color="blue"
+                        variant="soft"
+                        :loading="row.downloading"
+                        @click.stop="downloadRows([row])"
+                      >
+                        {{ row.contentDownload ? '重新抓取' : '抓取内容' }}
+                      </UButton>
+                      <UButton size="sm" color="white" @click.stop="openOriginalArticle(row)">查看原文</UButton>
+                      <UButton
+                        size="sm"
+                        color="white"
+                        :disabled="!row.contentDownload"
+                        @click.stop="previewRow(row)"
+                      >
+                        预览
+                      </UButton>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="hidden h-full md:block">
+            <ag-grid-vue
+              style="width: 100%; height: 100%"
+              class="ag-theme-quartz"
+              :columnDefs="columnDefs"
+              :gridOptions="gridOptions"
+              @grid-ready="onGridReady"
+              @selection-changed="onSelectionChanged"
+            />
+          </div>
+        </div>
+      </div>
     </div>
 
+    <ScrollTopFab :visible="showScrollTop" @click="scrollMobileListToTop" />
     <PreviewArticle ref="previewArticleRef" />
   </div>
 </template>

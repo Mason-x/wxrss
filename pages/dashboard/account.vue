@@ -17,6 +17,8 @@ import { getArticleList } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
+import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
+import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
 import LoginModal from '~/components/modal/Login.vue';
 import toastFactory from '~/composables/toast';
@@ -192,7 +194,7 @@ async function loadSelectedAccountArticle() {
   }
 }
 
-let globalRowData: MpAccount[] = [];
+const globalRowData = ref<MpAccount[]>([]);
 
 const columnDefs = ref<ColDef[]>([
   {
@@ -325,26 +327,10 @@ const columnDefs = ref<ColDef[]>([
     cellRenderer: GridAccountActions,
     cellRendererParams: {
       onSync: (params: ICellRendererParams) => {
-        if (!checkLogin()) return;
-
-        isCanceled.value = false;
-        loadAccountArticle(params.data)
-          .then(() => {
-            toast.success('同步完成', `公众号【${params.data.nickname}】的文章已同步完毕`);
-          })
-          .catch(e => {
-            toast.error('同步失败', e.message);
-          });
+        syncSingleAccount(params.data);
       },
-      onStop: (params: ICellRendererParams) => {
-        isCanceled.value = true;
-        if (syncTimer.value) {
-          window.clearTimeout(syncTimer.value);
-          syncTimer.value = null;
-        }
-
-        syncingRowId.value = null;
-        isSyncing.value = false;
+      onStop: () => {
+        stopSync();
       },
       isDeleting: isDeleting,
       isSyncing: isSyncing,
@@ -369,6 +355,12 @@ function onGridReady(params: GridReadyEvent) {
   gridApi.value = params.api;
 
   restoreColumnState();
+  if (selectedRowIds.value.length > 0) {
+    const idSet = new Set(selectedRowIds.value);
+    gridApi.value.forEachNode(node => {
+      node.setSelected(idSet.has(String(node.data?.fakeid)));
+    });
+  }
   refresh();
 }
 
@@ -406,8 +398,10 @@ function restoreColumnState() {
 
 async function refresh() {
   try {
-    globalRowData = await getAllInfo();
-    gridApi.value?.setGridOption('rowData', globalRowData);
+    globalRowData.value = await getAllInfo();
+    gridApi.value?.setGridOption('rowData', globalRowData.value);
+    const rowIdSet = new Set(globalRowData.value.map(row => row.fakeid));
+    selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
   } catch (error: any) {
     const statusCode = Number(error?.statusCode || error?.response?.status || 0);
     if (statusCode === 401) {
@@ -424,27 +418,108 @@ async function refresh() {
 }
 
 async function updateRow(fakeid: string) {
+  const info = await getInfoCache(fakeid);
   const rowNode = gridApi.value?.getRowNode(fakeid);
-  if (rowNode) {
-    const info = await getInfoCache(fakeid);
+  if (rowNode && info) {
     rowNode.updateData(info);
+  }
+  const index = globalRowData.value.findIndex(item => item.fakeid === fakeid);
+  if (index >= 0 && info) {
+    globalRowData.value = globalRowData.value.map(item => (item.fakeid === fakeid ? info : item));
   }
 }
 
-// 当前是否有选中的行
-const hasSelectedRows = ref(false);
+const selectedRowIds = ref<string[]>([]);
+const hasSelectedRows = computed(() => selectedRowIds.value.length > 0);
+const selectedCount = computed(() => selectedRowIds.value.length);
+const mobileListRef = ref<HTMLElement | null>(null);
+const showScrollTop = ref(false);
 function onSelectionChanged(evt: SelectionChangedEvent) {
-  hasSelectedRows.value = (evt.selectedNodes?.map(node => node.data) || []).length > 0;
+  selectedRowIds.value = evt.api.getSelectedRows().map(row => String((row as MpAccount).fakeid));
 }
 function getSelectedRows() {
-  const rows: MpAccount[] = [];
-  gridApi.value?.forEachNodeAfterFilterAndSort(node => {
-    if (node.isSelected()) {
-      rows.push(node.data);
+  const selectedIdSet = new Set(selectedRowIds.value);
+  return globalRowData.value.filter(row => selectedIdSet.has(row.fakeid));
+}
+
+function isRowSelected(account: MpAccount) {
+  return selectedRowIds.value.includes(account.fakeid);
+}
+
+function toggleRowSelection(account: MpAccount, checked: boolean) {
+  if (checked) {
+    if (!selectedRowIds.value.includes(account.fakeid)) {
+      selectedRowIds.value = [...selectedRowIds.value, account.fakeid];
+    }
+    return;
+  }
+  selectedRowIds.value = selectedRowIds.value.filter(id => id !== account.fakeid);
+}
+
+function toggleRowSelectionByClick(account: MpAccount) {
+  toggleRowSelection(account, !isRowSelected(account));
+}
+
+function toggleRowSelectionFromInput(account: MpAccount) {
+  toggleRowSelection(account, !isRowSelected(account));
+}
+
+function getLoadPercent(account: MpAccount) {
+  if (!account.total_count) return 0;
+  return Math.min(100, Math.max(0, Math.round((account.count / account.total_count) * 100)));
+}
+
+function onMobileListScroll() {
+  showScrollTop.value = (mobileListRef.value?.scrollTop || 0) > 320;
+}
+
+function scrollMobileListToTop() {
+  mobileListRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function syncSingleAccount(account: MpAccount) {
+  if (!checkLogin()) return;
+
+  isCanceled.value = false;
+  try {
+    await loadAccountArticle(account);
+    toast.success('同步完成', `公众号【${account.nickname}】的文章已同步完毕`);
+  } catch (e: any) {
+    toast.error('同步失败', e.message);
+  }
+}
+
+function stopSync() {
+  isCanceled.value = true;
+  if (syncTimer.value) {
+    window.clearTimeout(syncTimer.value);
+    syncTimer.value = null;
+  }
+
+  syncingRowId.value = null;
+  isSyncing.value = false;
+}
+
+async function updateCategoryFromCard(account: MpAccount, value: string) {
+  const category = String(value || '').trim();
+  if ((account.category || '') === category) {
+    return;
+  }
+  account.category = category;
+  await updateAccountCategory(account.fakeid, category);
+  await updateRow(account.fakeid);
+}
+
+watch(selectedRowIds, ids => {
+  if (!gridApi.value) return;
+  const idSet = new Set(ids);
+  gridApi.value.forEachNode(node => {
+    const shouldSelect = idSet.has(String(node.data?.fakeid));
+    if (node.isSelected() !== shouldSelect) {
+      node.setSelected(shouldSelect);
     }
   });
-  return rows;
-}
+});
 
 // 删除所选的公众号数据
 function deleteSelectedAccounts() {
@@ -533,65 +608,229 @@ const { getActualDateRange } = useSyncDeadline();
       <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">公众号管理</h1>
     </Teleport>
 
-    <div class="flex flex-col h-full divide-y divide-gray-200">
-      <!-- 顶部操作区 -->
-      <header class="flex items-stretch gap-3 px-3 py-3">
-        <UButton icon="i-lucide:user-plus" color="blue" :disabled="isDeleting || addBtnLoading" @click="addAccount">
-          {{ addBtnLoading ? '添加中...' : '添加' }}
-        </UButton>
-        <UButton icon="i-lucide:arrow-down-to-line" color="blue" :loading="importBtnLoading" @click="importAccount">
-          批量导入
-          <input ref="fileRef" type="file" accept=".json" class="hidden" @change="handleFileChange" />
-        </UButton>
-        <UButton
-          icon="i-lucide:arrow-up-from-line"
-          color="blue"
-          :loading="exportBtnLoading"
-          :disabled="!hasSelectedRows"
-          @click="exportAccount"
-        >
-          批量导出
-        </UButton>
-        <UButton
-          color="rose"
-          icon="i-lucide:user-minus"
-          class="disabled:opacity-35"
-          :loading="isDeleting"
-          :disabled="!hasSelectedRows"
-          @click="deleteSelectedAccounts"
-          >删除</UButton
-        >
-        <UButton
-          color="black"
-          icon="i-heroicons:arrow-path-rounded-square-20-solid"
-          class="disabled:opacity-35"
-          :loading="isSyncing"
-          :disabled="isDeleting || !hasSelectedRows"
-          @click="loadSelectedAccountArticle"
-          >同步</UButton
-        >
-        <div class="hidden xl:flex flex-1 justify-end">
-          <span class="self-end text-sm text-blue-500 font-medium">同步范围: {{ getActualDateRange() }}</span>
+    <div class="flex h-full flex-col divide-y divide-gray-200">
+      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              icon="i-lucide:user-plus"
+              color="blue"
+              :disabled="isDeleting || addBtnLoading"
+              @click="addAccount"
+            >
+              {{ addBtnLoading ? '添加中...' : '添加账号' }}
+            </UButton>
+            <UButton
+              size="sm"
+              icon="i-lucide:arrow-down-to-line"
+              color="gray"
+              variant="soft"
+              :loading="importBtnLoading"
+              @click="importAccount"
+            >
+              导入
+              <input ref="fileRef" type="file" accept=".json" class="hidden" @change="handleFileChange" />
+            </UButton>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              size="sm"
+              icon="i-lucide:arrow-up-from-line"
+              color="gray"
+              variant="soft"
+              :loading="exportBtnLoading"
+              :disabled="!hasSelectedRows"
+              @click="exportAccount"
+            >
+              导出
+            </UButton>
+            <UButton
+              size="sm"
+              color="rose"
+              variant="soft"
+              icon="i-lucide:user-minus"
+              class="disabled:opacity-35"
+              :loading="isDeleting"
+              :disabled="!hasSelectedRows"
+              @click="deleteSelectedAccounts"
+            >
+              删除
+            </UButton>
+            <UButton
+              size="sm"
+              color="black"
+              icon="i-heroicons:arrow-path-rounded-square-20-solid"
+              class="disabled:opacity-35"
+              :loading="isSyncing"
+              :disabled="isDeleting || !hasSelectedRows"
+              @click="loadSelectedAccountArticle"
+            >
+              同步选中
+            </UButton>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span class="rounded-full bg-slate-100 px-3 py-1">账号总数 {{ globalRowData.length }}</span>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600">已选择 {{ selectedCount }} 个</span>
+          <span class="rounded-full bg-amber-50 px-3 py-1 text-amber-700">同步范围 {{ getActualDateRange() }}</span>
         </div>
       </header>
 
-      <!-- 数据表格 -->
-      <ag-grid-vue
-        style="width: 100%; height: 100%"
-        :rowData="globalRowData"
-        :columnDefs="columnDefs"
-        :gridOptions="gridOptions"
-        @grid-ready="onGridReady"
-        @cell-value-changed="onCellValueChanged"
-        @selection-changed="onSelectionChanged"
-        @column-moved="onColumnStateChange"
-        @column-visible="onColumnStateChange"
-        @column-pinned="onColumnStateChange"
-        @column-resized="onColumnStateChange"
-      ></ag-grid-vue>
+      <div class="min-h-0 flex-1">
+        <div
+          v-if="globalRowData.length === 0"
+        >
+          <EmptyStatePanel
+            icon="i-lucide-users"
+            title="还没有公众号账号"
+            description="先添加或导入账号，之后就可以在这里批量同步和管理分类。"
+          />
+        </div>
+
+        <div v-else class="h-full">
+          <div
+            ref="mobileListRef"
+            class="h-full overflow-y-auto px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:hidden"
+            @scroll.passive="onMobileListScroll"
+          >
+            <div class="space-y-3">
+              <article
+                v-for="account in globalRowData"
+                :key="account.fakeid"
+                class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+                :class="isRowSelected(account) ? 'border-blue-300 ring-2 ring-blue-100' : ''"
+                role="button"
+                tabindex="0"
+                @click="toggleRowSelectionByClick(account)"
+                @keydown.enter.prevent="toggleRowSelectionByClick(account)"
+                @keydown.space.prevent="toggleRowSelectionByClick(account)"
+              >
+                <div class="flex items-start gap-3">
+                  <input
+                    :checked="isRowSelected(account)"
+                    type="checkbox"
+                    class="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    @click.stop
+                    @change="toggleRowSelectionFromInput(account)"
+                  />
+
+                  <div class="min-w-0 flex-1 space-y-3">
+                    <div class="flex items-start gap-3">
+                      <img
+                        v-if="account.round_head_img"
+                        :src="IMAGE_PROXY + account.round_head_img"
+                        alt=""
+                        class="h-11 w-11 rounded-full border border-slate-200 object-cover"
+                      />
+                      <div
+                        v-else
+                        class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400"
+                      >
+                        <UIcon name="i-lucide-user-round" />
+                      </div>
+
+                      <div class="min-w-0 flex-1 space-y-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <h2 class="truncate text-sm font-semibold text-slate-800">
+                            {{ account.nickname || account.fakeid }}
+                          </h2>
+                          <span
+                            class="rounded-full px-2.5 py-1 text-[11px] font-medium"
+                            :class="
+                              account.completed
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-amber-100 text-amber-700'
+                            "
+                          >
+                            {{ account.completed ? '已完成' : '未完成' }}
+                          </span>
+                          <span
+                            v-if="isSyncing && syncingRowId === account.fakeid"
+                            class="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700"
+                          >
+                            同步中
+                          </span>
+                        </div>
+
+                        <div class="space-y-1 text-xs text-slate-500">
+                          <p class="font-mono text-[11px] text-slate-400">{{ account.fakeid }}</p>
+                          <p>同步 {{ account.count || 0 }} / {{ account.total_count || 0 }}，文章 {{ account.articles || 0 }}</p>
+                          <p>最后同步：{{ account.update_time ? formatTimeStamp(account.update_time) : '--' }}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="space-y-2">
+                      <div class="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>同步进度</span>
+                        <span>{{ getLoadPercent(account) }}%</span>
+                      </div>
+                      <div class="h-2 rounded-full bg-slate-100">
+                        <div
+                          class="h-2 rounded-full bg-blue-500 transition-all"
+                          :style="{ width: `${getLoadPercent(account)}%` }"
+                        />
+                      </div>
+                    </div>
+
+                    <UInput
+                      :model-value="account.category || ''"
+                      size="sm"
+                      placeholder="分类"
+                      @click.stop
+                      @update:model-value="value => (account.category = String(value || ''))"
+                      @keyup.enter="updateCategoryFromCard(account, account.category || '')"
+                      @blur="updateCategoryFromCard(account, account.category || '')"
+                    />
+
+                    <div class="flex flex-wrap gap-2">
+                      <UButton
+                        v-if="isSyncing && syncingRowId === account.fakeid"
+                        size="sm"
+                        color="green"
+                        @click.stop="stopSync"
+                      >
+                        停止
+                      </UButton>
+                      <UButton
+                        v-else
+                        size="sm"
+                        color="blue"
+                        :disabled="isDeleting || isSyncing"
+                        @click.stop="syncSingleAccount(account)"
+                      >
+                        同步
+                      </UButton>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div class="hidden h-full md:block">
+            <ag-grid-vue
+              style="width: 100%; height: 100%"
+              :rowData="globalRowData"
+              :columnDefs="columnDefs"
+              :gridOptions="gridOptions"
+              @grid-ready="onGridReady"
+              @cell-value-changed="onCellValueChanged"
+              @selection-changed="onSelectionChanged"
+              @column-moved="onColumnStateChange"
+              @column-visible="onColumnStateChange"
+              @column-pinned="onColumnStateChange"
+              @column-resized="onColumnStateChange"
+            />
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- 添加公众号弹框 -->
+    <ScrollTopFab :visible="showScrollTop" @click="scrollMobileListToTop" />
     <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
   </div>
 </template>

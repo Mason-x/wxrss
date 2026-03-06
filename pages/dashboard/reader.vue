@@ -5,6 +5,9 @@ import { request } from '#shared/utils/request';
 import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
+import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
+import LoadingCards from '~/components/mobile/LoadingCards.vue';
+import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
 import LoginModal from '~/components/modal/Login.vue';
 import HtmlRenderer from '~/components/preview/HtmlRenderer.vue';
@@ -594,6 +597,47 @@ const selectionBtnTooltip = computed(() => {
   if (!selectionMode.value) return '开启选择';
   return allVisibleArticlesSelected.value ? '取消全选并退出选择' : '全选';
 });
+
+const mobileView = computed<'accounts' | 'articles' | 'article'>(() => {
+  if (selectedArticle.value) return 'article';
+  if (selectedAccount.value) return 'articles';
+  return 'accounts';
+});
+
+const mobileCanGoBack = computed(() => mobileView.value !== 'accounts');
+const mobileAccountsListRef = ref<HTMLElement | null>(null);
+const mobileArticlesListRef = ref<HTMLElement | null>(null);
+const mobileArticleContentRef = ref<HTMLElement | null>(null);
+const mobileScrollTopVisible = ref(false);
+
+const mobileHeaderTitle = computed(() => {
+  if (mobileView.value === 'article') {
+    return selectedArticleDisplayTitle.value || '文章阅读';
+  }
+  if (mobileView.value === 'articles') {
+    return selectedAccountInfo.value?.nickname || '文章列表';
+  }
+  return '聚合阅读';
+});
+
+const mobileHeaderMeta = computed(() => {
+  if (mobileView.value === 'article' && selectedArticle.value) {
+    return `${selectedArticle.value.author_name || selectedArticle.value.accountName} · ${formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time)}`;
+  }
+  if (mobileView.value === 'articles') {
+    return activeAccountSyncStatus.value || `${articleTotalCount.value} 篇文章`;
+  }
+  if (headerBatchSyncProgressText.value) {
+    return headerBatchSyncProgressText.value;
+  }
+  return `${accountsInCategory.value.length} 个公众号`;
+});
+
+watch(mobileView, () => {
+  mobileScrollTopVisible.value = false;
+});
+
+const mobileSyncLabel = computed(() => (selectedAccount.value ? '同步当前' : '同步全部'));
 
 const cookieRemainText = computed(() => {
   if (!loginAccount.value?.expires) {
@@ -1211,6 +1255,46 @@ function onClickAccount(account: MpAccount) {
   selectedAccount.value = account.fakeid;
 }
 
+function backFromMobileView() {
+  if (selectedArticle.value) {
+    selectedArticle.value = null;
+    return;
+  }
+  if (selectedAccount.value) {
+    selectedArticleKeys.value.clear();
+    selectionMode.value = false;
+    selectedAccount.value = null;
+    return;
+  }
+}
+
+function showMobileAccounts() {
+  selectedArticle.value = null;
+  selectedArticleKeys.value.clear();
+  selectionMode.value = false;
+  selectedAccount.value = null;
+}
+
+function onMobileReaderScroll() {
+  const currentContainer =
+    mobileView.value === 'accounts'
+      ? mobileAccountsListRef.value
+      : mobileView.value === 'articles'
+        ? mobileArticlesListRef.value
+        : mobileArticleContentRef.value;
+  mobileScrollTopVisible.value = (currentContainer?.scrollTop || 0) > 320;
+}
+
+function scrollMobileReaderToTop() {
+  const currentContainer =
+    mobileView.value === 'accounts'
+      ? mobileAccountsListRef.value
+      : mobileView.value === 'articles'
+        ? mobileArticlesListRef.value
+        : mobileArticleContentRef.value;
+  currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function isFocusedAccount(account: MpAccount) {
   return Boolean(account.focused);
 }
@@ -1782,7 +1866,354 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+  <div class="h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div class="flex h-full flex-col md:hidden">
+      <header class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/92 px-4 pb-3 pt-3 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0 flex items-start gap-3">
+            <UButton
+              v-if="mobileCanGoBack"
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:chevron-left"
+              class="icon-btn mt-0.5"
+              @click="backFromMobileView"
+            />
+            <div class="min-w-0">
+              <h1 class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
+              <p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{{ mobileHeaderMeta }}</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <UTooltip :text="syncHeaderTooltip">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                :disabled="!canSyncFromHeader"
+                :loading="isSyncing"
+                class="icon-btn"
+                @click="onHeaderSyncClick"
+              />
+            </UTooltip>
+            <UTooltip text="系统菜单">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:layout-grid"
+                class="icon-btn"
+                @click="openSystemMenu()"
+              />
+            </UTooltip>
+          </div>
+        </div>
+
+        <div v-if="mobileView === 'accounts'" class="mt-3 space-y-3">
+          <UInput v-model="accountKeyword" size="sm" icon="i-lucide:search" placeholder="搜索公众号名称" />
+
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <UTooltip text="添加公众号">
+                <UButton
+                  size="sm"
+                  color="blue"
+                  variant="soft"
+                  icon="i-lucide:user-plus"
+                  :loading="addBtnLoading"
+                  label="添加"
+                  @click="addAccount"
+                />
+              </UTooltip>
+              <UTooltip text="导出公众号">
+                <UButton
+                  size="sm"
+                  color="gray"
+                  variant="soft"
+                  icon="i-lucide:arrow-up-from-line"
+                  :loading="exportBtnLoading"
+                  label="导出"
+                  @click="exportAccount"
+                />
+              </UTooltip>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <UTooltip v-if="loginAccount" :text="`${loginAccount.nickname || '已登录账号'} · 剩余 ${cookieRemainText}`">
+                <UButton
+                  size="sm"
+                  color="gray"
+                  variant="soft"
+                  icon="i-lucide:log-out"
+                  :loading="logoutBtnLoading"
+                  @click="logoutMp"
+                />
+              </UTooltip>
+              <UTooltip v-else text="登录公众号">
+                <UButton size="sm" color="gray" variant="soft" icon="i-lucide:log-in" @click="openLogin" />
+              </UTooltip>
+            </div>
+          </div>
+
+          <div class="flex gap-1 overflow-x-auto pb-1">
+            <button
+              v-for="category in categories"
+              :key="category.id"
+              type="button"
+              class="shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors"
+              :class="
+                selectedCategory === category.id
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                  : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+              "
+              @click="onClickCategory(category.id)"
+            >
+              {{ category.label }} · {{ category.count }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="mobileView === 'articles'" class="mt-3 flex flex-wrap items-center gap-2">
+          <UTooltip :text="selectionBtnTooltip">
+            <UButton
+              size="sm"
+              color="gray"
+              variant="soft"
+              :icon="selectionBtnIcon"
+              :label="selectionMode ? (allVisibleArticlesSelected ? '清空' : '全选') : '选择'"
+              @click="onSelectionAction"
+            />
+          </UTooltip>
+          <UTooltip text="抓取文章数据">
+            <ButtonGroup
+              :items="[
+                { label: '文章内容', event: 'download-html' },
+                { label: '阅读量(需登录)', event: 'download-metadata' },
+                { label: '留言(需登录)', event: 'download-comment' },
+              ]"
+              @download-html="downloadArticles('html')"
+              @download-metadata="downloadArticles('metadata')"
+              @download-comment="downloadArticles('comment')"
+            >
+              <UButton
+                size="sm"
+                color="blue"
+                variant="soft"
+                icon="i-lucide:download"
+                label="抓取"
+                :loading="downloadBtnLoading"
+              />
+            </ButtonGroup>
+          </UTooltip>
+          <UTooltip text="导出文章">
+            <ButtonGroup
+              :items="[
+                { label: 'Excel', event: 'export-excel' },
+                { label: 'JSON', event: 'export-json' },
+                { label: 'HTML', event: 'export-html' },
+                { label: 'Txt', event: 'export-text' },
+                { label: 'Markdown', event: 'export-markdown' },
+                { label: 'Word', event: 'export-word' },
+              ]"
+              @export-excel="exportArticles('excel')"
+              @export-json="exportArticles('json')"
+              @export-html="exportArticles('html')"
+              @export-text="exportArticles('text')"
+              @export-markdown="exportArticles('markdown')"
+              @export-word="exportArticles('word')"
+            >
+              <UButton
+                size="sm"
+                color="gray"
+                variant="soft"
+                icon="i-lucide:file-output"
+                label="导出"
+                :loading="exportFileLoading"
+              />
+            </ButtonGroup>
+          </UTooltip>
+          <UTooltip text="编辑当前公众号分类">
+            <UButton
+              size="sm"
+              color="gray"
+              variant="soft"
+              icon="i-lucide:square-pen"
+              label="分类"
+              :disabled="!selectedAccountInfo"
+              @click="editSelectedAccountCategory"
+            />
+          </UTooltip>
+        </div>
+
+        <div v-else-if="mobileView === 'article'" class="mt-3 flex items-center gap-2">
+          <UButton size="xs" color="gray" variant="soft" @click="selectedArticle && openOriginalArticle(selectedArticle.link)">查看原文</UButton>
+        </div>
+      </header>
+
+      <div class="min-h-0 flex-1 overflow-hidden">
+        <div
+          v-if="mobileView === 'accounts'"
+          ref="mobileAccountsListRef"
+          class="h-full overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-3"
+          @scroll.passive="onMobileReaderScroll"
+        >
+          <ul class="space-y-3">
+            <li
+              v-for="account in accountsInCategory"
+              :key="account.fakeid"
+              class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div
+                class="flex w-full items-center justify-between gap-3 text-left"
+                role="button"
+                tabindex="0"
+                @click="onClickAccount(account)"
+                @keyup.enter="onClickAccount(account)"
+              >
+                <div class="flex min-w-0 items-center gap-3">
+                  <div class="size-10 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                    <img
+                      v-if="account.round_head_img"
+                      :src="IMAGE_PROXY + account.round_head_img"
+                      alt=""
+                      class="size-full object-cover"
+                    />
+                    <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-semibold">{{ account.nickname || account.fakeid }}</p>
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{{ normalizeCategory(account) }}</span>
+                      <span v-if="isFocusedAccount(account)">· 重点关注</span>
+                      <span>· {{ account.articles || 0 }} 篇</span>
+                      <span v-if="hasAccountNewArticles(account)" class="account-new-badge">新文章</span>
+                    </div>
+                  </div>
+                </div>
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                  class="icon-btn account-star-btn"
+                  :class="isFocusedAccount(account) ? 'is-active' : ''"
+                  @click.stop="markAccountAsFocused(account)"
+                />
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div v-else-if="mobileView === 'articles'" class="flex h-full flex-col">
+          <div v-if="loading" class="px-3 py-3">
+            <LoadingCards />
+          </div>
+          <div
+            v-else
+            ref="mobileArticlesListRef"
+            class="flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-3"
+            @scroll.passive="onMobileReaderScroll"
+          >
+            <ul class="space-y-3">
+              <li
+                v-for="article in displayedArticles"
+                :key="articleKey(article)"
+                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div class="flex items-start gap-3">
+                  <input
+                    v-if="selectionMode"
+                    type="checkbox"
+                    class="mt-1"
+                    :checked="isArticleSelected(article)"
+                    @click.stop
+                    @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <button type="button" class="min-w-0 flex-1 text-left" @click="openArticle(article)">
+                    <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
+                    <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span class="truncate">{{ article.accountName }}</span>
+                      <span class="inline-flex shrink-0 items-center gap-1.5">
+                        <span v-if="isArticleUnread(article)" class="unread-dot" />
+                        <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </li>
+            </ul>
+
+            <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
+              <UButton
+                size="sm"
+                color="gray"
+                variant="soft"
+                block
+                :loading="articlePageLoading"
+                :disabled="!articlePageHasMore"
+                @click="loadMoreArticles"
+              >
+                {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+              </UButton>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="flex h-full flex-col">
+          <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+            <h2 class="text-xl font-bold leading-tight">{{ selectedArticleDisplayTitle }}</h2>
+          </div>
+          <div v-if="contentLoading">
+            <EmptyStatePanel
+              icon="i-lucide-loader-circle"
+              title="内容加载中"
+              description="正在准备文章内容，请稍候。"
+            />
+          </div>
+          <div
+            v-else
+            ref="mobileArticleContentRef"
+            class="flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-4"
+            @scroll.passive="onMobileReaderScroll"
+          >
+            <HtmlRenderer :html="selectedArticleHtml" />
+          </div>
+        </div>
+      </div>
+
+      <nav class="border-t border-slate-200 bg-white/92 px-3 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
+        <div class="grid grid-cols-3 gap-2">
+          <UButton
+            color="gray"
+            :variant="mobileView === 'accounts' ? 'soft' : 'ghost'"
+            icon="i-lucide:book-open-text"
+            @click="showMobileAccounts"
+          >
+            公众号
+          </UButton>
+          <UButton
+            color="gray"
+            variant="ghost"
+            :icon="isSyncing ? 'i-lucide:loader-circle' : 'i-lucide:refresh-cw'"
+            :loading="isSyncing"
+            :disabled="!canSyncFromHeader"
+            @click="onHeaderSyncClick"
+          >
+            {{ mobileSyncLabel }}
+          </UButton>
+          <UButton color="gray" variant="ghost" icon="i-lucide:settings-2" @click="openSystemMenu()">
+            菜单
+          </UButton>
+        </div>
+      </nav>
+
+      <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
+    </div>
+
+    <div class="hidden h-full md:flex overflow-hidden">
     <aside class="w-[320px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
       <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
         <div class="flex items-center justify-between gap-2">
@@ -2084,7 +2515,9 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-500">加载中...</div>
+      <div v-if="loading" class="px-3 py-3">
+        <LoadingCards />
+      </div>
 
       <div v-else v-bind="articleContainerProps" class="flex-1 h-0 overflow-y-auto">
       <ul v-bind="articleWrapperProps" class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -2154,12 +2587,25 @@ onUnmounted(() => {
         </template>
       </div>
 
-      <div v-if="!selectedArticle" class="flex-1 flex items-center justify-center text-slate-500">请选择左侧文章</div>
-      <div v-else-if="contentLoading" class="flex-1 flex items-center justify-center text-slate-500">内容加载中...</div>
+      <div v-if="!selectedArticle">
+        <EmptyStatePanel
+          icon="i-lucide-file-text"
+          title="请选择一篇文章"
+          description="选择文章后，就可以在这里阅读正文内容。"
+        />
+      </div>
+      <div v-else-if="contentLoading">
+        <EmptyStatePanel
+          icon="i-lucide-loader-circle"
+          title="内容加载中"
+          description="正在准备文章内容，请稍候。"
+        />
+      </div>
       <div v-else class="flex-1 overflow-y-auto p-4">
         <HtmlRenderer :html="selectedArticleHtml" />
       </div>
     </main>
+    </div>
 
     <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
 
