@@ -2,10 +2,10 @@ services:
   wxrss:
     container_name: wxrss
     build:
-      context: .
+      context: https://github.com/Mason-x/wxrss.git#main
       dockerfile: Dockerfile
       args:
-        VERSION: local
+        VERSION: main
     restart: unless-stopped
     ports:
       - "${WXRSS_PORT:-13000}:3000"

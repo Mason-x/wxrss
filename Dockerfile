@@ -1,23 +1,18 @@
-# 编译层
 FROM node:22-alpine AS build-env
 
-# 安装 Yarn (pin a specific Yarn version)
 RUN corepack enable
 RUN corepack prepare yarn@1.22.22 --activate
 RUN apk add --no-cache python3 make g++
 
-
-# 设置工作目录
 WORKDIR /app
 
-# 复制 package.json 和 lock 文件，安装依赖
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --production=true && yarn cache clean
-
-# 复制源代码
+# Copy the full repo before install because yarn lifecycle scripts
+# reference files under scripts/ and Nuxt config during install.
 COPY . .
 
-# 构建 Nuxt 应用（生成 .output 目录）
+# Build needs devDependencies, so install the full dependency set here.
+RUN yarn install --frozen-lockfile && yarn cache clean
+
 ENV NODE_ENV=production \
     SQLITE_DB_PATH=.data/sqlite/app.db \
     NITRO_KV_DRIVER=fs \
@@ -26,36 +21,32 @@ ENV NODE_ENV=production \
 RUN yarn build
 
 
-# 运行时层
 FROM node:22-alpine
 
 ARG VERSION=unknown
 
-# 添加 LABEL 元数据
 LABEL maintainer="findsource@proton.me" \
       version="${VERSION}" \
-      description="wechat-article-exporter Docker Image" \
-      org.opencontainers.image.source="https://github.com/wechat-article/wechat-article-exporter" \
-      org.opencontainers.image.description="一个在线的微信公众号文章批量下载工具，支持下载阅读量与评论数据，支持私有化部署，通过浏览器进行使用，无需进行安装" \
+      description="wxrss Docker image" \
+      org.opencontainers.image.source="https://github.com/Mason-x/wxrss" \
+      org.opencontainers.image.description="wxrss production image" \
       org.opencontainers.image.licenses="MIT"
 
-# 设置工作目录
 WORKDIR /app
 
-# 复制构建输出
 COPY --from=build-env /app/.output ./
 
-# 创建 KV 存储目录并设置权限（以 root 运行，确保 node 用户可写）
 RUN mkdir -p .data/kv .data/sqlite && chown -R node:node /app
 
-# 创建非 root 用户（使用内置 node 用户）
 USER node
 
-# 暴露端口
 EXPOSE 3000
 
-# 设置环境变量：生产模式，监听所有接口
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 SQLITE_DB_PATH=.data/sqlite/app.db
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000 \
+    SQLITE_DB_PATH=.data/sqlite/app.db \
+    NITRO_KV_DRIVER=fs \
+    NITRO_KV_BASE=.data/kv
 
-# 启动命令：运行 Nitro 生成的服务器
 ENTRYPOINT ["node", "server/index.mjs"]
