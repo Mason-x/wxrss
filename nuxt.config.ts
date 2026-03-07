@@ -1,9 +1,16 @@
+import { createRequire } from 'node:module';
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 const defaultPort = Number(process.env.NUXT_PORT || process.env.PORT || 3000);
 const defaultHost = process.env.NUXT_HOST || process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 const nitroKvDriver = process.env.NITRO_KV_DRIVER || (isProduction ? 'fs' : 'memory');
 const nitroKvBase = process.env.NITRO_KV_BASE || (nitroKvDriver === 'fs' ? '.data/kv' : '');
+const runtimeRequire = createRequire(import.meta.url);
+const nitroTraceInclude = Array.from(new Set([
+  runtimeRequire.resolve('sqlite'),
+  runtimeRequire.resolve('sqlite3'),
+]));
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-10-30',
@@ -47,7 +54,7 @@ export default defineNuxtConfig({
   nitro: {
     minify: isProduction,
     externals: {
-      traceInclude: ['sqlite', 'sqlite3'],
+      traceInclude: nitroTraceInclude,
     },
     storage: {
       kv: {
