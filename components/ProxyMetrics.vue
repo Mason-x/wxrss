@@ -1,84 +1,90 @@
 <template>
-  <div class="flex flex-wrap gap-x-10 gap-y-5">
+  <div class="grid gap-4 lg:grid-cols-2">
     <div
       v-for="account in accountMetrics"
       :key="account.name"
-      class="relative w-full max-w-2xl border p-5 rounded-md hover:shadow"
+      class="relative rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-shadow hover:shadow-[0_18px_40px_rgba(15,23,42,0.1)] dark:border-slate-800 dark:bg-slate-900 md:p-5"
     >
-      <h3 class="text-xl text-gray-600 font-mono mb-3" :title="account.name">节点: {{ account.domain }}</h3>
-      <UMeter v-if="account.metric" :value="account.metric.dailyRequests" :max="100_000" color="orange">
-        <template #indicator>
-          <div class="flex justify-between items-center text-gray-400">
-            <span>今日请求量</span>
-            <p>
-              <span class="text-base text-green-500 font-semibold font-mono">
-                {{ Math.round((Math.min(account.metric.dailyRequests, 100_000) / 100_000) * 100) }}%
-              </span>
-              <span class="font-mono text-xs">
-                ({{ account.metric === null ? '未知' : account.metric.dailyRequests.toLocaleString('en-US') }}/{{
-                  (100_000).toLocaleString('en-US')
-                }})
-              </span>
-            </p>
-          </div>
-        </template>
-      </UMeter>
-      <span v-else>状态未知</span>
-      <div class="flex items-center gap-3 absolute right-5 top-5">
-        <div class="size-5">
-          <UIcon
-            v-if="account.copied"
-            name="i-lucide:check"
-            class="size-5 text-gray-500 hover:text-gray-400 cursor-pointer"
-          />
-          <UTooltip v-else text="复制节点地址">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="truncate text-lg font-semibold text-slate-700 dark:text-slate-100" :title="account.name">
+            节点：{{ account.domain }}
+          </h3>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">点击右上角可以复制节点地址或查看使用统计。</p>
+        </div>
+
+        <div class="flex shrink-0 items-center gap-3">
+          <div class="size-5">
             <UIcon
-              name="i-lucide:copy"
-              class="size-5 text-gray-500 hover:text-gray-400 cursor-pointer"
-              @click="copyAddress(account)"
+              v-if="account.copied"
+              name="i-lucide:check"
+              class="size-5 cursor-pointer text-emerald-500"
             />
-          </UTooltip>
+            <UTooltip v-else text="复制节点地址">
+              <UIcon
+                name="i-lucide:copy"
+                class="size-5 cursor-pointer text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                @click="copyAddress(account)"
+              />
+            </UTooltip>
+          </div>
         </div>
       </div>
+
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+        <UMeter v-if="account.metric" :value="account.metric.dailyRequests" :max="100_000" color="orange">
+          <template #indicator>
+            <div class="flex items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+              <span>今日请求量</span>
+              <p class="text-right">
+                <span class="text-base font-semibold text-emerald-500">
+                  {{ Math.round((Math.min(account.metric.dailyRequests, 100_000) / 100_000) * 100) }}%
+                </span>
+                <span class="ml-2 font-mono text-xs">
+                  ({{ account.metric.dailyRequests.toLocaleString('en-US') }}/{{ (100_000).toLocaleString('en-US') }})
+                </span>
+              </p>
+            </div>
+          </template>
+        </UMeter>
+        <p v-else class="text-sm text-slate-500 dark:text-slate-400">当前没有可用的统计数据。</p>
+      </div>
+
       <div class="mt-5">
-        <header class="flex justify-between items-center mb-2">
-          <h3 class="text-base text-gray-500">统计信息</h3>
+        <header class="mb-3 flex items-center justify-between gap-3">
+          <h3 class="text-sm font-medium text-slate-500 dark:text-slate-400">节点使用详情</h3>
           <div class="size-5">
             <UIcon
               v-if="account.fetchAnalyticsLoading"
               name="i-lucide:loader"
-              class="size-5 text-gray-400 animate-spin"
+              class="size-5 animate-spin text-slate-400"
             />
-            <UTooltip v-else text="节点使用信息">
+            <UTooltip v-else text="查看节点使用详情">
               <UIcon
                 name="i-lucide:activity"
-                class="size-5 text-gray-500 hover:text-gray-400 cursor-pointer"
+                class="size-5 cursor-pointer text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                 @click="nodeAnalytics(account)"
               />
             </UTooltip>
           </div>
         </header>
 
-        <div
-          v-for="item in account.topClientIPs"
-          :key="item.clientIP"
-          class="relative flex justify-between items-center text-gray-400 hover:bg-gray-100 my-2 px-2 py-1 rounded overflow-hidden"
-        >
-          <!-- 灰色背景条（全宽） -->
-          <div class="absolute inset-0 bg-gray-100 rounded"></div>
-
-          <!-- 蓝色进度条（根据 count / total 动态宽度） -->
+        <div v-if="account.topClientIPs.length" class="space-y-2">
           <div
-            :style="{ width: account.total ? (item.count / account.total) * 100 + '%' : '0%' }"
-            class="absolute inset-y-0 left-0 bg-blue-700 rounded-l"
-          ></div>
-
-          <!-- IP 和计数文字（在最上层） -->
-          <p class="relative z-10 font-mono text-sm">{{ item.clientIP }}</p>
-          <p class="relative z-10 font-mono text-sm">
-            {{ item.count > 1000 ? (item.count / 1000).toFixed(2) + 'k' : item.count }}
-          </p>
+            v-for="item in account.topClientIPs"
+            :key="item.clientIP"
+            class="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/60"
+          >
+            <div class="absolute inset-y-0 left-0 rounded-l-xl bg-blue-600/14" :style="{ width: account.total ? (item.count / account.total) * 100 + '%' : '0%' }" />
+            <div class="relative z-10 flex items-center justify-between gap-3">
+              <p class="truncate font-mono text-xs text-slate-600 dark:text-slate-300">{{ item.clientIP }}</p>
+              <p class="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400">
+                {{ item.count > 1000 ? (item.count / 1000).toFixed(2) + 'k' : item.count }}
+              </p>
+            </div>
+          </div>
         </div>
+        <p v-else class="text-sm text-slate-500 dark:text-slate-400">尚未加载节点使用详情。</p>
       </div>
     </div>
   </div>
@@ -131,7 +137,7 @@ watch(
 );
 
 function copyAddress(account: AccountMetricWithExtra) {
-  let result: string[] = [];
+  const result: string[] = [];
   for (let i = 0; i < 16; i++) {
     result.push(`https://${('0' + i).slice(-2)}${account.domain.replace(/^\*/, '')}`);
   }

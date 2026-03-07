@@ -9,11 +9,12 @@ const toast = toastFactory();
 
 const loading = ref(false);
 const authKey = ref('');
+
 async function getAuthKey() {
   loading.value = true;
   try {
     await sleep(1000);
-    const resp = await request<GetAuthKeyResult>(`/api/public/v1/authkey`);
+    const resp = await request<GetAuthKeyResult>('/api/public/v1/authkey');
     if (resp.code === 0) {
       authKey.value = resp.data;
     } else {
@@ -26,58 +27,50 @@ async function getAuthKey() {
 </script>
 
 <template>
-  <div>
-    <p>
-      为了方便第三方开发人员进行个性化定制，本网站将其主要功能（包括但不限于公众号查询、历史文章列表查询、文章下载等）提供
-      API 以供接入。
-    </p>
-    <p class="text-rose-500 font-medium mt-3">
-      注意：目前接入 API 免费，后续会根据实际情况动态调整，不排除会改为收费模式。
-    </p>
-    <p class="text-rose-500 font-medium mt-1">如果你的调用量比较大的话，推荐进行私有部署。</p>
+  <section class="rounded-[28px] border border-slate-200 bg-white px-5 py-5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900 md:px-6 md:py-6">
+    <div class="space-y-3 text-sm leading-7 text-slate-600 dark:text-slate-300">
+      <p>
+        为了方便第三方开发者做个性化集成，站点将主要能力开放为 API，包括公众号查询、历史文章列表、文章抓取等接口。
+      </p>
+      <p class="font-medium text-rose-500">
+        当前 API 仍可免费使用，但后续可能根据实际负载调整策略。调用量较大时，建议优先做私有部署。
+      </p>
+    </div>
 
-    <UAlert class="mt-10 mb-3">
+    <UAlert class="mt-6">
       <template #title>
-        <h3 class="font-medium text-xl flex items-center space-x-2">
+        <h3 class="flex items-center gap-2 text-lg font-semibold md:text-xl">
           <UIcon name="i-lucide:key-square" />
-          <span>密钥</span>
+          <span>认证密钥</span>
         </h3>
       </template>
 
       <template #description>
-        <ol class="list-decimal pl-5 text-base">
-          <!--          <li>-->
-          <!--            <p>-->
-          <!--              由于微信公众号本身的限制，密钥有效期最长为 4 天，且只能通过-->
-          <!--              <span class="text-rose-500 font-medium">微信扫码</span> 获取。-->
-          <!--            </p>-->
-          <!--          </li>-->
+        <ol class="list-decimal space-y-3 pl-5 text-sm leading-7 text-slate-600 dark:text-slate-300">
           <li>
-            <p>以下所有 <code>API</code> 如无特殊说明，均需要携带密钥进行调用。密钥可通过以下两种方式传输：</p>
-            <p>a. 通过自定义请求头 <code class="text-rose-500 font-medium font-mono">X-Auth-Key</code></p>
-            <p>b. 通过 name 为 <code class="text-rose-500 font-medium font-mono">auth-key</code> 的 Cookie</p>
+            所有未特别说明的 API 都需要携带 `auth-key`。你可以通过自定义请求头
+            <code class="font-mono font-medium text-rose-500">X-Auth-Key</code>
+            或名为
+            <code class="font-mono font-medium text-rose-500">auth-key</code>
+            的 Cookie 传递。
           </li>
           <li>
-            <p>
-              <span
-                >调用 API 的密钥与本网站的登录已集成在一起，也就是说，你在该网站扫码登录之后会自动刷新 API 密钥。</span
-              >
-            </p>
+            API 密钥和站点登录态共用同一套认证体系。扫码登录后，接口密钥会自动刷新。
           </li>
           <li>
-            <p>
-              <span>由于该密钥与网站用的同一套体系，网站的登录信息失效时，对应的 API 密钥也将失效。</span>
-            </p>
+            当站点登录失效时，对应的 API 密钥也会同时失效。
           </li>
         </ol>
-        <UButton class="mt-3" color="blue" :loading="loading" @click="getAuthKey">
-          查询 API 密钥 (确保当前登录信息有效)
+
+        <UButton class="mt-4" color="blue" :loading="loading" @click="getAuthKey">
+          查询 API 密钥
         </UButton>
-        <div v-if="authKey">
-          <p class="mt-5 mb-2">当前密钥:</p>
+
+        <div v-if="authKey" class="mt-5">
+          <p class="mb-2 text-sm font-medium">当前密钥</p>
           <CodeSegment :code="authKey" lang="text" class="max-w-xl" />
         </div>
       </template>
     </UAlert>
-  </div>
+  </section>
 </template>

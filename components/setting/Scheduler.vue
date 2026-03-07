@@ -1,19 +1,19 @@
 <template>
   <UCard class="mx-4 mt-6">
     <template #header>
-      <h3 class="text-2xl font-semibold">每日自动同步</h3>
-      <p class="text-sm text-slate-500">后端定时任务，服务在线即可执行</p>
+      <h3 class="text-xl font-semibold md:text-2xl">每日自动同步</h3>
+      <p class="text-sm text-slate-500">由服务端定时执行同步任务，页面无需保持打开。</p>
     </template>
 
-    <div class="flex flex-wrap items-end gap-4">
+    <div class="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
       <UCheckbox
         v-model="preferences.dailySyncEnabled"
         name="dailySyncEnabled"
         label="启用每日自动同步全部公众号"
       />
 
-      <div class="w-[180px]">
-        <p class="text-sm mb-1">执行时间</p>
+      <div class="w-full md:w-[180px]">
+        <p class="mb-1 text-sm">执行时间</p>
         <UInput
           v-model="preferences.dailySyncTime"
           type="time"

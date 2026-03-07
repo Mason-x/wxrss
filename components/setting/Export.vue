@@ -1,87 +1,86 @@
 <template>
-  <UCard class="mx-4 mt-10 flex-1">
+  <UCard class="mx-4 mt-6 lg:mt-0">
     <template #header>
-      <h3 class="text-2xl font-semibold">导出选项</h3>
-      <p class="text-sm text-slate-10 font-serif">配置文章的导出选项</p>
+      <h3 class="text-xl font-semibold md:text-2xl">导出选项</h3>
+      <p class="text-sm text-slate-500">配置文章导出时的目录规则和内容包含策略。</p>
     </template>
 
-    <div class="flex flex-col space-y-5">
+    <div class="space-y-5">
       <div>
-        <p class="mb-2">
-          <span class="mr-3">导出目录名:</span>
-          <span class="inline-block w-8">
-            <UPopover mode="hover" :popper="{ placement: 'right' }">
-              <UButton color="white" size="sm" trailing-icon="i-heroicons:variable-16-solid" />
+        <p class="mb-2 flex items-center gap-2">
+          <span class="text-sm font-medium">导出目录名</span>
+          <UPopover mode="hover" :popper="{ placement: 'bottom-start' }">
+            <UButton color="white" size="sm" trailing-icon="i-heroicons:variable-16-solid" />
 
-              <template #panel>
-                <div class="p-4">
-                  <p class="my-2 font-medium">支持的变量：</p>
-                  <table class="w-full border-collapse border">
-                    <tbody>
-                      <tr>
-                        <th class="w-20">变量</th>
-                        <th class="w-32">含义</th>
-                        <th class="w-20">变量</th>
-                        <th class="w-32">含义</th>
-                      </tr>
-                      <tr v-for="(item, idx) in variables" :key="idx">
-                        <td class="text-center">{{ item[0].name }}</td>
-                        <td class="text-center">{{ item[0].description }}</td>
-                        <td class="text-center">{{ item[1].name }}</td>
-                        <td class="text-center">{{ item[1].description }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </template>
-            </UPopover>
-          </span>
+            <template #panel>
+              <div class="w-[min(42rem,88vw)] overflow-x-auto p-4">
+                <p class="mb-3 font-medium">支持的变量</p>
+                <table class="min-w-full border-collapse border">
+                  <tbody>
+                    <tr>
+                      <th class="w-20">变量</th>
+                      <th class="w-32">含义</th>
+                      <th class="w-20">变量</th>
+                      <th class="w-32">含义</th>
+                    </tr>
+                    <tr v-for="(item, idx) in variables" :key="idx">
+                      <td class="text-center">{{ item[0].name }}</td>
+                      <td class="text-center">{{ item[0].description }}</td>
+                      <td class="text-center">{{ item[1].name }}</td>
+                      <td class="text-center">{{ item[1].description }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </UPopover>
         </p>
-        <p class="text-sm mb-2 text-gray-500">影响 <span class="font-mono">html/txt/markdown/word/pdf</span> 的导出</p>
+        <p class="mb-2 text-sm text-slate-500">影响 `html / txt / markdown / word / pdf` 的导出目录。</p>
         <UInput
-          placeholder="目录名格式"
-          class="w-[600px] font-mono"
-          name="dirname"
           v-model="preferences.exportConfig.dirname"
+          placeholder="例如：{{account}}/{{YYYY}}-{{MM}}/{{title}}"
+          class="w-full font-mono md:max-w-2xl"
+          name="dirname"
         />
       </div>
-      <div>
-        <p class="mb-2 flex items-center gap-3">
-          <span>目录名最大长度:</span>
-          <span class="text-xs text-gray-500">(0表示不限制)</span>
+
+      <div class="space-y-2">
+        <p class="text-sm font-medium">目录名最大长度</p>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
           <UInput
-            class=""
-            placeholder="目录名最大长度"
             v-model="preferences.exportConfig.maxlength"
             type="number"
             min="0"
+            placeholder="0 表示不限制"
+            class="w-full sm:w-40"
           />
-        </p>
+          <span class="text-xs text-slate-500">设置为 0 表示不限制长度。</span>
+        </div>
       </div>
-      <div>
+
+      <div class="space-y-3">
         <UCheckbox
           v-model="preferences.exportConfig.exportExcelIncludeContent"
           name="exportExcelIncludeContent"
-          label="导出 Excel 中包含文章内容"
+          label="导出 Excel 时包含文章正文"
         />
-      </div>
-      <div>
+
         <UCheckbox
           v-model="preferences.exportConfig.exportJsonIncludeContent"
           name="exportJsonIncludeContent"
-          label="导出 JSON 中包含文章内容"
+          label="导出 JSON 时包含文章正文"
         />
+
         <UCheckbox
           v-model="preferences.exportConfig.exportJsonIncludeComments"
           name="exportJsonIncludeComments"
-          label="导出 JSON 中包含留言数据"
+          label="导出 JSON 时包含留言数据"
         />
-      </div>
-      <div>
+
         <UCheckbox
           v-model="preferences.exportConfig.exportHtmlIncludeComments"
           name="exportHtmlIncludeComments"
-          label="导出 HTML 中包含留言数据"
+          label="导出 HTML 时包含留言数据"
         />
       </div>
     </div>
@@ -96,7 +95,7 @@ const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Prefere
 const _variables = [
   { name: 'account', description: '公众号名称' },
   { name: 'title', description: '文章标题' },
-  { name: 'aid', description: '文章id' },
+  { name: 'aid', description: '文章 id' },
   { name: 'author', description: '作者' },
   { name: 'YYYY', description: '年' },
   { name: 'MM', description: '月' },
@@ -104,6 +103,7 @@ const _variables = [
   { name: 'HH', description: '时' },
   { name: 'mm', description: '分' },
 ];
+
 const variables = Array.from({ length: Math.ceil(_variables.length / 2) }, (_, i) => [
   _variables[i * 2] ?? {},
   _variables[i * 2 + 1] ?? {},
@@ -114,6 +114,7 @@ const variables = Array.from({ length: Math.ceil(_variables.length / 2) }, (_, i
 table th {
   padding: 0.5rem 0.25rem;
 }
+
 table td {
   border: 1px solid #00002d17;
   padding: 0.25rem 0.5rem;

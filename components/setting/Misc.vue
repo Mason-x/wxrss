@@ -4,7 +4,7 @@
       <h3 class="text-2xl font-semibold">其他</h3>
     </template>
 
-    <div class="flex">
+    <div class="flex flex-col gap-6 lg:flex-row">
       <div class="flex-1 flex flex-col space-y-3">
         <div class="flex gap-1">
           <UCheckbox v-model="preferences.hideDeleted" name="hideDeleted" label="隐藏已删除文章" />
@@ -68,7 +68,7 @@
             type="number"
             v-model="preferences.accountSyncSeconds"
             placeholder="配置公众号同步频率"
-            class="w-52 font-mono"
+            class="w-full font-mono sm:w-52"
           >
             <template #trailing>
               <span class="text-gray-500 dark:text-gray-400 text-xs">秒</span>
@@ -98,7 +98,7 @@
             <UInput
               v-model="preferences.dailySyncTime"
               type="time"
-              class="w-52 font-mono"
+              class="w-full font-mono sm:w-52"
               :disabled="!preferences.dailySyncEnabled"
               @blur="normalizeDailySyncTime"
             />
@@ -107,15 +107,15 @@
       </div>
     </div>
 
-    <div class="border border-slate-200 p-3 rounded-md mt-5">
+    <div class="mt-5 rounded-md border border-slate-200 p-3 dark:border-slate-800">
       <p class="flex justify-between items-center mb-3">
         <span class="text-xl font-medium">同步时间范围：</span>
         <span class="text-sm text-blue-500 font-medium">实际同步范围：{{ getActualDateRange() }}</span>
       </p>
 
-      <div class="flex gap-3">
+      <div class="flex flex-col gap-3 sm:flex-row">
         <USelectMenu
-          class="w-1/2"
+          class="w-full sm:w-1/2"
           v-model="preferences.syncDateRange"
           :options="DURATION_OPTIONS"
           value-attribute="value"

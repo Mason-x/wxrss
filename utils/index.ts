@@ -910,13 +910,18 @@ export function isChromeBrowser() {
     return false;
   }
 
-  if (!userAgent.includes('chrome')) {
+  const isChromeLike = userAgent.includes('chrome') || userAgent.includes('crios');
+  if (!isChromeLike) {
     // 非 Chromium 内核
     return false;
   }
 
   if (typeof (navigator as any).brave === 'object') {
     // Brave 浏览器
+    return false;
+  }
+
+  if (userAgent.includes('edg/') || userAgent.includes('edgios') || userAgent.includes('opr/')) {
     return false;
   }
 

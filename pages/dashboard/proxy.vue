@@ -1,61 +1,83 @@
 <template>
-  <div class="h-full">
+  <div class="flex h-full flex-col overflow-hidden bg-slate-50 dark:bg-slate-950">
     <Teleport defer to="#title">
-      <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">公共代理</h1>
+      <h1 class="text-[28px] font-bold leading-[34px] text-slate-12 dark:text-slate-50">公共代理</h1>
     </Teleport>
 
-    <div class="flex flex-col h-full divide-y divide-gray-200">
-      <!-- header -->
-      <header class="px-4 py-5 sm:px-6">
-        <div class="flex justify-between items-center mb-3">
-          <h2 class="text-2xl font-semibold">统计信息</h2>
+    <header class="border-b border-slate-200 px-4 py-4 dark:border-slate-800 md:px-6 md:py-5">
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 class="text-xl font-semibold md:text-2xl">节点概览</h2>
+            <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              公共代理资源有限，请按需使用。大批量抓取建议优先自建私有代理节点。
+            </p>
+            <p class="mt-2 text-sm leading-6 text-rose-500">
+              如果个别 IP 滥用公共代理，可能导致微信侧封禁或限流，届时整组节点都会受影响。
+            </p>
+          </div>
 
-          <p class="font-serif font-bold">可用: {{ totalSuccess }}，不可用: {{ totalFailure }}</p>
+          <div class="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80 md:min-w-[260px]">
+            <div>
+              <p class="text-sm text-slate-500 dark:text-slate-400">可用节点</p>
+              <p class="mt-1 text-lg font-semibold text-emerald-600">{{ totalSuccess }}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-sm text-slate-500 dark:text-slate-400">不可用节点</p>
+              <p class="mt-1 text-lg font-semibold text-rose-500">{{ totalFailure }}</p>
+            </div>
+          </div>
         </div>
-        <div class="flex justify-between items-center">
-          <p class="text-rose-500 text-sm">
-            警告: 公共代理资源有限，请合理使用。 若需抓取大量数据，请搭建自己的私有代理节点。<br />
-            若发现某ip存在滥用公共代理从而导致官网无法使用，将有可能被封禁。<br />
-          </p>
-          <UPopover :popper="{ placement: 'left-start', arrow: true }">
+
+        <div class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/80 md:flex-row md:items-center md:justify-between">
+          <div class="min-w-0">
+            <p class="text-sm text-slate-500 dark:text-slate-400">当前出口 IP</p>
+            <code class="mt-1 block truncate text-sm font-semibold" :class="hasBlocked ? 'text-rose-500' : 'text-emerald-500'">
+              {{ currentIP || '--' }}
+            </code>
+          </div>
+
+          <UPopover :popper="{ placement: 'bottom-end', arrow: true }">
             <UButton
-              :icon="hasBlocked ? 'i-lucide:annoyed' : 'i-lucide:smile'"
-              variant="link"
+              :icon="hasBlocked ? 'i-lucide:shield-alert' : 'i-lucide:shield-check'"
               :color="hasBlocked ? 'rose' : 'green'"
-            />
+              variant="soft"
+            >
+              {{ hasBlocked ? '当前 IP 已封禁' : '封禁列表' }}
+            </UButton>
 
             <template #panel>
-              <div class="p-4 space-y-3 max-h-80 overflow-y-scroll">
+              <div class="max-h-80 w-[min(22rem,80vw)] space-y-3 overflow-y-auto p-4">
                 <div>
-                  <p>当前IP:</p>
-                  <code class="font-medium" :class="hasBlocked ? 'text-rose-500' : 'text-green-500'">
-                    {{ currentIP }}
+                  <p class="text-sm font-medium">当前出口 IP</p>
+                  <code class="mt-1 block text-sm" :class="hasBlocked ? 'text-rose-500' : 'text-emerald-500'">
+                    {{ currentIP || '--' }}
                   </code>
                 </div>
                 <div>
-                  <p class="flex justify-between items-center min-w-64">
-                    <span>已被封禁IP:</span>
-                    <span class="text-xs text-gray-500">若存在误伤，请联系开发者</span>
+                  <p class="flex items-center justify-between gap-3 text-sm font-medium">
+                    <span>已封禁 IP</span>
+                    <span class="text-xs text-slate-400">如存在误封，请联系维护者处理。</span>
                   </p>
-                  <ul>
+                  <ul v-if="blockedIPS.length" class="mt-2 space-y-1">
                     <li v-for="ip in blockedIPS" :key="ip">
-                      <code class="text-rose-500">{{ ip }}</code>
+                      <code class="text-sm text-rose-500">{{ ip }}</code>
                     </li>
                   </ul>
+                  <p v-else class="mt-2 text-sm text-slate-500 dark:text-slate-400">当前没有封禁记录。</p>
                 </div>
               </div>
             </template>
           </UPopover>
         </div>
-      </header>
-
-      <!-- 数据展示区 -->
-      <div class="flex-1 px-4 py-5 sm:py-6 overflow-y-scroll">
-        <div v-if="loading" class="flex justify-center items-center mt-5">
-          <Loader :size="28" class="animate-spin text-slate-500" />
-        </div>
-        <ProxyMetrics :data="metricsData" />
       </div>
+    </header>
+
+    <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6">
+      <div v-if="loading" class="flex items-center justify-center py-10">
+        <Loader :size="28" class="animate-spin text-slate-500" />
+      </div>
+      <ProxyMetrics v-else :data="metricsData" />
     </div>
   </div>
 </template>
@@ -86,8 +108,8 @@ async function getMetricsData() {
   try {
     metricsData.value = await fetch('/api/web/worker/overview-metrics')
       .then(res => res.json())
-      .catch(e => {
-        throw e;
+      .catch(error => {
+        throw error;
       });
   } catch (error) {
     console.error(error);
@@ -110,7 +132,6 @@ onMounted(async () => {
     }),
   ]);
 });
-const hasBlocked = computed(() => {
-  return blockedIPS.value.includes(currentIP.value);
-});
+
+const hasBlocked = computed(() => blockedIPS.value.includes(currentIP.value));
 </script>

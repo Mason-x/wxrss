@@ -27,28 +27,6 @@
             <NuxtPage />
           </div>
 
-          <nav
-            class="border-t border-slate-200 bg-white/92 px-3 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92"
-          >
-            <div class="grid grid-cols-4 gap-2">
-              <NuxtLink
-                v-for="item in mobilePrimaryNavItems"
-                :key="item.href"
-                :to="item.href"
-                class="mobile-nav-link"
-                :class="{ 'is-active': isMobileNavActive(item.href) }"
-              >
-                <UIcon :name="item.icon" class="size-4 shrink-0" />
-                <span>{{ item.name }}</span>
-              </NuxtLink>
-
-              <button type="button" class="mobile-nav-link" @click="mobileMenuOpen = true">
-                <UIcon name="i-lucide:ellipsis" class="size-4 shrink-0" />
-                <span>更多</span>
-              </button>
-            </div>
-          </nav>
-
           <Transition name="mobile-sheet-fade">
             <div
               v-if="mobileMenuOpen"
@@ -66,8 +44,8 @@
 
                   <div class="flex items-start justify-between px-5 pb-4 pt-4">
                     <div>
-                      <p class="text-base font-semibold text-slate-900 dark:text-slate-100">更多功能</p>
-                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">切换页面、打开全局工具和常用设置。</p>
+                      <p class="text-base font-semibold text-slate-900 dark:text-slate-100">系统菜单</p>
+                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">切换页面，打开全局工具和常用设置。</p>
                     </div>
                     <UButton
                       size="2xs"
@@ -89,7 +67,7 @@
 
                         <div class="grid grid-cols-2 gap-2.5">
                           <NuxtLink
-                            v-for="item in mobileAllNavItems"
+                            v-for="item in mobileNavItems"
                             :key="item.href"
                             :to="item.href"
                             class="mobile-menu-link"
@@ -157,14 +135,10 @@ const embeddedMode = computed(() => {
 });
 const standaloneMode = computed(() => readerMode.value || embeddedMode.value);
 
-const mobilePrimaryNavItems: MobileNavItem[] = [
+const mobileNavItems: MobileNavItem[] = [
   { name: '阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
   { name: '账号', icon: 'i-lucide:users', href: '/dashboard/account' },
   { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
-];
-
-const mobileAllNavItems: MobileNavItem[] = [
-  ...mobilePrimaryNavItems,
   { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
   { name: '代理', icon: 'i-lucide:network', href: '/dashboard/proxy' },
   { name: 'API', icon: 'i-lucide:file-code-2', href: '/dashboard/api' },
@@ -172,7 +146,7 @@ const mobileAllNavItems: MobileNavItem[] = [
 ];
 
 const mobileCurrentTitle = computed(() => {
-  const item = mobileAllNavItems.find(item => route.path === item.href);
+  const item = mobileNavItems.find(item => route.path === item.href);
   if (item) {
     return item.name;
   }
@@ -197,15 +171,6 @@ function isMobileNavActive(href: string) {
   @apply !inline-flex size-8 !gap-0 !p-0 items-center justify-center rounded-full border border-slate-200
     bg-white/80 text-slate-600 transition-colors hover:bg-white hover:text-slate-900
     dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white;
-}
-
-.mobile-nav-link {
-  @apply inline-flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl border border-transparent px-2 py-2.5 text-[11px]
-    text-slate-500 transition-all duration-200 dark:text-slate-400;
-}
-
-.mobile-nav-link.is-active {
-  @apply border-slate-200 bg-slate-100 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100;
 }
 
 .mobile-sheet-panel {
