@@ -242,7 +242,9 @@ export function syncReaderBatchAccountInSubprocess(
         return;
       }
 
-      const message = String(lastErrorMessage || stderrText.trim() || `account subprocess exited unexpectedly(code=${code ?? -1})`);
+      const message = String(
+        lastErrorMessage || stderrText.trim() || `account subprocess exited unexpectedly(code=${code ?? -1})`
+      );
       finish(new Error(message));
     });
 

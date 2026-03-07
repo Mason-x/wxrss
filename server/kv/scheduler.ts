@@ -1,6 +1,7 @@
-import { getSqliteDb } from '~/server/db/sqlite';
 import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
+import { getSqliteDb } from '~/server/db/sqlite';
 import { logMemory } from '~/server/utils/memory-debug';
+
 type SyncDateRange = '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
 
 export interface SchedulerConfig {
@@ -423,7 +424,10 @@ export async function setSchedulerArticles(
   return value;
 }
 
-export async function getSchedulerArticlesMap(authKey: string, fakeids: string[]): Promise<Record<string, SchedulerArticleCache>> {
+export async function getSchedulerArticlesMap(
+  authKey: string,
+  fakeids: string[]
+): Promise<Record<string, SchedulerArticleCache>> {
   const pairs = await Promise.all(
     fakeids.map(async fakeid => {
       const data = await getSchedulerArticles(authKey, fakeid);

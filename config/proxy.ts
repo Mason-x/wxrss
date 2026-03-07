@@ -44,9 +44,7 @@ export function isLegacyPublicProxyHost(hostname: string): boolean {
     return false;
   }
 
-  return LEGACY_PUBLIC_PROXY_HOSTS.some(
-    host => normalizedHost === host || normalizedHost.endsWith(`.${host}`)
-  );
+  return LEGACY_PUBLIC_PROXY_HOSTS.some(host => normalizedHost === host || normalizedHost.endsWith(`.${host}`));
 }
 
 export function isLegacyPublicProxyUrl(value: string): boolean {

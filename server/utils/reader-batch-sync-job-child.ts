@@ -1,6 +1,6 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 
 type ChildStartMessage = {
   type: 'start';
@@ -195,11 +195,17 @@ function ensureNotCanceled(): void {
 
 function syncReaderBatchAccountInSubprocess(
   input: ReaderBatchAccountSubprocessInput,
-  onProgress?: (progress: Extract<ChildOutboundMessage, { type: 'account-start' | 'account-page' | 'account-done' }>) => void
+  onProgress?: (
+    progress: Extract<ChildOutboundMessage, { type: 'account-start' | 'account-page' | 'account-done' }>
+  ) => void
 ): ReaderBatchAccountSubprocessController {
   const child = spawn(
     process.execPath,
-    [`--max-old-space-size=${input.accountChildMaxOldSpaceMb || 256}`, '--experimental-strip-types', getAccountChildScriptPath()],
+    [
+      `--max-old-space-size=${input.accountChildMaxOldSpaceMb || 256}`,
+      '--experimental-strip-types',
+      getAccountChildScriptPath(),
+    ],
     {
       cwd: process.cwd(),
       env: {
@@ -313,7 +319,9 @@ function syncReaderBatchAccountInSubprocess(
         return;
       }
 
-      const message = String(lastErrorMessage || stderrText.trim() || `account subprocess exited unexpectedly(code=${code ?? -1})`);
+      const message = String(
+        lastErrorMessage || stderrText.trim() || `account subprocess exited unexpectedly(code=${code ?? -1})`
+      );
       finish(new Error(message));
     });
 
@@ -322,13 +330,16 @@ function syncReaderBatchAccountInSubprocess(
       payload: input,
     });
 
-    killTimer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      child.kill();
-      finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${input.timeoutMs})`));
-    }, Math.max(1000, Number(input.timeoutMs || 30000)) + 5000);
+    killTimer = setTimeout(
+      () => {
+        if (settled) {
+          return;
+        }
+        child.kill();
+        finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${input.timeoutMs})`));
+      },
+      Math.max(1000, Number(input.timeoutMs || 30000)) + 5000
+    );
   });
 
   const cancel = () => {
@@ -456,21 +467,30 @@ try {
   });
 
   await runBatch(payload);
-  await sendFinalMessageAndExit({
-    type: 'success',
-    message: `synced ${payload.accounts.length} accounts`,
-  }, 0);
+  await sendFinalMessageAndExit(
+    {
+      type: 'success',
+      message: `synced ${payload.accounts.length} accounts`,
+    },
+    0
+  );
 } catch (error) {
   if (error instanceof BatchSyncCancelledError) {
-    await sendFinalMessageAndExit({
-      type: 'canceled',
-      message: 'batch sync canceled',
-    }, 0);
+    await sendFinalMessageAndExit(
+      {
+        type: 'canceled',
+        message: 'batch sync canceled',
+      },
+      0
+    );
   }
 
   const message = String((error as Error)?.message || error || 'batch sync failed');
-  await sendFinalMessageAndExit({
-    type: 'error',
-    message,
-  }, 1);
+  await sendFinalMessageAndExit(
+    {
+      type: 'error',
+      message,
+    },
+    1
+  );
 }

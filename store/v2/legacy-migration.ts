@@ -1,9 +1,9 @@
 import { request } from '#shared/utils/request';
-import { updateAssetCache, type Asset } from './assets';
 import { upsertArticlesFromRemote } from './article';
-import { updateCommentReplyCache, type CommentReplyAsset } from './comment_reply';
+import { type Asset, updateAssetCache } from './assets';
+import { type CommentReplyAsset, updateCommentReplyCache } from './comment_reply';
 import { db } from './db';
-import { updateDebugCache, type DebugAsset } from './debug';
+import { type DebugAsset, updateDebugCache } from './debug';
 import { importMpAccounts, type MpAccount } from './info';
 
 const ARTICLE_CHUNK_SIZE = 80;

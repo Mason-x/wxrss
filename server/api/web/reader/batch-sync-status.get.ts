@@ -1,5 +1,5 @@
-import { getReaderBatchSyncJobStatus } from '~/server/utils/reader-batch-sync';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
+import { getReaderBatchSyncJobStatus } from '~/server/utils/reader-batch-sync';
 
 export default defineEventHandler(async event => {
   const authKey = getAuthKeyFromRequest(event);

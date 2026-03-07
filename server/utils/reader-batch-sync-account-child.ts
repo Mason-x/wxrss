@@ -1,16 +1,13 @@
-import path from 'node:path';
-import { createRequire } from 'node:module';
 import { request as httpsRequest } from 'node:https';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 
 type Sqlite3Module = {
   Database: new (...args: any[]) => any;
 };
 
 type SqliteModule = {
-  open: (options: {
-    filename: string;
-    driver: new (...args: any[]) => any;
-  }) => Promise<any>;
+  open: (options: { filename: string; driver: new (...args: any[]) => any }) => Promise<any>;
 };
 
 function createRuntimeRequire() {
@@ -18,13 +15,15 @@ function createRuntimeRequire() {
   const currentDir = currentScriptPath
     ? path.dirname(path.resolve(currentScriptPath))
     : path.resolve(process.cwd(), 'server', 'runtime-child-scripts');
-  const candidateFiles = Array.from(new Set([
-    path.resolve(process.cwd(), 'server', 'package.json'),
-    path.resolve(process.cwd(), '.output', 'server', 'package.json'),
-    path.resolve(process.cwd(), 'package.json'),
-    path.resolve(currentDir, '..', 'package.json'),
-    path.resolve(currentDir, '..', '..', 'package.json'),
-  ]));
+  const candidateFiles = Array.from(
+    new Set([
+      path.resolve(process.cwd(), 'server', 'package.json'),
+      path.resolve(process.cwd(), '.output', 'server', 'package.json'),
+      path.resolve(process.cwd(), 'package.json'),
+      path.resolve(currentDir, '..', 'package.json'),
+      path.resolve(currentDir, '..', '..', 'package.json'),
+    ])
+  );
 
   for (const candidateFile of candidateFiles) {
     try {
@@ -212,10 +211,7 @@ function normalizeSingleDelaySeconds(value: unknown, fallback: number): number {
 
 function pickRandomDelayMs(input?: { accountSyncMinSeconds?: number; accountSyncMaxSeconds?: number }): number {
   let min = normalizeSingleDelaySeconds(input?.accountSyncMinSeconds, DEFAULT_SYNC_DELAY_MIN_SECONDS);
-  let max = normalizeSingleDelaySeconds(
-    input?.accountSyncMaxSeconds,
-    Math.max(min, DEFAULT_SYNC_DELAY_MAX_SECONDS)
-  );
+  let max = normalizeSingleDelaySeconds(input?.accountSyncMaxSeconds, Math.max(min, DEFAULT_SYNC_DELAY_MAX_SECONDS));
 
   if (min > max) {
     [min, max] = [max, min];
@@ -562,7 +558,9 @@ async function upsertArticles(
     );
     return {
       inserted: 0,
-      totalCount: Number.isFinite(payload.totalCount) ? Number(payload.totalCount) : Number(payload.account.total_count) || 0,
+      totalCount: Number.isFinite(payload.totalCount)
+        ? Number(payload.totalCount)
+        : Number(payload.account.total_count) || 0,
     };
   }
 
@@ -752,7 +750,9 @@ async function fetchAppmsgPublishDirect(
         const contentLength = Number(response.headers['content-length'] || 0);
         if (Number.isFinite(contentLength) && contentLength > maxJsonBytes) {
           response.resume();
-          reject(new Error(`mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`));
+          reject(
+            new Error(`mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`)
+          );
           return;
         }
 
@@ -983,9 +983,8 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
       }
     }
 
-    const tailCreateTime = cacheBoundaryCreateTime > 0
-      ? cacheBoundaryCreateTime
-      : Number(lastArticle?.create_time) || 0;
+    const tailCreateTime =
+      cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(lastArticle?.create_time) || 0;
     if (tailCreateTime > 0 && tailCreateTime < payload.syncTimestamp) {
       shouldLoadMore = false;
     }
@@ -1075,28 +1074,37 @@ try {
   const db = await openDb();
   try {
     const result = await syncOneAccount(db, payload);
-    await sendFinalMessageAndExit({
-      type: 'success',
-      ...result,
-    }, 0);
+    await sendFinalMessageAndExit(
+      {
+        type: 'success',
+        ...result,
+      },
+      0
+    );
   } finally {
     await db.close();
   }
 } catch (error) {
   const message = String((error as Error)?.message || error || 'sync failed');
   if (message === CANCEL_ERROR_MESSAGE) {
-    await sendFinalMessageAndExit({
-      type: 'canceled',
+    await sendFinalMessageAndExit(
+      {
+        type: 'canceled',
+        fakeid: '',
+        nickname: '',
+        message,
+      },
+      0
+    );
+  }
+
+  await sendFinalMessageAndExit(
+    {
+      type: 'error',
       fakeid: '',
       nickname: '',
       message,
-    }, 0);
-  }
-
-  await sendFinalMessageAndExit({
-    type: 'error',
-    fakeid: '',
-    nickname: '',
-    message,
-  }, 1);
+    },
+    1
+  );
 }

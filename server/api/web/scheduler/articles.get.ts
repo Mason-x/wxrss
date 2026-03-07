@@ -41,7 +41,10 @@ export default defineEventHandler(async event => {
   const map = await getSchedulerArticlesMap(authKey, fakeids);
   if (debugMemory) {
     const accountCount = Object.keys(map).length;
-    const articleCount = Object.values(map).reduce((sum, item) => sum + (Array.isArray(item.articles) ? item.articles.length : 0), 0);
+    const articleCount = Object.values(map).reduce(
+      (sum, item) => sum + (Array.isArray(item.articles) ? item.articles.length : 0),
+      0
+    );
     logMemory('scheduler-articles:done', {
       traceId,
       requestedAccountCount: fakeids.length,

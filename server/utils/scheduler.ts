@@ -2,11 +2,11 @@ import dayjs from 'dayjs';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { USER_AGENT } from '~/config';
 import {
+  getSchedulerArticles,
+  listSchedulerStates,
   type SchedulerAccount,
   type SchedulerConfig,
   type SchedulerState,
-  getSchedulerArticles,
-  listSchedulerStates,
   setSchedulerArticles,
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
@@ -139,7 +139,13 @@ function dedupeArticles(newArticles: any[], oldArticles: any[]): any[] {
     .slice(0, MAX_ARTICLES_PER_ACCOUNT);
 }
 
-async function fetchAppMsgPublish(authKey: string, token: string, fakeid: string, begin: number, size: number): Promise<AppMsgPublishResponse> {
+async function fetchAppMsgPublish(
+  authKey: string,
+  token: string,
+  fakeid: string,
+  begin: number,
+  size: number
+): Promise<AppMsgPublishResponse> {
   const cookie = await cookieStore.getCookie(authKey);
   if (!cookie) {
     throw new Error('cookie not found');
@@ -204,7 +210,12 @@ function parseArticles(resp: AppMsgPublishResponse): { articles: any[]; complete
   };
 }
 
-async function syncOneAccount(authKey: string, token: string, account: SchedulerAccount, config: SchedulerConfig): Promise<number> {
+async function syncOneAccount(
+  authKey: string,
+  token: string,
+  account: SchedulerAccount,
+  config: SchedulerConfig
+): Promise<number> {
   const fakeid = account.fakeid;
   const cached = await getSchedulerArticles(authKey, fakeid);
   const oldArticles = cached?.articles || [];

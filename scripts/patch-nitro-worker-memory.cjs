@@ -1,14 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const nitroCoreFile = path.join(
-  process.cwd(),
-  'node_modules',
-  'nitropack',
-  'dist',
-  'core',
-  'index.mjs',
-);
+const nitroCoreFile = path.join(process.cwd(), 'node_modules', 'nitropack', 'dist', 'core', 'index.mjs');
 
 if (!fs.existsSync(nitroCoreFile)) {
   console.log(`[patch] skip: file not found ${nitroCoreFile}`);
@@ -23,10 +16,7 @@ if (!execArgvPattern.test(source)) {
   process.exit(0);
 }
 
-const patched = source.replace(
-  execArgvPattern,
-  'resourceLimits: { maxOldGenerationSizeMb: 4096 },',
-);
+const patched = source.replace(execArgvPattern, 'resourceLimits: { maxOldGenerationSizeMb: 4096 },');
 
 fs.writeFileSync(nitroCoreFile, patched, 'utf8');
 console.log('[patch] nitropack worker memory patch applied');

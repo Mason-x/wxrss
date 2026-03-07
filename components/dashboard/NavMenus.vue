@@ -7,9 +7,7 @@ interface NavItem {
   tags?: string[];
 }
 
-const items = ref<NavItem[]>([
-  { name: '聚合阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
-]);
+const items = ref<NavItem[]>([{ name: '聚合阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' }]);
 </script>
 
 <template>

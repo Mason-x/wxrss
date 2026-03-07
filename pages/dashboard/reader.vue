@@ -709,8 +709,8 @@ const mobileDragSession = reactive<MobileDragSession>({
 const prefersReducedMotion = useReducedMotion();
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
-const MOBILE_SWIPE_TRIGGER_THRESHOLD = 72;
-const MOBILE_SWIPE_VELOCITY_THRESHOLD = 520;
+const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
+const MOBILE_SWIPE_VELOCITY_THRESHOLD = 280;
 
 const mobilePanelSpring = computed(() =>
   prefersReducedMotion.value ? { duration: 0.14 } : { type: 'spring' as const, stiffness: 420, damping: 34, mass: 0.78 }
@@ -2459,7 +2459,7 @@ onUnmounted(() => {
               drag="x"
               :dragConstraints="{ left: 0, right: 0 }"
               :dragElastic="{ left: 0.8, right: 0.8 }"
-              :dragMomentum="false"
+              :dragMomentum="true"
               :dragDirectionLock="false"
               :dragSnapToOrigin="true"
               :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
@@ -2578,7 +2578,7 @@ onUnmounted(() => {
               drag="x"
               :dragConstraints="{ left: 0, right: 0 }"
               :dragElastic="{ left: 0.8, right: 0.8 }"
-              :dragMomentum="false"
+              :dragMomentum="true"
               :dragDirectionLock="false"
               :dragSnapToOrigin="true"
               :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
@@ -2622,7 +2622,7 @@ onUnmounted(() => {
             drag="x"
             :dragConstraints="{ left: 0, right: 0 }"
             :dragElastic="{ left: 0.8, right: 0 }"
-            :dragMomentum="false"
+            :dragMomentum="true"
             :dragDirectionLock="false"
             :dragSnapToOrigin="true"
             :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"

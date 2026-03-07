@@ -72,5 +72,3 @@ export const ITEM_SHOW_TYPE: Record<number, string> = {
   11: '鏂囩珷鍒嗕韩',
   17: '鐭枃',
 };
-
-

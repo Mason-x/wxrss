@@ -3,6 +3,8 @@ import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE } from '~/config';
 import { upsertArticlePage } from '~/store/v2/article';
 import { type MpAccount, updateLastUpdateTime } from '~/store/v2/info';
 import type { CommentResponse } from '~/types/comment';
+import type { ParsedCredential } from '~/types/credential';
+import type { ParsedProfileGetMsg, ProfileGetMsgResponse } from '~/types/profile_getmsg';
 import type {
   AccountInfo,
   AppMsgEx,
@@ -12,8 +14,6 @@ import type {
   PublishPage,
   SearchBizResponse,
 } from '~/types/types';
-import type { ParsedCredential } from '~/types/credential';
-import type { ParsedProfileGetMsg, ProfileGetMsgResponse } from '~/types/profile_getmsg';
 
 const loginAccount = useLoginAccount();
 const credentials = useLocalStorage<ParsedCredential[]>('auto-detect-credentials:credentials', []);
@@ -48,9 +48,9 @@ function normalizeMpErrorMessage(message: string): string {
 function isWorkerOutOfMemoryError(error: unknown): boolean {
   const message = String((error as any)?.message || '');
   return (
-    message.includes('ERR_WORKER_OUT_OF_MEMORY')
-    || message.includes('Worker terminated due to reaching memory limit')
-    || message.includes('JS heap out of memory')
+    message.includes('ERR_WORKER_OUT_OF_MEMORY') ||
+    message.includes('Worker terminated due to reaching memory limit') ||
+    message.includes('JS heap out of memory')
   );
 }
 
@@ -280,4 +280,3 @@ export async function getArticleListWithCredential(fakeid: string, begin = 0) {
     throw new Error(`${resp.ret}:${resp.errmsg}`);
   }
 }
-

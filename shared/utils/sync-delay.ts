@@ -43,10 +43,10 @@ export function normalizeSyncDelayRange(
 
   let min = Number.isFinite(input?.accountSyncMinSeconds as number)
     ? normalizeSingleDelaySeconds(input?.accountSyncMinSeconds, defaultMin)
-    : legacyValue ?? defaultMin;
+    : (legacyValue ?? defaultMin);
   let max = Number.isFinite(input?.accountSyncMaxSeconds as number)
     ? normalizeSingleDelaySeconds(input?.accountSyncMaxSeconds, defaultMax)
-    : legacyValue ?? defaultMax;
+    : (legacyValue ?? defaultMax);
 
   if (min > max) {
     [min, max] = [max, min];

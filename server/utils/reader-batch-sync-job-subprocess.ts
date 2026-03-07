@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import type { ReaderBatchAccountProgress } from '~/server/utils/reader-batch-sync-account-subprocess';
 import { logMemory } from '~/server/utils/memory-debug';
+import type { ReaderBatchAccountProgress } from '~/server/utils/reader-batch-sync-account-subprocess';
 import { ensureRuntimeChildScript } from '~/server/utils/runtime-child-script';
 import {
   READER_BATCH_SYNC_ACCOUNT_CHILD_SOURCE,
@@ -248,7 +248,9 @@ export function startReaderBatchSyncInSubprocess(
         return;
       }
 
-      const message = String(finalMessage || stderrText.trim() || `batch subprocess exited unexpectedly(code=${code ?? -1})`);
+      const message = String(
+        finalMessage || stderrText.trim() || `batch subprocess exited unexpectedly(code=${code ?? -1})`
+      );
       finish(new Error(message));
     });
 

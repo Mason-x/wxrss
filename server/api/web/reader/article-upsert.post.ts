@@ -92,9 +92,7 @@ export default defineEventHandler(async event => {
           articles: chunk,
           totalCount,
           completed: isLastChunk ? completed : false,
-          messageCountDelta: hasExplicitMessageDelta
-            ? (offset === 0 ? explicitMessageDelta : 0)
-            : undefined,
+          messageCountDelta: hasExplicitMessageDelta ? (offset === 0 ? explicitMessageDelta : 0) : undefined,
         });
         inserted += Number(data.inserted) || 0;
         latestTotalCount = Number(data.totalCount) || latestTotalCount;

@@ -21,4 +21,3 @@ export default defineEventHandler(async event => {
     ok: true,
   };
 });
-

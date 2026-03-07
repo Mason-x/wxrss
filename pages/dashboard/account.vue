@@ -131,9 +131,8 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
     }
   }
 
-  const tailCreateTime = cacheBoundaryCreateTime > 0
-    ? cacheBoundaryCreateTime
-    : Number(articles.at(-1)?.create_time) || 0;
+  const tailCreateTime =
+    cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(articles.at(-1)?.create_time) || 0;
   const syncToTimestamp = getSyncTimestamp();
   if (tailCreateTime > 0 && tailCreateTime < syncToTimestamp) {
     // 已同步到配置的时间范围

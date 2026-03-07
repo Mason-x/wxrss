@@ -1,4 +1,8 @@
-import { request as httpRequest, type IncomingHttpHeaders, type RequestOptions as NativeRequestOptions } from 'node:http';
+import {
+  request as httpRequest,
+  type IncomingHttpHeaders,
+  type RequestOptions as NativeRequestOptions,
+} from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import dayjs from 'dayjs';
 import { H3Event, parseCookies } from 'h3';
@@ -132,7 +136,8 @@ async function readJsonTextWithNativeHttp(options: {
       const status = Number(response.statusCode || 0);
       const statusText = response.statusMessage || '';
       const location = getHeaderValue(response.headers, 'location');
-      const shouldRedirect = options.redirect !== 'manual' && Boolean(location) && [301, 302, 303, 307, 308].includes(status);
+      const shouldRedirect =
+        options.redirect !== 'manual' && Boolean(location) && [301, 302, 303, 307, 308].includes(status);
 
       if (shouldRedirect) {
         response.resume();
@@ -144,13 +149,15 @@ async function readJsonTextWithNativeHttp(options: {
 
         const nextMethod = status === 303 && options.method !== 'GET' ? 'GET' : options.method;
         const nextBodyText = nextMethod === options.method ? options.bodyText : undefined;
-        resolve(readJsonTextWithNativeHttp({
-          ...options,
-          endpoint: new URL(location, targetUrl).toString(),
-          method: nextMethod,
-          bodyText: nextBodyText,
-          redirectCount: redirectCount + 1,
-        }));
+        resolve(
+          readJsonTextWithNativeHttp({
+            ...options,
+            endpoint: new URL(location, targetUrl).toString(),
+            method: nextMethod,
+            bodyText: nextBodyText,
+            redirectCount: redirectCount + 1,
+          })
+        );
         return;
       }
 
@@ -177,7 +184,11 @@ async function readJsonTextWithNativeHttp(options: {
 
       if (Number.isFinite(contentLength) && contentLength > options.maxBytes) {
         response.resume();
-        reject(new Error(`mp response too large(status=${status}, content-length=${contentLength}, limit=${options.maxBytes})`));
+        reject(
+          new Error(
+            `mp response too large(status=${status}, content-length=${contentLength}, limit=${options.maxBytes})`
+          )
+        );
         return;
       }
 
@@ -284,9 +295,10 @@ export async function proxyMpRequest(options: RequestOptions) {
   const endpoint = options.query
     ? `${options.endpoint}?${new URLSearchParams(options.query as Record<string, string>).toString()}`
     : options.endpoint;
-  const bodyText = options.method === 'POST' && options.body
-    ? new URLSearchParams(options.body as Record<string, string>).toString()
-    : undefined;
+  const bodyText =
+    options.method === 'POST' && options.body
+      ? new URLSearchParams(options.body as Record<string, string>).toString()
+      : undefined;
 
   const requestInit: RequestInit = {
     method: options.method,
@@ -392,9 +404,7 @@ export async function proxyMpRequest(options: RequestOptions) {
   let setCookies: string[] = [];
 
   if (options.action === 'start_login') {
-    const uuidCookie = mpResponse.headers
-      .getSetCookie()
-      .find(cookieValue => cookieValue.startsWith('uuid='));
+    const uuidCookie = mpResponse.headers.getSetCookie().find(cookieValue => cookieValue.startsWith('uuid='));
     const uuid = uuidCookie ? getCookieValueFromSetCookie(uuidCookie, 'uuid') : null;
     if (uuid) {
       setCookies = [createLocalProxyCookie('uuid', uuid, options.event, dayjs().add(10, 'minutes').toDate())];

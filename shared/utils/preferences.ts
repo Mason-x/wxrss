@@ -1,5 +1,5 @@
-import { MP_ORIGIN_TIMESTAMP } from '~/config';
 import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
+import { MP_ORIGIN_TIMESTAMP } from '~/config';
 import type { Preferences } from '~/types/preferences';
 
 const SYNC_DATE_RANGE_VALUES: Preferences['syncDateRange'][] = [

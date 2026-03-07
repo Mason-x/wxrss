@@ -14,10 +14,7 @@ function extractCgiDataValue(html: string, keys: string[]): string {
     const match = html.match(pattern);
     const value = match?.groups?.value;
     if (value) {
-      return value
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, '\\')
-        .trim();
+      return value.replace(/\\"/g, '"').replace(/\\\\/g, '\\').trim();
     }
   }
   return '';
@@ -75,17 +72,17 @@ export default defineEventHandler(async event => {
 
   const nick_name = extractCgiDataValue(html, ['nick_name']) || extractLooseValue(html, ['nick_name']);
   const head_img = extractCgiDataValue(html, ['head_img']) || extractLooseValue(html, ['head_img']);
-  const user_name = extractCgiDataValue(html, ['user_name', 'user_name_new'])
-    || extractLooseValue(html, ['user_name', 'user_name_new']);
-  const biz_uin = extractCgiDataValue(html, ['bizuin', 'biz_uin'])
-    || extractLooseValue(html, ['bizuin', 'biz_uin']);
-  const alias = extractCgiDataValue(html, ['alias', 'wx_alias'])
-    || extractLooseValue(html, ['alias', 'wx_alias']);
+  const user_name =
+    extractCgiDataValue(html, ['user_name', 'user_name_new']) ||
+    extractLooseValue(html, ['user_name', 'user_name_new']);
+  const biz_uin = extractCgiDataValue(html, ['bizuin', 'biz_uin']) || extractLooseValue(html, ['bizuin', 'biz_uin']);
+  const alias = extractCgiDataValue(html, ['alias', 'wx_alias']) || extractLooseValue(html, ['alias', 'wx_alias']);
 
   const profileNickName = normalizeProfileValue(nick_name);
   const profileHeadImg = normalizeProfileValue(head_img);
-  const identity_key = buildIdentityKey({ user_name, biz_uin, alias })
-    || (profileNickName && profileHeadImg
+  const identity_key =
+    buildIdentityKey({ user_name, biz_uin, alias }) ||
+    (profileNickName && profileHeadImg
       ? `profile:${profileNickName}|${profileHeadImg}`
       : profileNickName
         ? `profile:${profileNickName}`

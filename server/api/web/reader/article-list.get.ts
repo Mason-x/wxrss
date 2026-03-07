@@ -34,4 +34,3 @@ export default defineEventHandler(async event => {
     list,
   };
 });
-

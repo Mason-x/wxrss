@@ -1,4 +1,5 @@
 import { throwException, timeout } from '#shared/utils/helpers';
+import { parseCgiDataNew, validateHTMLContent } from '#shared/utils/html';
 import usePreferences from '~/composables/usePreferences';
 import { getArticleByLink } from '~/store/v2/article';
 import { updateCommentCache } from '~/store/v2/comment';
@@ -12,7 +13,6 @@ import type { ParsedCredential } from '~/types/credential';
 import type { Preferences } from '~/types/preferences';
 import { BaseDownloader } from '~/utils/download/BaseDownloader';
 import type { DownloadOptions } from './types';
-import { parseCgiDataNew, validateHTMLContent } from '#shared/utils/html';
 
 type DownloadType = 'html' | 'metadata' | 'comments';
 

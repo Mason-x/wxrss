@@ -1,8 +1,4 @@
-import {
-  updateAccountCategory,
-  updateAccountFocused,
-  updateLastUpdateTime,
-} from '~/server/repositories/reader';
+import { updateAccountCategory, updateAccountFocused, updateLastUpdateTime } from '~/server/repositories/reader';
 import { logMemory } from '~/server/utils/memory-debug';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 

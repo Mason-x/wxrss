@@ -272,12 +272,7 @@ export async function requestAppmsgpublishInSubprocess(
 
     const child = spawn(
       process.execPath,
-      [
-        `--max-old-space-size=${childMaxOldSpaceMb}`,
-        '--input-type=module',
-        '--eval',
-        APPMSGPUBLISH_CHILD_SOURCE,
-      ],
+      [`--max-old-space-size=${childMaxOldSpaceMb}`, '--input-type=module', '--eval', APPMSGPUBLISH_CHILD_SOURCE],
       {
         cwd: process.cwd(),
         env: {

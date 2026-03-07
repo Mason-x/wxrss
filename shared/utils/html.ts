@@ -140,21 +140,15 @@ function fixBrokenAnchorMarkup(source: string): string {
     return '';
   }
 
-  let next = source.replace(
-    /&lt;a([\s\S]*?)&gt;([\s\S]*?)&lt;\/a&gt;/gi,
-    (match, attrs, content) => {
-      const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
-      return `<a${fixedAttrs}>${content}</a>`;
-    }
-  );
+  let next = source.replace(/&lt;a([\s\S]*?)&gt;([\s\S]*?)&lt;\/a&gt;/gi, (match, attrs, content) => {
+    const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
+    return `<a${fixedAttrs}>${content}</a>`;
+  });
 
-  next = next.replace(
-    /<a([^>]*?)>/gi,
-    (match, attrs) => {
-      const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
-      return `<a${fixedAttrs}>`;
-    }
-  );
+  next = next.replace(/<a([^>]*?)>/gi, (match, attrs) => {
+    const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
+    return `<a${fixedAttrs}>`;
+  });
 
   return next;
 }
@@ -224,7 +218,10 @@ function buildDynamicFallbackBlockHtml(block: string): string {
     return '';
   }
 
-  const childNodes = $root.contents().toArray().filter(node => node.type !== 'text' || $(node).text().trim());
+  const childNodes = $root
+    .contents()
+    .toArray()
+    .filter(node => node.type !== 'text' || $(node).text().trim());
   const hasOnlyBlockChildren =
     childNodes.length > 0 &&
     childNodes.every(node => node.type === 'tag' && DYNAMIC_FALLBACK_BLOCK_TAGS.has((node as any).tagName || ''));
@@ -680,7 +677,10 @@ function buildFallbackArticleHtml(fallback: DynamicArticleFallback | null): stri
         ${
           galleryImages.length > 1
             ? `<div class="dynamic-fallback-gallery-indicators" aria-hidden="true">${galleryImages
-                .map((_, index) => `<button type="button" class="dynamic-fallback-gallery-dot${index === 0 ? ' is-active' : ''}" data-gallery-dot="${index}" tabindex="-1"></button>`)
+                .map(
+                  (_, index) =>
+                    `<button type="button" class="dynamic-fallback-gallery-dot${index === 0 ? ' is-active' : ''}" data-gallery-dot="${index}" tabindex="-1"></button>`
+                )
                 .join('')}</div>`
             : ''
         }

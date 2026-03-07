@@ -4,10 +4,10 @@ import { getMpCookie } from '~/server/kv/cookie';
 import { getAccountByFakeid, type ReaderAccount } from '~/server/repositories/reader';
 import { logMemory } from '~/server/utils/memory-debug';
 import {
-  startReaderBatchSyncInSubprocess,
   type ReaderBatchSyncJobSubprocessAccount,
   type ReaderBatchSyncJobSubprocessController,
   type ReaderBatchSyncJobSubprocessEvent,
+  startReaderBatchSyncInSubprocess,
 } from '~/server/utils/reader-batch-sync-job-subprocess';
 
 type BatchJobStatus = 'running' | 'success' | 'error' | 'canceled';
@@ -176,11 +176,7 @@ function cloneJobSnapshot(job: BatchJobRuntime): BatchSyncJobSnapshot {
 function buildJobStatusView(job: BatchJobRuntime): BatchSyncJobStatusView {
   const currentAccount = job.currentAccount ? { ...job.currentAccount } : null;
   const heapUsedMb = toMb(process.memoryUsage().heapUsed);
-  const pollAfterMs = job.status !== 'running'
-    ? 0
-    : heapUsedMb >= 2500
-      ? 5000
-      : 3000;
+  const pollAfterMs = job.status !== 'running' ? 0 : heapUsedMb >= 2500 ? 5000 : 3000;
 
   return {
     jobId: job.jobId,
@@ -216,9 +212,11 @@ function getStoredAccountSnapshot(job: BatchJobRuntime, fakeid: string): BatchSy
   if (job.currentAccount?.fakeid === fakeid) {
     return job.currentAccount;
   }
-  return job.failedAccounts.find(account => account.fakeid === fakeid)
-    || job.recentAccounts.find(account => account.fakeid === fakeid)
-    || null;
+  return (
+    job.failedAccounts.find(account => account.fakeid === fakeid) ||
+    job.recentAccounts.find(account => account.fakeid === fakeid) ||
+    null
+  );
 }
 
 function createAccountSnapshot(
@@ -285,11 +283,7 @@ function setAccountStatus(job: BatchJobRuntime, fakeid: string, status: BatchSyn
   job.accountStates[fakeid] = status;
 }
 
-function markAccountSuccess(
-  job: BatchJobRuntime,
-  fakeid: string,
-  patch: Partial<BatchSyncAccountSnapshot>
-): void {
+function markAccountSuccess(job: BatchJobRuntime, fakeid: string, patch: Partial<BatchSyncAccountSnapshot>): void {
   const currentStatus = getAccountStatus(job, fakeid);
   updateAccountProgress(job, fakeid, {
     status: 'success',
@@ -630,7 +624,10 @@ export function startReaderBatchSyncJob(authKey: string, options: BatchJobOption
     } catch (error) {
       job.currentController = null;
       if (error instanceof BatchSyncCancelledError) {
-        if (job.currentAccount && (job.currentAccount.status === 'pending' || job.currentAccount.status === 'running')) {
+        if (
+          job.currentAccount &&
+          (job.currentAccount.status === 'pending' || job.currentAccount.status === 'running')
+        ) {
           const canceledAccount = createAccountSnapshot(job.currentAccount, job.currentAccount.fakeid, {
             status: 'canceled',
             message: job.currentAccount.message || 'canceled',

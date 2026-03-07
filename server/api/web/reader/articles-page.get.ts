@@ -21,17 +21,9 @@ export default defineEventHandler(async event => {
 
   const query = getQuery<ArticlePageQuery>(event);
   const focusedRaw = query.focused;
-  const focused =
-    focusedRaw === true ||
-    focusedRaw === 'true' ||
-    focusedRaw === '1' ||
-    focusedRaw === 1;
+  const focused = focusedRaw === true || focusedRaw === 'true' || focusedRaw === '1' || focusedRaw === 1;
   const favoriteRaw = query.favorite;
-  const favorite =
-    favoriteRaw === true ||
-    favoriteRaw === 'true' ||
-    favoriteRaw === '1' ||
-    favoriteRaw === 1;
+  const favorite = favoriteRaw === true || favoriteRaw === 'true' || favoriteRaw === '1' || favoriteRaw === 1;
 
   return await listArticlesPage(authKey, {
     offset: Number(query.offset) || 0,

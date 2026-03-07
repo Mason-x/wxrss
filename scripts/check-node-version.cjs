@@ -14,4 +14,3 @@ if (Number.isNaN(major) || major < min || major >= maxExclusive) {
   );
   process.exit(1);
 }
-

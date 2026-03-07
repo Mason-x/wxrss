@@ -39,7 +39,7 @@ const child = spawn(bin, binArgs, {
   shell: true,
 });
 
-child.on('close', (code) => {
+child.on('close', code => {
   process.exit(code || 0);
 });
 
