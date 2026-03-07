@@ -1,10 +1,23 @@
 ﻿import * as cheerio from 'cheerio';
 import { extractCommentId } from '~/utils/comment';
-import { EXTERNAL_API_SERVICE } from '~/config';
 
 interface DynamicArticleFallback {
   title: string;
   paragraphs: string[];
+  coverUrl?: string;
+  galleryImages?: DynamicGalleryImage[];
+}
+
+interface DynamicGalleryImage {
+  url: string;
+  width?: number;
+  height?: number;
+}
+
+export interface EmbeddedVideoInfo {
+  src?: string;
+  poster?: string;
+  videoId?: string;
 }
 
 function decodeJsEscapedText(value: string): string {
@@ -17,7 +30,7 @@ function decodeJsEscapedText(value: string): string {
     .replace(/\\n/g, '\n')
     .replace(/\\r/g, '\n')
     .replace(/\\t/g, '\t')
-    .replace(/\\'/g, '\'')
+    .replace(/\\'/g, "'")
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, '\\');
 }
@@ -28,7 +41,10 @@ function extractMatchGroup(source: string, pattern: RegExp): string {
 }
 
 function splitTextToTitleAndParagraphs(text: string): DynamicArticleFallback | null {
-  const normalizedText = text.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').trim();
+  const normalizedText = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim();
   if (!normalizedText) return null;
 
   const lines = normalizedText
@@ -57,20 +73,87 @@ function splitTextToTitleAndParagraphs(text: string): DynamicArticleFallback | n
 }
 
 function parseDynamicArticleFallback(rawHTML: string): DynamicArticleFallback | null {
-  const rawMsgTitle
-    = extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*window\.title\s*=\s*'((?:\\.|[^'\\])*)'\s*\|\|\s*''\s*;/)
-      || extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*window\.title\s*=\s*'([\s\S]*?)'\s*\|\|\s*''\s*;/);
+  const rawMsgTitle =
+    extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*window\.title\s*=\s*'((?:\\.|[^'\\])*)'\s*\|\|\s*''\s*;/) ||
+    extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*window\.title\s*=\s*'([\s\S]*?)'\s*\|\|\s*''\s*;/);
 
-  const rawWindowTitle
-    = rawMsgTitle
-      || extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*'((?:\\.|[^'\\])*)'\s*;/)
-      || extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*'([\s\S]*?)'\s*;/)
-      || extractMatchGroup(rawHTML, /window\.title\s*=\s*'((?:\\.|[^'\\])*)'\s*;/)
-      || extractMatchGroup(rawHTML, /window\.title\s*=\s*'([\s\S]*?)'\s*;/);
+  const rawWindowTitle =
+    rawMsgTitle ||
+    extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*'((?:\\.|[^'\\])*)'\s*;/) ||
+    extractMatchGroup(rawHTML, /window\.msg_title\s*=\s*'([\s\S]*?)'\s*;/) ||
+    extractMatchGroup(rawHTML, /window\.title\s*=\s*'((?:\\.|[^'\\])*)'\s*;/) ||
+    extractMatchGroup(rawHTML, /window\.title\s*=\s*'([\s\S]*?)'\s*;/);
 
   if (!rawWindowTitle) return null;
 
   return splitTextToTitleAndParagraphs(decodeJsEscapedText(rawWindowTitle));
+}
+
+function extractJsDecodeField(rawHTML: string, fieldName: string): string {
+  const escapedFieldName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (
+    extractMatchGroup(rawHTML, new RegExp(`${escapedFieldName}\\s*:\\s*JsDecode\\('((?:\\\\.|[^'\\\\])*)'\\)`, 's')) ||
+    extractMatchGroup(rawHTML, new RegExp(`${escapedFieldName}\\s*:\\s*JsDecode\\('([\\s\\S]*?)'\\)`, 's'))
+  );
+}
+
+function normalizeMultilineText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+}
+
+function parseCgiDataArticleFallback(rawHTML: string): DynamicArticleFallback | null {
+  const rawTitle = extractJsDecodeField(rawHTML, 'title');
+  const rawContent = extractJsDecodeField(rawHTML, 'content_noencode') || extractJsDecodeField(rawHTML, 'desc');
+  const rawCoverUrl = extractJsDecodeField(rawHTML, 'cdn_url');
+
+  const title = normalizeMultilineText(decodeJsEscapedText(rawTitle));
+  const content = normalizeMultilineText(decodeJsEscapedText(rawContent));
+  const coverUrl = normalizeMultilineText(decodeJsEscapedText(rawCoverUrl)).replace(/^http:\/\//, 'https://');
+
+  if (!title && !content) {
+    return null;
+  }
+
+  if (!title) {
+    const fallback = splitTextToTitleAndParagraphs(content);
+    if (!fallback) {
+      return null;
+    }
+    return {
+      ...fallback,
+      coverUrl: coverUrl || undefined,
+    };
+  }
+
+  const paragraphs = content
+    .split(/\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => line !== title);
+
+  if (paragraphs.length === 0) {
+    const fallback = splitTextToTitleAndParagraphs(title);
+    if (!fallback) {
+      return null;
+    }
+    return {
+      ...fallback,
+      coverUrl: coverUrl || undefined,
+    };
+  }
+
+  return {
+    title,
+    paragraphs,
+    coverUrl: coverUrl || undefined,
+  };
+}
+
+function extractDynamicArticleFallback(rawHTML: string): DynamicArticleFallback | null {
+  return parseCgiDataArticleFallback(rawHTML) || parseDynamicArticleFallback(rawHTML);
 }
 
 function escapeHtml(text: string): string {
@@ -80,6 +163,299 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function normalizeMediaUrl(url: string): string {
+  return url
+    .trim()
+    .replace(/&amp;/g, '&')
+    .replace(/^http:\/\//, 'https://');
+}
+
+function decodeMaybeURIComponent(value: string): string {
+  if (!value) return '';
+
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function unwrapViewSourceHtml(rawHTML: string): string {
+  if (!rawHTML.includes('td class="line-content"') || !rawHTML.includes('line-gutter-backdrop')) {
+    return rawHTML;
+  }
+
+  const $ = cheerio.load(rawHTML);
+  const lines = $('td.line-content')
+    .map((_, el) => $(el).text())
+    .get();
+
+  if (lines.length === 0) {
+    return rawHTML;
+  }
+
+  const extracted = lines.join('\n').trim();
+  if (!extracted.includes('<html') || !extracted.includes('<body')) {
+    return rawHTML;
+  }
+
+  return extracted;
+}
+
+function normalizeMpArticleUrl(url: string): string {
+  if (!url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url.replace(/^\/\//, 'https://'));
+    if (parsed.hostname !== 'mp.weixin.qq.com') {
+      return '';
+    }
+
+    parsed.protocol = 'https:';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+export function extractOriginalArticleUrl(rawHTML: string): string | null {
+  const candidates = [
+    extractMatchGroup(rawHTML, /var\s+msg_link\s*=\s*"([^"]+)"/),
+    extractMatchGroup(rawHTML, /var\s+msg_link\s*=\s*'([^']+)'/),
+    extractMatchGroup(rawHTML, /<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i),
+    extractMatchGroup(rawHTML, /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i),
+    extractMatchGroup(rawHTML, /(https?:\/\/mp\.weixin\.qq\.com\/s\/[A-Za-z0-9_-]+)/),
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeMpArticleUrl(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
+function buildEmbeddedVideoHtml(video: EmbeddedVideoInfo, ratio = 0): string {
+  const src = normalizeMediaUrl(video.src || '');
+  const poster = normalizeMediaUrl(video.poster || '');
+  const videoId = (video.videoId || '').trim();
+  if (!src && !poster && !videoId) {
+    return '';
+  }
+
+  const aspectRatioStyle = Number.isFinite(ratio) && ratio > 0 ? ` style="aspect-ratio:${ratio};"` : '';
+  const srcAttr = src ? ` src="${escapeHtml(src)}"` : '';
+  const posterAttr = poster ? ` poster="${escapeHtml(poster)}"` : '';
+  const videoIdAttr = videoId ? ` data-mpvid="${escapeHtml(videoId)}"` : '';
+
+  return `<div class="article_embedded_video"${aspectRatioStyle}><video${srcAttr}${posterAttr}${videoIdAttr} controls playsinline webkit-playsinline preload="metadata"></video></div>`;
+}
+
+function buildEmbeddedVideoIframeHtml(src: string, ratio = 16 / 9): string {
+  const normalizedSrc = normalizeMediaUrl(src);
+  if (!normalizedSrc) {
+    return '';
+  }
+
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 16 / 9;
+  return `<div class="article_embedded_video"${` style="aspect-ratio:${safeRatio};"`}><iframe src="${escapeHtml(normalizedSrc)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen frameborder="0" scrolling="no" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+}
+
+export function extractEmbeddedVideoInfoMap(rawHTML: string): Map<string, EmbeddedVideoInfo> {
+  const result = new Map<string, EmbeddedVideoInfo>();
+  const videoPageInfosBody = extractMatchGroup(
+    rawHTML,
+    /var\s+videoPageInfos\s*=\s*\[([\s\S]*?)\];\s*window\.__videoPageInfos\s*=\s*videoPageInfos;/s
+  );
+
+  if (!videoPageInfosBody) {
+    return result;
+  }
+
+  const entryPattern = /video_id:\s*'((?:\\.|[^'\\])*)'([\s\S]*?)(?=video_id:\s*'|$)/g;
+
+  for (const match of videoPageInfosBody.matchAll(entryPattern)) {
+    const videoId = decodeJsEscapedText(match[1]).trim();
+    const entryBody = match[0];
+    if (!videoId) {
+      continue;
+    }
+
+    const cover = extractMatchGroup(entryBody, /cover_url:\s*'((?:\\.|[^'\\])*)'/s);
+    const transInfo = extractMatchGroup(entryBody, /mp_video_trans_info:\s*\[([\s\S]*?)\]/s);
+    const urls = [...transInfo.matchAll(/url:\s*(?:\('((?:\\.|[^'\\])*)'\)|'((?:\\.|[^'\\])*)')/g)]
+      .map(urlMatch => decodeJsEscapedText(urlMatch[1] || urlMatch[2] || ''))
+      .map(normalizeMediaUrl)
+      .filter(Boolean);
+
+    if (urls.length === 0) {
+      continue;
+    }
+
+    result.set(videoId, {
+      src: urls[0],
+      poster: normalizeMediaUrl(decodeJsEscapedText(cover)),
+      videoId,
+    });
+  }
+
+  return result;
+}
+
+function extractStandaloneMpVideoInfo(rawHTML: string): EmbeddedVideoInfo | null {
+  const transInfo = extractMatchGroup(rawHTML, /window\.__mpVideoTransInfo\s*=\s*\[([\s\S]*?)\];/s);
+  if (!transInfo) {
+    return null;
+  }
+
+  const urls = [...transInfo.matchAll(/url:\s*(?:\('((?:\\.|[^'\\])*)'\)|'((?:\\.|[^'\\])*)')/g)]
+    .map(match => decodeJsEscapedText(match[1] || match[2] || ''))
+    .map(normalizeMediaUrl)
+    .filter(Boolean);
+
+  if (urls.length === 0) {
+    return null;
+  }
+
+  const cover = extractMatchGroup(rawHTML, /window\.__mpVideoCoverUrl\s*=\s*'((?:\\.|[^'\\])*)';/s);
+
+  return {
+    src: urls[urls.length - 1],
+    poster: normalizeMediaUrl(decodeJsEscapedText(cover)),
+  };
+}
+
+function extractPictureGalleryImages(rawHTML: string): DynamicGalleryImage[] {
+  const images = new Map<string, DynamicGalleryImage>();
+  const imagePattern =
+    /cdn_url:\s*(?:JsDecode\('((?:\\.|[^'\\])*)'\)|'((?:\\.|[^'\\])*)')\s*,\s*width:\s*'(\d+)'\s*\*\s*1\s*,\s*height:\s*'(\d+)'\s*\*\s*1[\s\S]*?theme_color:\s*(?:JsDecode\('((?:\\.|[^'\\])*)'\)|'((?:\\.|[^'\\])*)')[\s\S]*?is_qr_code:\s*'(\d+)'\s*\*\s*1/gs;
+
+  for (const match of rawHTML.matchAll(imagePattern)) {
+    const url = normalizeMediaUrl(decodeJsEscapedText(match[1] || match[2] || ''));
+    if (!url) {
+      continue;
+    }
+
+    images.set(url, {
+      url,
+      width: Number.parseInt(match[3], 10) || undefined,
+      height: Number.parseInt(match[4], 10) || undefined,
+    });
+  }
+
+  return [...images.values()];
+}
+
+function isPictureShareShell($jsArticleContent: cheerio.Cheerio<any>): boolean {
+  return (
+    $jsArticleContent.hasClass('share_content_page') ||
+    $jsArticleContent.find('#js_share_content_page_hd, #img_swiper, #img_list, .img_swiper_area').length > 0
+  );
+}
+
+function mergeFallbackWithGallery(
+  fallback: DynamicArticleFallback | null,
+  galleryImages: DynamicGalleryImage[]
+): DynamicArticleFallback | null {
+  if (galleryImages.length === 0) {
+    return fallback;
+  }
+
+  return {
+    title: fallback?.title || '',
+    paragraphs: fallback?.paragraphs || [],
+    coverUrl: undefined,
+    galleryImages,
+  };
+}
+
+function simplifyEmbeddedVideos($: cheerio.CheerioAPI, $jsArticleContent: cheerio.Cheerio<any>, rawHTML: string): void {
+  const processed = new Set<any>();
+  const embeddedVideoInfos = extractEmbeddedVideoInfoMap(rawHTML);
+  const standaloneMpVideo = extractStandaloneMpVideoInfo(rawHTML);
+
+  $jsArticleContent.find('.video_iframe, [id^="js_mp_video_container_"], .js_mpvedio').each((_, el) => {
+    if (processed.has(el)) {
+      return;
+    }
+
+    const $container = $(el);
+    const $video = $container.find('video[src]').first();
+    const rawSrc = $video.attr('src') || '';
+    const mpVideoId = $container.attr('data-mpvid') || $container.find('[data-mpvid]').first().attr('data-mpvid') || '';
+    const iframeDataSrc = normalizeMediaUrl($container.attr('data-src') || '');
+    const iframeRatio = Number.parseFloat($container.attr('data-ratio') || '') || 16 / 9;
+    const isMpVideoContainer =
+      Boolean(mpVideoId) ||
+      iframeDataSrc.includes('mp.weixin.qq.com/mp/readtemplate') ||
+      $container.attr('id')?.startsWith('js_mp_video_container_');
+
+    const directVideoInfo = rawSrc
+      ? {
+          src: rawSrc,
+          poster: $video.attr('poster') || decodeMaybeURIComponent($container.attr('data-cover') || ''),
+          videoId: mpVideoId || undefined,
+        }
+      : null;
+
+    const resolvedVideoInfo = directVideoInfo || embeddedVideoInfos.get(mpVideoId) || standaloneMpVideo;
+
+    if (isMpVideoContainer || resolvedVideoInfo?.src) {
+      const width = Number.parseFloat(
+        $container.attr('data-vw') ||
+          $container.attr('width') ||
+          $video.attr('width') ||
+          $container.attr('data-w') ||
+          ''
+      );
+      const height = Number.parseFloat(
+        $container.attr('data-vh') ||
+          $container.attr('height') ||
+          $video.attr('height') ||
+          $container.attr('data-h') ||
+          ''
+      );
+      const ratio =
+        Number.parseFloat($container.attr('data-ratio') || $video.attr('data-ratio') || '') ||
+        (Number.isFinite(width) && Number.isFinite(height) && height > 0 ? width / height : 0);
+      const videoHtml = buildEmbeddedVideoHtml(
+        {
+          src: resolvedVideoInfo?.src,
+          poster:
+            resolvedVideoInfo?.poster ||
+            $video.attr('poster') ||
+            decodeMaybeURIComponent($container.attr('data-cover') || ''),
+          videoId: mpVideoId || resolvedVideoInfo?.videoId,
+        },
+        ratio
+      );
+
+      if (videoHtml) {
+        $container.replaceWith(videoHtml);
+      }
+      processed.add(el);
+      return;
+    }
+
+    const qqVideoMatch = iframeDataSrc.match(/v\.qq\.com\/iframe\/preview\.html\?vid=([\da-z]+)/i);
+    if (qqVideoMatch?.[1]) {
+      const iframeHtml = buildEmbeddedVideoIframeHtml(
+        `https://v.qq.com/txp/iframe/player.html?vid=${escapeHtml(qqVideoMatch[1])}`,
+        iframeRatio
+      );
+      if (iframeHtml) {
+        $container.replaceWith(iframeHtml);
+      }
+    }
+    processed.add(el);
+  });
 }
 
 function hasRenderableArticleContent($jsArticleContent: cheerio.Cheerio<any>): boolean {
@@ -98,17 +474,44 @@ function hasRenderableArticleContent($jsArticleContent: cheerio.Cheerio<any>): b
 
 function buildFallbackArticleHtml(fallback: DynamicArticleFallback | null): string {
   const paragraphs = fallback?.paragraphs || [];
+  const galleryImages = fallback?.galleryImages || [];
+  const hasGallery = galleryImages.length > 0;
+  const titleHtml = fallback?.title ? `<h1 class="dynamic-fallback-title">${escapeHtml(fallback.title)}</h1>` : '';
+  const coverHtml =
+    !hasGallery && fallback?.coverUrl
+      ? `<p class="dynamic-fallback-cover"><img src="${escapeHtml(fallback.coverUrl)}" alt=""></p>`
+      : '';
 
   const paragraphHtml = paragraphs
     .filter(Boolean)
     .map(item => `<p>${escapeHtml(item)}</p>`)
     .join('\n');
+  const galleryHtml = hasGallery
+    ? `<section class="dynamic-fallback-gallery-shell">
+        <div class="dynamic-fallback-gallery-track" aria-label="图片图集，可左右滑动切换" tabindex="0">${galleryImages
+          .map(image => {
+            return `<figure class="dynamic-fallback-gallery-slide"><img src="${escapeHtml(image.url)}" alt="" loading="lazy"></figure>`;
+          })
+          .join('\n')}</div>
+        ${
+          galleryImages.length > 1
+            ? `<div class="dynamic-fallback-gallery-indicators" aria-hidden="true">${galleryImages
+                .map((_, index) => `<button type="button" class="dynamic-fallback-gallery-dot${index === 0 ? ' is-active' : ''}" data-gallery-dot="${index}" tabindex="-1"></button>`)
+                .join('')}</div>`
+            : ''
+        }
+      </section>`
+    : '';
 
-  const contentHtml
-    = paragraphHtml
-      || '<p class="dynamic-fallback-tip">该文章为微信新版图文结构，暂未提取到完整正文，请点击右上角“查看原文”。</p>';
+  const articleBodyHtml = hasGallery
+    ? [titleHtml, paragraphHtml].filter(Boolean).join('\n')
+    : [titleHtml, coverHtml, paragraphHtml].filter(Boolean).join('\n');
+  const bodyHtml = articleBodyHtml ? `<div class="dynamic-fallback-body">${articleBodyHtml}</div>` : '';
+  const contentHtml =
+    [galleryHtml, bodyHtml].filter(Boolean).join('\n') ||
+    '<div class="dynamic-fallback-body"><p class="dynamic-fallback-tip">该文章为微信新版图文结构，暂未提取到完整正文，请点击右上角“查看原文”。</p></div>';
 
-  return `<section id="js_article"><div id="js_content" class="article_dynamic_fallback">${contentHtml}</div></section>`;
+  return `<section id="js_article"><div id="js_content" class="article_dynamic_fallback${hasGallery ? ' article_dynamic_fallback--gallery' : ''}">${contentHtml}</div></section>`;
 }
 
 function normalizeTextResult(text: string): string {
@@ -129,6 +532,9 @@ function normalizeTextResult(text: string): string {
  * @remarks 鏈嶅姟绔伐鍏峰嚱鏁?
  */
 export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html'): string {
+  rawHTML = unwrapViewSourceHtml(rawHTML);
+  const originalArticleUrl = extractOriginalArticleUrl(rawHTML);
+
   const $ = cheerio.load(rawHTML);
   const $jsArticleContent = $('#js_article');
 
@@ -155,8 +561,14 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
     }
   });
 
-  const hasNativeArticle = hasRenderableArticleContent($jsArticleContent);
-  const fallback = hasNativeArticle ? null : parseDynamicArticleFallback(rawHTML);
+  simplifyEmbeddedVideos($, $jsArticleContent, rawHTML);
+
+  const galleryImages = extractPictureGalleryImages(rawHTML);
+  const hasStaticPictureGallery = galleryImages.length > 0 && isPictureShareShell($jsArticleContent);
+  const hasNativeArticle = !hasStaticPictureGallery && hasRenderableArticleContent($jsArticleContent);
+  const fallback = hasNativeArticle
+    ? null
+    : mergeFallbackWithGallery(extractDynamicArticleFallback(rawHTML), galleryImages);
 
   if (format === 'text') {
     if (hasNativeArticle) {
@@ -171,6 +583,9 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
     const pageContentHTML = hasNativeArticle
       ? $('<div>').append($jsArticleContent.clone()).html()
       : buildFallbackArticleHtml(fallback);
+    const originalArticleUrlMeta = originalArticleUrl
+      ? `<meta name="wechat-article-url" content="${escapeHtml(originalArticleUrl)}">`
+      : '';
 
     return `<!DOCTYPE html>
   <html lang="zh_CN">
@@ -180,6 +595,7 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
       <meta http-equiv="X-UA-Compatible" content="IE=edge">
       <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0,viewport-fit=cover">
       <meta name="referrer" content="no-referrer">
+      ${originalArticleUrlMeta}
       <style>
           #js_row_immersive_stream_wrap {
               max-width: 667px;
@@ -211,11 +627,95 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
               font-size: 16px;
               color: #111827;
           }
+          .article_dynamic_fallback--gallery {
+              padding: 0 0 24px 0;
+          }
+          .article_dynamic_fallback .dynamic-fallback-body {
+              padding: 0;
+          }
+          .article_dynamic_fallback--gallery .dynamic-fallback-body {
+              padding: 0 16px;
+          }
           .article_dynamic_fallback .dynamic-fallback-title {
               font-size: 24px;
               line-height: 1.4;
               font-weight: 700;
               margin-bottom: 16px;
+          }
+          .article_dynamic_fallback .dynamic-fallback-cover {
+              margin: 0 0 16px 0;
+          }
+          .article_dynamic_fallback .dynamic-fallback-cover img {
+              display: block;
+              width: 100%;
+              border-radius: 12px;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-shell {
+              position: relative;
+              margin: 0 0 20px 0;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-track {
+              display: grid;
+              grid-auto-flow: column;
+              grid-auto-columns: 100%;
+              overflow-x: auto;
+              overscroll-behavior-x: contain;
+              scroll-snap-type: x mandatory;
+              -webkit-overflow-scrolling: touch;
+              scrollbar-width: none;
+              cursor: grab;
+              outline: none;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-track::-webkit-scrollbar {
+              display: none;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-track.is-dragging {
+              cursor: grabbing;
+              scroll-snap-type: none;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-slide {
+              margin: 0;
+              background: #f8fafc;
+              scroll-snap-align: start;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-slide img {
+              display: block;
+              width: 100%;
+              height: auto;
+              pointer-events: none;
+              user-select: none;
+              -webkit-user-drag: none;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-indicators {
+              position: absolute;
+              left: 50%;
+              bottom: 18px;
+              transform: translateX(-50%);
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              margin: 0;
+              padding: 10px 14px;
+              border-radius: 999px;
+              background: rgba(15, 23, 42, 0.58);
+              backdrop-filter: blur(8px);
+              -webkit-backdrop-filter: blur(8px);
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-dot {
+              width: 24px;
+              height: 6px;
+              padding: 0;
+              border: 0;
+              border-radius: 999px;
+              background: rgba(255, 255, 255, 0.35);
+              transition: width 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+              opacity: 1;
+              cursor: pointer;
+              appearance: none;
+          }
+          .article_dynamic_fallback .dynamic-fallback-gallery-dot.is-active {
+              width: 42px;
+              background: rgba(255, 255, 255, 0.96);
           }
           .article_dynamic_fallback p {
               margin: 0 0 12px 0;
@@ -223,6 +723,27 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
           }
           .article_dynamic_fallback .dynamic-fallback-tip {
               color: #64748b;
+          }
+          .article_embedded_video {
+              max-width: 667px;
+              margin: 16px auto;
+              background: #000;
+              border-radius: 12px;
+              overflow: hidden;
+          }
+          .article_embedded_video video {
+              display: block;
+              width: 100%;
+              height: 100%;
+              max-height: 80vh;
+              background: #000;
+          }
+          .article_embedded_video iframe {
+              display: block;
+              width: 100%;
+              height: 100%;
+              border: 0;
+              background: #000;
           }
       </style>
   </head>
@@ -242,6 +763,8 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
  * @return [鐘舵€侊紝commentID/msg] 浜屽厓缁?
  */
 export function validateHTMLContent(html: string): ['Success' | 'Deleted' | 'Exception' | 'Error', string | null] {
+  html = unwrapViewSourceHtml(html);
+
   const $ = cheerio.load(html);
   const $jsArticle = $('#js_article');
   const $weuiMsg = $('.weui-msg');
@@ -356,20 +879,8 @@ function parseCgiDataNewOnServerDeprecated(html: string): Promise<any> {
  * @return window.cgiDataNew 瀵硅薄锛岃В鏋愬け璐ユ椂杩斿洖 null
  */
 async function parseCgiDataNewOnServer(html: string): Promise<any> {
-  const code = extractCgiScript(html);
-  if (!code) {
-    return Promise.resolve(null);
-  }
-
   try {
-    const data = await fetch(`${EXTERNAL_API_SERVICE}/api/tools/eval-js-code`, {
-      method: 'POST',
-      body: code,
-    }).then(res => res.json());
-    if (data && data.executionError === null) {
-      return data.window.cgiDataNew;
-    }
-    return null;
+    return await parseCgiDataNewOnServerDeprecated(html);
   } catch (error) {
     console.error(error);
   }
@@ -382,12 +893,11 @@ async function parseCgiDataNewOnServer(html: string): Promise<any> {
  * @return window.cgiDataNew 瀵硅薄锛岃В鏋愬け璐ユ椂杩斿洖 null
  */
 export async function parseCgiDataNew(html: string): Promise<any> {
+  html = unwrapViewSourceHtml(html);
+
   if (process.client && document) {
     return parseCgiDataNewOnClient(html);
   } else {
     return parseCgiDataNewOnServer(html);
   }
 }
-
-
-

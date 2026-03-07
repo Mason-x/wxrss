@@ -1,8 +1,9 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
 import { formatTimeStamp } from '#shared/utils/helpers';
+import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
-import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
+import { getArticleList } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
@@ -13,10 +14,8 @@ import LoginModal from '~/components/modal/Login.vue';
 import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
-import { getArticleList } from '~/apis';
 import { IMAGE_PROXY, websiteName } from '~/config';
 import ApiPage from '~/pages/dashboard/api.vue';
-import ProxyPage from '~/pages/dashboard/proxy.vue';
 import SettingsPage from '~/pages/dashboard/settings.vue';
 import { deleteAccountData } from '~/store/v2';
 import {
@@ -38,6 +37,7 @@ import {
 import { migrateLegacyIndexedDbToServer, migrateLegacyLargeCacheToServer } from '~/store/v2/legacy-migration';
 import type { AccountManifest } from '~/types/account';
 import type { Preferences } from '~/types/preferences';
+import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
 import { exportAccountJsonFile } from '~/utils/exporter';
 
 useHead({
@@ -62,7 +62,7 @@ interface PromiseInstance {
   reject: (reason?: any) => void;
 }
 
-type SystemMenuId = 'proxy' | 'api' | 'settings';
+type SystemMenuId = 'api' | 'settings';
 
 interface SystemMenuItem {
   id: SystemMenuId;
@@ -195,13 +195,12 @@ const categoryEditorSaving = ref(false);
 const categoryEditorAdding = ref(false);
 const categoryDeleting = ref<string | null>(null);
 const systemMenuOpen = ref(false);
-const systemMenuActive = ref<SystemMenuId>('proxy');
+const systemMenuActive = ref<SystemMenuId>('settings');
 
 const fileRef = ref<HTMLInputElement | null>(null);
 const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
 
 const systemMenuItems: SystemMenuItem[] = [
-  { id: 'proxy', label: '公共代理', icon: 'i-lucide:network' },
   { id: 'api', label: 'API 说明', icon: 'i-lucide:file-code-2' },
   { id: 'settings', label: '设置', icon: 'i-lucide:settings-2' },
 ];
@@ -465,8 +464,7 @@ const activeSystemMenuItem = computed(
 );
 const activeSystemMenuComponent = computed(() => {
   if (systemMenuActive.value === 'api') return ApiPage;
-  if (systemMenuActive.value === 'settings') return SettingsPage;
-  return ProxyPage;
+  return SettingsPage;
 });
 
 const selectedAccountInfo = computed(() => findAccount(selectedAccount.value));
@@ -523,7 +521,11 @@ const accountsInCategory = computed(() => {
 
 const displayedArticles = computed<ReaderArticle[]>(() => articleRows.value);
 
-const { list: virtualDisplayedArticles, containerProps: articleContainerProps, wrapperProps: articleWrapperProps } = useVirtualList(displayedArticles, {
+const {
+  list: virtualDisplayedArticles,
+  containerProps: articleContainerProps,
+  wrapperProps: articleWrapperProps,
+} = useVirtualList(displayedArticles, {
   itemHeight: 84,
   overscan: 10,
 });
@@ -948,10 +950,10 @@ async function pullSchedulerArticles(accountList: MpAccount[]) {
 
 async function hydrateSchedulerArticlesInBackground(accountList: MpAccount[]) {
   if (
-    accountList.length === 0
-    || schedulerHydrationDone.value
-    || schedulerHydrationStarted.value
-    || schedulerHydrationRunning.value
+    accountList.length === 0 ||
+    schedulerHydrationDone.value ||
+    schedulerHydrationStarted.value ||
+    schedulerHydrationRunning.value
   ) {
     return;
   }
@@ -1158,7 +1160,8 @@ async function openArticle(article: ReaderArticle) {
     try {
       const htmlCache = await getHtmlCache(article.link);
       if (htmlCache) {
-        selectedArticleHtml.value = stripWechatHeader(await htmlCache.file.text());
+        const rawHtml = await htmlCache.file.text();
+        selectedArticleHtml.value = stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
         selectedArticleHtml.value =
           '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
@@ -1185,6 +1188,7 @@ function stripWechatHeader(html: string) {
       '.rich_media_cover',
       '#activity-name',
       '.rich_media_title',
+      '.dynamic-fallback-title',
       '#meta_content',
       '.rich_media_meta_list',
       '#js_top_profile',
@@ -1569,9 +1573,8 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
     }
   }
 
-  const tailCreateTime = cacheBoundaryCreateTime > 0
-    ? cacheBoundaryCreateTime
-    : Number(articles.at(-1)?.create_time) || 0;
+  const tailCreateTime =
+    cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(articles.at(-1)?.create_time) || 0;
   const syncToTimestamp = getSyncTimestamp();
   if (tailCreateTime > 0 && tailCreateTime < syncToTimestamp) {
     loadMore = false;
@@ -1623,11 +1626,10 @@ function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | nul
 
   if (snapshot.currentAccount) {
     const account = snapshot.currentAccount;
-    const previousSyncedArticles = Number(
-      syncProgressByFakeid.value[account.fakeid]?.syncedArticles
-      ?? findAccount(account.fakeid)?.articles
-      ?? 0
-    ) || 0;
+    const previousSyncedArticles =
+      Number(
+        syncProgressByFakeid.value[account.fakeid]?.syncedArticles ?? findAccount(account.fakeid)?.articles ?? 0
+      ) || 0;
     if ((Number(account.syncedArticles) || 0) > previousSyncedArticles) {
       markAccountHasNewArticles(account.fakeid);
     }
@@ -1729,7 +1731,7 @@ async function syncAllAccountsInCurrentScope() {
       }
 
       await new Promise(resolve => setTimeout(resolve, Math.max(1000, Number(snapshot.pollAfterMs) || 3000)));
-      snapshot = await getRemoteBatchSyncStatus() as RemoteBatchSyncJobSnapshot;
+      snapshot = (await getRemoteBatchSyncStatus()) as RemoteBatchSyncJobSnapshot;
       if (!snapshot) {
         throw new Error('batch sync status missing');
       }
@@ -2077,8 +2079,23 @@ onUnmounted(() => {
                       />
                       <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
                     </div>
-                    <div class="min-w-0">
-                      <p class="truncate text-sm font-semibold">{{ loginAccount.nickname || '已登录账号' }}</p>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2">
+                        <p class="min-w-0 flex-1 truncate text-sm font-semibold">
+                          {{ loginAccount.nickname || '已登录账号' }}
+                        </p>
+                        <UButton
+                          size="2xs"
+                          color="rose"
+                          variant="soft"
+                          icon="i-lucide:log-out"
+                          :loading="logoutBtnLoading"
+                          class="shrink-0"
+                          @click="logoutMp"
+                        >
+                          登出
+                        </UButton>
+                      </div>
                       <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
                     </div>
                   </div>
@@ -2093,18 +2110,7 @@ onUnmounted(() => {
                       登录公众号
                     </UButton>
                   </div>
-                  <div class="flex items-center gap-1.5">
-                    <UButton
-                      v-if="loginAccount"
-                      size="2xs"
-                      color="rose"
-                      variant="soft"
-                      icon="i-lucide:log-out"
-                      :loading="logoutBtnLoading"
-                      @click="logoutMp"
-                    >
-                      登出
-                    </UButton>
+                  <div class="flex shrink-0 items-center gap-1.5">
                     <UButton
                       size="2xs"
                       color="gray"
@@ -2713,13 +2719,13 @@ onUnmounted(() => {
     <Transition name="mobile-menu-fade">
       <div
         v-if="systemMenuOpen && !isDesktopViewport"
-        class="fixed inset-0 z-50 bg-slate-950/24 backdrop-blur-[2px] md:hidden"
+        class="fixed inset-0 z-50 bg-slate-950/42 backdrop-blur-[10px] md:hidden"
         @click.self="systemMenuOpen = false"
       >
         <Transition name="mobile-menu-drop">
           <section
             v-if="systemMenuOpen && !isDesktopViewport"
-            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white/98 shadow-[0_22px_60px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/98"
+            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] dark:border-slate-800 dark:bg-slate-950"
           >
             <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
               <div class="min-w-0">

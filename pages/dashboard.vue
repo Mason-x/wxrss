@@ -30,13 +30,13 @@
           <Transition name="mobile-menu-fade">
             <div
               v-if="mobileMenuOpen"
-              class="fixed inset-0 z-50 bg-slate-950/24 backdrop-blur-[2px]"
+              class="fixed inset-0 z-50 bg-slate-950/42 backdrop-blur-[10px]"
               @click.self="mobileMenuOpen = false"
             >
               <Transition name="mobile-menu-drop">
                 <section
                   v-if="mobileMenuOpen"
-                  class="mobile-top-menu fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white/98 shadow-[0_22px_60px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/98"
+                  class="mobile-top-menu fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] dark:border-slate-800 dark:bg-slate-950"
                 >
                   <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
                     <div class="min-w-0">
@@ -139,7 +139,7 @@ const mobileNavItems: MobileNavItem[] = [
   { name: '账号', icon: 'i-lucide:users', href: '/dashboard/account' },
   { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
   { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
-  { name: '代理', icon: 'i-lucide:network', href: '/dashboard/proxy' },
+  { name: '私有代理', icon: 'i-lucide:network', href: '/dashboard/proxy' },
   { name: 'API', icon: 'i-lucide:file-code-2', href: '/dashboard/api' },
   { name: '设置', icon: 'i-lucide:settings-2', href: '/dashboard/settings' },
 ];
