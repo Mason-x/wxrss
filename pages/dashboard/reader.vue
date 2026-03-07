@@ -94,6 +94,7 @@ interface MobileSwipeState {
   tracking: boolean;
   interactive: boolean;
   axis: 'x' | 'y' | null;
+  containerWidth: number;
   startX: number;
   startY: number;
   lastX: number;
@@ -704,11 +705,13 @@ const isDesktopViewport = ref(false);
 const mobileHistory = ref<MobileHistoryState[]>([]);
 const mobileHistoryIndex = ref(-1);
 const mobileHistoryApplying = ref(false);
+const mobileSwipeOffset = ref(0);
 const mobileSwipeState = reactive<MobileSwipeState>({
   context: null,
   tracking: false,
   interactive: false,
   axis: null,
+  containerWidth: 0,
   startX: 0,
   startY: 0,
   lastX: 0,
@@ -719,6 +722,40 @@ const mobileSwipeState = reactive<MobileSwipeState>({
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
 const MOBILE_SWIPE_AXIS_LOCK_THRESHOLD = 14;
 const MOBILE_SWIPE_TRIGGER_THRESHOLD = 72;
+
+const mobileArticlesSurfaceStyle = computed(() =>
+  mobileSwipeState.context === 'articles' && mobileSwipeOffset.value !== 0
+    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
+    : undefined
+);
+
+const mobileArticleSurfaceStyle = computed(() =>
+  mobileSwipeState.context === 'article' && mobileSwipeOffset.value !== 0
+    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
+    : undefined
+);
+
+const mobileDrawerSurfaceStyle = computed(() =>
+  mobileSwipeState.context === 'drawer' && mobileSwipeOffset.value !== 0
+    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
+    : undefined
+);
+
+const mobileDrawerBackdropStyle = computed(() => {
+  if (!mobileAccountsPanelOpen.value) {
+    return undefined;
+  }
+
+  const drawerWidth = Math.max(1, mobileSwipeState.containerWidth || 320);
+  const progress =
+    mobileSwipeState.context === 'drawer' && mobileSwipeOffset.value < 0
+      ? 1 - Math.min(1, Math.abs(mobileSwipeOffset.value) / drawerWidth)
+      : 1;
+
+  return {
+    opacity: 0.16 + progress * 0.24,
+  };
+});
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
@@ -1374,11 +1411,44 @@ function resetMobileSwipeState() {
   mobileSwipeState.tracking = false;
   mobileSwipeState.interactive = false;
   mobileSwipeState.axis = null;
+  mobileSwipeState.containerWidth = 0;
   mobileSwipeState.startX = 0;
   mobileSwipeState.startY = 0;
   mobileSwipeState.lastX = 0;
   mobileSwipeState.lastY = 0;
   mobileSwipeState.edge = 'none';
+  mobileSwipeOffset.value = 0;
+}
+
+function clampSwipeOffset(value: number, limit: number) {
+  const direction = value >= 0 ? 1 : -1;
+  const distance = Math.abs(value);
+  if (distance <= limit) {
+    return value;
+  }
+  return direction * (limit + (distance - limit) * 0.18);
+}
+
+function resolveMobileSwipeOffset(context: MobileSwipeContext, deltaX: number) {
+  const width = Math.max(1, mobileSwipeState.containerWidth || window.innerWidth || 320);
+  const contentLimit = Math.min(width * 0.32, 128);
+
+  if (context === 'drawer') {
+    const drawerLimit = Math.min(width, 360);
+    return Math.max(-drawerLimit, Math.min(0, deltaX));
+  }
+
+  if (context === 'articles') {
+    if (mobileAccountsPanelOpen.value) {
+      return deltaX < 0 ? clampSwipeOffset(deltaX, contentLimit) : 0;
+    }
+    if (!selectedAccount.value) {
+      return deltaX > 0 ? clampSwipeOffset(deltaX, contentLimit) : 0;
+    }
+    return clampSwipeOffset(deltaX, contentLimit);
+  }
+
+  return clampSwipeOffset(deltaX, contentLimit);
 }
 
 function isMobileSwipeInteractiveTarget(target: EventTarget | null) {
@@ -1408,6 +1478,7 @@ function onMobileSwipeStart(context: MobileSwipeContext, event: TouchEvent) {
   mobileSwipeState.tracking = true;
   mobileSwipeState.interactive = isMobileSwipeInteractiveTarget(event.target);
   mobileSwipeState.axis = null;
+  mobileSwipeState.containerWidth = width;
   mobileSwipeState.startX = touch.clientX;
   mobileSwipeState.startY = touch.clientY;
   mobileSwipeState.lastX = touch.clientX;
@@ -1426,6 +1497,10 @@ function onMobileSwipeMove(context: MobileSwipeContext, event: TouchEvent) {
   mobileSwipeState.lastY = touch.clientY;
 
   if (mobileSwipeState.axis) {
+    if (mobileSwipeState.axis === 'x' && !mobileSwipeState.interactive) {
+      mobileSwipeOffset.value = resolveMobileSwipeOffset(context, touch.clientX - mobileSwipeState.startX);
+      event.preventDefault();
+    }
     return;
   }
 
@@ -1436,6 +1511,10 @@ function onMobileSwipeMove(context: MobileSwipeContext, event: TouchEvent) {
   }
 
   mobileSwipeState.axis = Math.abs(deltaX) > Math.abs(deltaY) * 1.15 ? 'x' : 'y';
+  if (mobileSwipeState.axis === 'x' && !mobileSwipeState.interactive) {
+    mobileSwipeOffset.value = resolveMobileSwipeOffset(context, deltaX);
+    event.preventDefault();
+  }
 }
 
 async function openAdjacentArticle(step: number) {
@@ -2086,6 +2165,20 @@ async function startRemoteBatchSync(targets: MpAccount[]): Promise<RemoteBatchSy
     method: 'POST',
     body: {
       fakeids: targets.map(account => account.fakeid),
+      accounts: targets.map(account => ({
+        fakeid: account.fakeid,
+        completed: Boolean(account.completed),
+        count: Number(account.count) || 0,
+        articles: Number(account.articles) || 0,
+        category: String(account.category || ''),
+        focused: Boolean(account.focused),
+        nickname: String(account.nickname || ''),
+        round_head_img: String(account.round_head_img || ''),
+        total_count: Number(account.total_count) || 0,
+        create_time: Number(account.create_time) || 0,
+        update_time: Number(account.update_time) || 0,
+        last_update_time: Number(account.last_update_time) || 0,
+      })),
       syncTimestamp: getSyncTimestamp(),
       accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
       accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
@@ -2175,6 +2268,8 @@ async function syncAllAccountsInCurrentScope() {
       const firstMessage = normalizeRuntimeErrorMessage(String(snapshot.message || '未知错误'));
       if (firstMessage === 'session expired') {
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
+      } else if (firstMessage === `all ${snapshot.failedCount} accounts failed`) {
+        toast.error('同步失败', `全部 ${snapshot.failedCount} 个公众号同步失败`);
       } else {
         toast.error('同步失败', firstMessage);
       }
@@ -2427,10 +2522,12 @@ onUnmounted(() => {
           <div
             v-else
             ref="mobileArticlesListRef"
-            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            class="mobile-swipe-panel mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'articles' && mobileSwipeState.axis === 'x' }"
+            :style="mobileArticlesSurfaceStyle"
             @scroll.passive="onMobileReaderScroll"
             @touchstart.passive="onMobileSwipeStart('articles', $event)"
-            @touchmove.passive="onMobileSwipeMove('articles', $event)"
+            @touchmove="onMobileSwipeMove('articles', $event)"
             @touchend="onMobileSwipeEnd('articles', $event)"
             @touchcancel="onMobileSwipeCancel"
           >
@@ -2517,10 +2614,12 @@ onUnmounted(() => {
           <div
             v-else
             ref="mobileArticleContentRef"
-            class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
+            class="mobile-swipe-panel mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
+            :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'article' && mobileSwipeState.axis === 'x' }"
+            :style="mobileArticleSurfaceStyle"
             @scroll.passive="onMobileReaderScroll"
             @touchstart.passive="onMobileSwipeStart('article', $event)"
-            @touchmove.passive="onMobileSwipeMove('article', $event)"
+            @touchmove="onMobileSwipeMove('article', $event)"
             @touchend="onMobileSwipeEnd('article', $event)"
             @touchcancel="onMobileSwipeCancel"
           >
@@ -2543,14 +2642,17 @@ onUnmounted(() => {
         <div
           v-if="mobileAccountsPanelOpen"
           class="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"
+          :style="mobileDrawerBackdropStyle"
           @click.self="mobileAccountsPanelOpen = false"
         >
           <Transition name="mobile-drawer-slide">
             <aside
               v-if="mobileAccountsPanelOpen"
-              class="mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+              class="mobile-accounts-drawer mobile-swipe-panel mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+              :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'drawer' && mobileSwipeState.axis === 'x' }"
+              :style="mobileDrawerSurfaceStyle"
               @touchstart.passive="onMobileSwipeStart('drawer', $event)"
-              @touchmove.passive="onMobileSwipeMove('drawer', $event)"
+              @touchmove="onMobileSwipeMove('drawer', $event)"
               @touchend="onMobileSwipeEnd('drawer', $event)"
               @touchcancel="onMobileSwipeCancel"
             >
@@ -3411,6 +3513,16 @@ onUnmounted(() => {
 
 .mobile-accounts-drawer {
   max-width: 23rem;
+  will-change: transform;
+}
+
+.mobile-swipe-panel {
+  will-change: transform;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mobile-swipe-panel.is-swipe-dragging {
+  transition: none;
 }
 
 .mobile-touch-surface {

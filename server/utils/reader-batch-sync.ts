@@ -14,6 +14,7 @@ type BatchJobStatus = 'running' | 'success' | 'error' | 'canceled';
 
 interface BatchJobOptions {
   fakeids: string[];
+  accounts?: ReaderBatchSyncJobSubprocessAccount[];
   syncTimestamp: number;
   accountSyncMinSeconds: number;
   accountSyncMaxSeconds: number;
@@ -334,6 +335,44 @@ function buildCookieString(auth: NonNullable<Awaited<ReturnType<typeof getMpCook
     .join('; ');
 }
 
+function normalizeBatchJobAccount(
+  account: Partial<ReaderBatchSyncJobSubprocessAccount> | null | undefined
+): ReaderBatchSyncJobSubprocessAccount | null {
+  const fakeid = String(account?.fakeid || '').trim();
+  if (!fakeid) {
+    return null;
+  }
+
+  return {
+    fakeid,
+    completed: Boolean(account?.completed),
+    count: Number(account?.count) || 0,
+    articles: Number(account?.articles) || 0,
+    category: String(account?.category || ''),
+    focused: Boolean(account?.focused),
+    nickname: String(account?.nickname || ''),
+    round_head_img: String(account?.round_head_img || ''),
+    total_count: Number(account?.total_count) || 0,
+    create_time: Number(account?.create_time) || 0,
+    update_time: Number(account?.update_time) || 0,
+    last_update_time: Number(account?.last_update_time) || 0,
+  };
+}
+
+function normalizeBatchJobAccounts(
+  accounts?: Array<Partial<ReaderBatchSyncJobSubprocessAccount> | null | undefined>
+): ReaderBatchSyncJobSubprocessAccount[] {
+  const deduped = new Map<string, ReaderBatchSyncJobSubprocessAccount>();
+  for (const account of accounts || []) {
+    const normalized = normalizeBatchJobAccount(account);
+    if (!normalized) {
+      continue;
+    }
+    deduped.set(normalized.fakeid, normalized);
+  }
+  return Array.from(deduped.values());
+}
+
 function applyChildProgress(job: BatchJobRuntime, progress: ReaderBatchSyncJobSubprocessEvent): void {
   switch (progress.type) {
     case 'account-start':
@@ -411,8 +450,16 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
     throw new Error('session expired');
   }
 
+  const providedAccounts = normalizeBatchJobAccounts(options.accounts);
+  const providedAccountMap = new Map(providedAccounts.map(account => [account.fakeid, account]));
   const accounts: ReaderBatchSyncJobSubprocessAccount[] = [];
   for (const fakeid of options.fakeids) {
+    const provided = providedAccountMap.get(fakeid);
+    if (provided) {
+      accounts.push(provided);
+      continue;
+    }
+
     const account = await getAccountByFakeid(job.authKey, fakeid);
     if (!account) {
       markAccountError(job, fakeid, fakeid, 'account not found');
@@ -422,7 +469,7 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
   }
 
   if (accounts.length === 0) {
-    return;
+    throw new Error('no accounts available for batch sync');
   }
 
   const controller = startReaderBatchSyncInSubprocess(
@@ -498,7 +545,16 @@ export function startReaderBatchSyncJob(authKey: string, options: BatchJobOption
     return cloneJobSnapshot(existing);
   }
 
-  const fakeids = Array.from(new Set((options.fakeids || []).filter(Boolean)));
+  const normalizedAccounts = normalizeBatchJobAccounts(options.accounts);
+  const fallbackFakeids = normalizedAccounts.map(account => account.fakeid);
+  const fakeids = Array.from(
+    new Set(((options.fakeids && options.fakeids.length > 0 ? options.fakeids : fallbackFakeids) || []).filter(Boolean))
+  );
+  const resolvedOptions: BatchJobOptions = {
+    ...options,
+    fakeids,
+    accounts: normalizedAccounts,
+  };
   const startedAt = nowMs();
   const job: BatchJobRuntime = {
     authKey,
@@ -533,16 +589,17 @@ export function startReaderBatchSyncJob(authKey: string, options: BatchJobOption
 
   void (async () => {
     try {
-      await runBatchJob(job, options);
+      await runBatchJob(job, resolvedOptions);
       if (job.cancelRequested) {
         throw new BatchSyncCancelledError();
       }
+      const allFailed = job.failedCount > 0 && job.successCount === 0;
       updateJob(job, {
-        status: 'success',
+        status: allFailed ? 'error' : 'success',
         currentFakeid: '',
         currentNickname: '',
         currentController: null,
-        message: `synced ${job.successCount} accounts`,
+        message: allFailed ? `all ${job.failedCount} accounts failed` : `synced ${job.successCount} accounts`,
         finishedAt: nowMs(),
       });
       logMemory('reader-batch-sync:job-done', {
