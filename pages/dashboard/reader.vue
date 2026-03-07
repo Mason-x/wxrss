@@ -55,6 +55,7 @@ interface ReaderCategory {
 interface ReaderArticle extends AppMsgExWithFakeID {
   accountName: string;
   category: string;
+  round_head_img?: string;
   contentDownload?: boolean;
   commentDownload?: boolean;
   favorite?: boolean;
@@ -77,6 +78,27 @@ interface ReaderRuntimeState {
   knownArticleKeys: string[];
   unreadArticleKeys: string[];
   accountNewArticleFakeids: string[];
+}
+
+interface MobileHistoryState {
+  categoryId: string;
+  accountId: string | null;
+  articleKey: string | null;
+}
+
+type MobileSwipeContext = 'articles' | 'article' | 'drawer';
+type MobileSwipeEdge = 'left' | 'right' | 'none';
+
+interface MobileSwipeState {
+  context: MobileSwipeContext | null;
+  tracking: boolean;
+  interactive: boolean;
+  axis: 'x' | 'y' | null;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  edge: MobileSwipeEdge;
 }
 
 function normalizeReaderRuntimeState(input?: Partial<ReaderRuntimeState> | null): ReaderRuntimeState {
@@ -347,6 +369,7 @@ function normalizeSyncArticle(account: MpAccount, article: any): ReaderArticle {
     fakeid: account.fakeid,
     accountName: account.nickname || account.fakeid,
     category: normalizeCategory(account),
+    round_head_img: account.round_head_img || '',
     _status: String(article?._status || ''),
     is_deleted: Boolean(article?.is_deleted),
     contentDownload: false,
@@ -624,6 +647,14 @@ const selectedArticleDisplayTitle = computed(() => {
   return articleDisplayTitle(selectedArticle.value);
 });
 
+const selectedArticleIndex = computed(() => {
+  if (!selectedArticle.value) {
+    return -1;
+  }
+  const currentKey = articleKey(selectedArticle.value);
+  return displayedArticles.value.findIndex(article => articleKey(article) === currentKey);
+});
+
 const selectedArticleUrls = computed(() => {
   if (selectedArticleKeys.value.size === 0) {
     return [] as string[];
@@ -670,6 +701,24 @@ const mobileArticleContentRef = ref<HTMLElement | null>(null);
 const mobileScrollTopVisible = ref(false);
 const mobileAccountsPanelOpen = ref(false);
 const isDesktopViewport = ref(false);
+const mobileHistory = ref<MobileHistoryState[]>([]);
+const mobileHistoryIndex = ref(-1);
+const mobileHistoryApplying = ref(false);
+const mobileSwipeState = reactive<MobileSwipeState>({
+  context: null,
+  tracking: false,
+  interactive: false,
+  axis: null,
+  startX: 0,
+  startY: 0,
+  lastX: 0,
+  lastY: 0,
+  edge: 'none',
+});
+
+const MOBILE_SWIPE_EDGE_GUTTER = 28;
+const MOBILE_SWIPE_AXIS_LOCK_THRESHOLD = 14;
+const MOBILE_SWIPE_TRIGGER_THRESHOLD = 72;
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
@@ -882,6 +931,7 @@ async function loadArticlePage(reset = false) {
       ...item,
       accountName: item.accountName || findAccount(item.fakeid)?.nickname || item.fakeid,
       category: item.category || normalizeCategory(findAccount(item.fakeid) || ({ category: '' } as MpAccount)),
+      round_head_img: item.round_head_img || findAccount(item.fakeid)?.round_head_img || '',
       contentDownload: false,
       commentDownload: false,
     }));
@@ -1213,7 +1263,272 @@ async function migrateLegacyLargeCacheIfNeeded() {
   }
 }
 
-async function openArticle(article: ReaderArticle) {
+function buildMobileHistoryState(overrides: Partial<MobileHistoryState> = {}): MobileHistoryState {
+  return {
+    categoryId: selectedCategory.value,
+    accountId: selectedAccount.value,
+    articleKey: selectedArticle.value ? articleKey(selectedArticle.value) : null,
+    ...overrides,
+  };
+}
+
+function sameMobileHistoryState(a: MobileHistoryState | null | undefined, b: MobileHistoryState | null | undefined) {
+  if (!a || !b) {
+    return false;
+  }
+  return a.categoryId === b.categoryId && a.accountId === b.accountId && a.articleKey === b.articleKey;
+}
+
+function resetMobileHistory(state = buildMobileHistoryState()) {
+  mobileHistory.value = [state];
+  mobileHistoryIndex.value = 0;
+}
+
+function ensureMobileHistorySeeded() {
+  if (isDesktopViewport.value || mobileHistoryApplying.value) {
+    return;
+  }
+  if (mobileHistoryIndex.value >= 0 && mobileHistory.value.length > 0) {
+    return;
+  }
+  resetMobileHistory();
+}
+
+function pushMobileHistoryState(state: MobileHistoryState) {
+  if (isDesktopViewport.value || mobileHistoryApplying.value) {
+    return;
+  }
+
+  ensureMobileHistorySeeded();
+  const current = mobileHistory.value[mobileHistoryIndex.value] || null;
+  if (sameMobileHistoryState(current, state)) {
+    return;
+  }
+
+  const nextHistory = mobileHistory.value.slice(0, mobileHistoryIndex.value + 1);
+  nextHistory.push(state);
+  mobileHistory.value = nextHistory;
+  mobileHistoryIndex.value = nextHistory.length - 1;
+}
+
+function findDisplayedArticleByKey(key: string | null) {
+  if (!key) {
+    return null;
+  }
+  return displayedArticles.value.find(article => articleKey(article) === key) || null;
+}
+
+async function applyMobileHistoryState(state: MobileHistoryState) {
+  mobileHistoryApplying.value = true;
+  try {
+    selectedCategory.value = state.categoryId;
+    selectedAccount.value = state.accountId;
+
+    if (!state.articleKey) {
+      selectedArticle.value = null;
+      selectedArticleHtml.value = '';
+      selectedArticleKeys.value.clear();
+      selectionMode.value = false;
+      return true;
+    }
+
+    let target = findDisplayedArticleByKey(state.articleKey);
+    if (!target) {
+      await loadArticlePage(true);
+      target = findDisplayedArticleByKey(state.articleKey);
+    }
+
+    if (!target) {
+      selectedArticle.value = null;
+      selectedArticleHtml.value = '';
+      return false;
+    }
+
+    await openArticle(target, { trackHistory: false });
+    return true;
+  } finally {
+    mobileHistoryApplying.value = false;
+  }
+}
+
+async function navigateMobileHistory(delta: number) {
+  if (isDesktopViewport.value) {
+    return false;
+  }
+
+  const nextIndex = mobileHistoryIndex.value + delta;
+  if (nextIndex < 0 || nextIndex >= mobileHistory.value.length) {
+    return false;
+  }
+
+  const target = mobileHistory.value[nextIndex];
+  const applied = await applyMobileHistoryState(target);
+  if (applied) {
+    mobileHistoryIndex.value = nextIndex;
+  }
+  return applied;
+}
+
+function resetMobileSwipeState() {
+  mobileSwipeState.context = null;
+  mobileSwipeState.tracking = false;
+  mobileSwipeState.interactive = false;
+  mobileSwipeState.axis = null;
+  mobileSwipeState.startX = 0;
+  mobileSwipeState.startY = 0;
+  mobileSwipeState.lastX = 0;
+  mobileSwipeState.lastY = 0;
+  mobileSwipeState.edge = 'none';
+}
+
+function isMobileSwipeInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(
+    target.closest(
+      'button, a, input, textarea, select, label, summary, [role="button"], [role="link"], [data-swipe-ignore="true"]'
+    )
+  );
+}
+
+function onMobileSwipeStart(context: MobileSwipeContext, event: TouchEvent) {
+  if (isDesktopViewport.value || event.touches.length !== 1) {
+    resetMobileSwipeState();
+    return;
+  }
+
+  const touch = event.touches[0];
+  const container = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  const bounds = container?.getBoundingClientRect();
+  const width = bounds?.width || window.innerWidth;
+  const localX = touch.clientX - (bounds?.left || 0);
+
+  mobileSwipeState.context = context;
+  mobileSwipeState.tracking = true;
+  mobileSwipeState.interactive = isMobileSwipeInteractiveTarget(event.target);
+  mobileSwipeState.axis = null;
+  mobileSwipeState.startX = touch.clientX;
+  mobileSwipeState.startY = touch.clientY;
+  mobileSwipeState.lastX = touch.clientX;
+  mobileSwipeState.lastY = touch.clientY;
+  mobileSwipeState.edge =
+    localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
+}
+
+function onMobileSwipeMove(context: MobileSwipeContext, event: TouchEvent) {
+  if (!mobileSwipeState.tracking || mobileSwipeState.context !== context || event.touches.length !== 1) {
+    return;
+  }
+
+  const touch = event.touches[0];
+  mobileSwipeState.lastX = touch.clientX;
+  mobileSwipeState.lastY = touch.clientY;
+
+  if (mobileSwipeState.axis) {
+    return;
+  }
+
+  const deltaX = touch.clientX - mobileSwipeState.startX;
+  const deltaY = touch.clientY - mobileSwipeState.startY;
+  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < MOBILE_SWIPE_AXIS_LOCK_THRESHOLD) {
+    return;
+  }
+
+  mobileSwipeState.axis = Math.abs(deltaX) > Math.abs(deltaY) * 1.15 ? 'x' : 'y';
+}
+
+async function openAdjacentArticle(step: number) {
+  const currentIndex = selectedArticleIndex.value;
+  if (currentIndex < 0) {
+    return false;
+  }
+
+  const target = displayedArticles.value[currentIndex + step];
+  if (!target) {
+    return false;
+  }
+
+  await openArticle(target);
+  return true;
+}
+
+async function handleMobileSwipeGesture(context: MobileSwipeContext, deltaX: number, edge: MobileSwipeEdge) {
+  if (context === 'articles') {
+    if (deltaX > 0) {
+      if (!mobileAccountsPanelOpen.value && (edge === 'left' || !selectedAccount.value)) {
+        showMobileAccounts();
+      }
+      return;
+    }
+
+    if (mobileAccountsPanelOpen.value) {
+      mobileAccountsPanelOpen.value = false;
+      return;
+    }
+
+    if (selectedAccount.value) {
+      await backFromMobileView();
+    }
+    return;
+  }
+
+  if (context === 'drawer') {
+    if (deltaX < 0) {
+      mobileAccountsPanelOpen.value = false;
+    }
+    return;
+  }
+
+  if (deltaX > 0) {
+    if (edge === 'left') {
+      if (!(await navigateMobileHistory(-1))) {
+        await backFromMobileView();
+      }
+      return;
+    }
+    await openAdjacentArticle(-1);
+    return;
+  }
+
+  if (edge === 'right' && (await navigateMobileHistory(1))) {
+    return;
+  }
+
+  await openAdjacentArticle(1);
+}
+
+async function onMobileSwipeEnd(context: MobileSwipeContext, event: TouchEvent) {
+  if (!mobileSwipeState.tracking || mobileSwipeState.context !== context) {
+    return;
+  }
+
+  if (event.changedTouches.length > 0) {
+    const touch = event.changedTouches[0];
+    mobileSwipeState.lastX = touch.clientX;
+    mobileSwipeState.lastY = touch.clientY;
+  }
+
+  const deltaX = mobileSwipeState.lastX - mobileSwipeState.startX;
+  const deltaY = mobileSwipeState.lastY - mobileSwipeState.startY;
+  const isHorizontalSwipe =
+    Math.abs(deltaX) >= MOBILE_SWIPE_TRIGGER_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+
+  if (!mobileSwipeState.interactive && mobileSwipeState.axis !== 'y' && isHorizontalSwipe) {
+    await handleMobileSwipeGesture(context, deltaX, mobileSwipeState.edge);
+  }
+
+  resetMobileSwipeState();
+}
+
+function onMobileSwipeCancel() {
+  resetMobileSwipeState();
+}
+
+async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
+  if (options.trackHistory !== false) {
+    pushMobileHistoryState(buildMobileHistoryState({ articleKey: articleKey(article) }));
+  }
   selectedArticle.value = article;
   markArticleAsRead(article);
   selectedArticleHtml.value = '';
@@ -1349,6 +1664,11 @@ async function loadMoreArticles() {
 function onClickCategory(categoryId: string) {
   selectedCategory.value = categoryId;
   selectedAccount.value = null;
+  pushMobileHistoryState({
+    categoryId,
+    accountId: null,
+    articleKey: null,
+  });
 }
 
 function onClickAccount(account: MpAccount) {
@@ -1356,9 +1676,13 @@ function onClickAccount(account: MpAccount) {
   selectedAccount.value = account.fakeid;
   selectedArticle.value = null;
   mobileAccountsPanelOpen.value = false;
+  pushMobileHistoryState(buildMobileHistoryState({ accountId: account.fakeid, articleKey: null }));
 }
 
-function backFromMobileView() {
+async function backFromMobileView() {
+  if (await navigateMobileHistory(-1)) {
+    return;
+  }
   if (selectedArticle.value) {
     selectedArticle.value = null;
     return;
@@ -1382,6 +1706,11 @@ function showMobileAggregateArticles() {
   selectedCategory.value = '__all__';
   selectedAccount.value = null;
   mobileAccountsPanelOpen.value = false;
+  pushMobileHistoryState({
+    categoryId: '__all__',
+    accountId: null,
+    articleKey: null,
+  });
 }
 
 function onMobileReaderScroll() {
@@ -1949,12 +2278,19 @@ function updateDesktopViewport() {
   isDesktopViewport.value = window.innerWidth >= 768;
 }
 
+watch(isDesktopViewport, desktop => {
+  if (!desktop) {
+    resetMobileHistory();
+  }
+});
+
 onMounted(async () => {
   updateDesktopViewport();
   await runtimeStateSync.hydrate();
   await favoriteOnlySync.hydrate();
   initializeRuntimeState();
   await refreshData();
+  resetMobileHistory();
   cookieTimer = window.setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
@@ -2035,6 +2371,17 @@ onUnmounted(() => {
           </div>
 
           <div class="flex items-center gap-2">
+            <UTooltip v-if="mobileView !== 'article'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                class="icon-btn mobile-favorite-toggle"
+                :class="favoriteOnly ? 'is-active' : ''"
+                @click="favoriteOnly = !favoriteOnly"
+              />
+            </UTooltip>
             <UTooltip v-if="mobileView !== 'article'" :text="syncHeaderTooltip">
               <UButton
                 size="2xs"
@@ -2080,14 +2427,13 @@ onUnmounted(() => {
           <div
             v-else
             ref="mobileArticlesListRef"
-            class="flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             @scroll.passive="onMobileReaderScroll"
+            @touchstart.passive="onMobileSwipeStart('articles', $event)"
+            @touchmove.passive="onMobileSwipeMove('articles', $event)"
+            @touchend="onMobileSwipeEnd('articles', $event)"
+            @touchcancel="onMobileSwipeCancel"
           >
-            <div class="mb-3 flex items-center justify-between gap-3 rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900">
-              <UCheckbox v-model="favoriteOnly" name="mobile-favorite-only" label="只看收藏" />
-              <span v-if="favoriteOnly" class="text-[11px] text-amber-600 dark:text-amber-400">已开启</span>
-            </div>
-
             <ul v-if="displayedArticles.length > 0" class="space-y-3">
               <li
                 v-for="article in displayedArticles"
@@ -2106,7 +2452,18 @@ onUnmounted(() => {
                   <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
                     <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
                     <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span class="truncate">{{ article.accountName }}</span>
+                      <span class="min-w-0 flex items-center gap-2 truncate">
+                        <span class="article-account-avatar">
+                          <img
+                            v-if="article.round_head_img"
+                            :src="IMAGE_PROXY + article.round_head_img"
+                            alt=""
+                            class="size-full object-cover"
+                          />
+                          <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                        </span>
+                        <span class="truncate">{{ article.accountName }}</span>
+                      </span>
                       <span class="inline-flex shrink-0 items-center gap-1.5">
                         <span v-if="isArticleUnread(article)" class="unread-dot" />
                         <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
@@ -2160,8 +2517,12 @@ onUnmounted(() => {
           <div
             v-else
             ref="mobileArticleContentRef"
-            class="flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
+            class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
             @scroll.passive="onMobileReaderScroll"
+            @touchstart.passive="onMobileSwipeStart('article', $event)"
+            @touchmove.passive="onMobileSwipeMove('article', $event)"
+            @touchend="onMobileSwipeEnd('article', $event)"
+            @touchcancel="onMobileSwipeCancel"
           >
             <div class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
               <h2 class="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-50">
@@ -2187,7 +2548,11 @@ onUnmounted(() => {
           <Transition name="mobile-drawer-slide">
             <aside
               v-if="mobileAccountsPanelOpen"
-              class="mobile-accounts-drawer flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+              class="mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+              @touchstart.passive="onMobileSwipeStart('drawer', $event)"
+              @touchmove.passive="onMobileSwipeMove('drawer', $event)"
+              @touchend="onMobileSwipeEnd('drawer', $event)"
+              @touchcancel="onMobileSwipeCancel"
             >
               <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
                 <div class="flex items-start justify-between gap-3">
@@ -3006,6 +3371,14 @@ onUnmounted(() => {
   @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
 }
 
+.mobile-favorite-toggle.is-active {
+  @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
+}
+
+.article-account-avatar {
+  @apply inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800;
+}
+
 .account-new-dot {
   @apply relative inline-block size-2.5 rounded-full border border-white/90 bg-rose-500 dark:border-slate-900;
   box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.42);
@@ -3038,6 +3411,11 @@ onUnmounted(() => {
 
 .mobile-accounts-drawer {
   max-width: 23rem;
+}
+
+.mobile-touch-surface {
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior-x: contain;
 }
 
 .mobile-drawer-fade-enter-active,

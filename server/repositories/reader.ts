@@ -132,6 +132,7 @@ function mapArticleLiteRow(row: any): ReaderArticle {
     _status: row.status || '',
     favorite: Boolean(row.favorite),
     is_deleted: Boolean(row.is_deleted),
+    round_head_img: row.account_round_head_img || '',
   };
 }
 
@@ -609,15 +610,22 @@ export async function upsertArticles(
   const articles = Array.isArray(payload.articles) ? payload.articles.map(normalizeArticleForStorage) : [];
 
   if (!fakeid || articles.length === 0) {
-    await applyAccountDelta(authKey, {
-      ...payload.account,
-      fakeid,
-      completed: Boolean(payload.completed),
-      total_count: Number.isFinite(payload.totalCount) ? Number(payload.totalCount) : payload.account.total_count,
-    }, 0, 0);
+    await applyAccountDelta(
+      authKey,
+      {
+        ...payload.account,
+        fakeid,
+        completed: Boolean(payload.completed),
+        total_count: Number.isFinite(payload.totalCount) ? Number(payload.totalCount) : payload.account.total_count,
+      },
+      0,
+      0
+    );
     return {
       inserted: 0,
-      totalCount: Number.isFinite(payload.totalCount) ? Number(payload.totalCount) : Number(payload.account.total_count) || 0,
+      totalCount: Number.isFinite(payload.totalCount)
+        ? Number(payload.totalCount)
+        : Number(payload.account.total_count) || 0,
     };
   }
 
@@ -903,7 +911,7 @@ export async function listArticlesPage(
     params.push(options.focused ? 1 : 0);
   }
   if (typeof options.category === 'string' && options.category.trim()) {
-    where.push('COALESCE(ac.category, \'\') = ?');
+    where.push("COALESCE(ac.category, '') = ?");
     params.push(options.category.trim());
   }
   if (typeof options.favorite === 'boolean') {
@@ -941,7 +949,8 @@ export async function listArticlesPage(
       a.is_deleted,
       a.status,
       ac.nickname AS account_nickname,
-      ac.category AS account_category
+      ac.category AS account_category,
+      ac.round_head_img AS account_round_head_img
     FROM reader_articles a
     LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
     WHERE ${whereSql}

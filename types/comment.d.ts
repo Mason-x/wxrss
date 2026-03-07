@@ -46,13 +46,14 @@ interface ReplyComment {
   create_time: number;
   identity_name: string;
   identity_type: number;
-  ip_wording: IPWording;
+  ip_wording?: IPWording;
   is_deleted: number;
   is_from: number;
   is_from_friend: number;
   logo_url: string;
   nick_name: string;
   openid: string;
+  to_nick_name?: string;
   reply_del_flag: number;
   reply_id: number;
   reply_is_elected: number;

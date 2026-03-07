@@ -115,6 +115,7 @@
 </template>
 
 <script setup lang="ts">
+import type { CommentResponse } from '~/types/comment';
 import { formatAlbumTime } from '~/utils/album';
 
 definePageMeta({
@@ -128,7 +129,7 @@ const IdentityTypeMap = {
   3: '未知',
 };
 
-const commentData = {
+const commentData: CommentResponse = {
   base_resp: {
     exportkey_token: '',
     ret: 0,
@@ -1639,7 +1640,7 @@ const commentData = {
   reply_flag: 2,
 };
 
-const commentData2 = {
+const commentData2: CommentResponse = {
   base_resp: {
     exportkey_token: '',
     ret: 0,

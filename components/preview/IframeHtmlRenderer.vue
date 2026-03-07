@@ -16,6 +16,7 @@
 
 <script setup lang="ts">
 import DOMPurify from 'dompurify';
+import type { NitroFetchRequest } from 'nitropack';
 import usePreferences from '~/composables/usePreferences';
 import { validatePrivateProxyList } from '~/config/proxy';
 import type { Preferences } from '~/types/preferences';
@@ -32,7 +33,7 @@ const props = defineProps<Props>();
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const preferences = usePreferences() as unknown as Ref<Preferences>;
-const { $fetch } = useNuxtApp();
+const fetcher = $fetch as <T>(request: NitroFetchRequest, options?: Record<string, any>) => Promise<T>;
 const preparedHtml = ref('');
 let resizeObserver: ResizeObserver | null = null;
 let prepareRequestId = 0;
@@ -168,7 +169,7 @@ async function refreshMpVideos(doc: Document): Promise<void> {
   }
 
   try {
-    const response = await $fetch<MpVideoInfoResponse>('/api/public/v1/mpvideo-info', {
+    const response = await fetcher<MpVideoInfoResponse>('/api/public/v1/mpvideo-info', {
       query: {
         url: articleUrl,
         vids: videoIds.join(','),

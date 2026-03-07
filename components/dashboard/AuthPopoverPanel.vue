@@ -1,5 +1,15 @@
 <script setup lang="ts">
-const { loggedIn, user, clear, openInPopup, session } = useUserSession();
+interface SessionUser {
+  username: string;
+  avatar: string;
+  name: string;
+  plan: string;
+  provider: string;
+}
+
+const loggedIn = ref(false);
+const user = ref<SessionUser | null>(null);
+const clear = async () => {};
 
 const open = defineModel<boolean>('open', { default: false });
 
@@ -14,10 +24,8 @@ const loginWithGoogle = async () => {
 };
 
 // 登出功能
-const logout = async () => {};
-
 // 由于 nuxt-auth-utils 库在授权时的bug，在授权之前需要手动删除临时cookie
-function deleteCookie(name) {
+function deleteCookie(name: string) {
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
 }
 
