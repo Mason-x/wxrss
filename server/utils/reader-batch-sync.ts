@@ -15,7 +15,8 @@ type BatchJobStatus = 'running' | 'success' | 'error' | 'canceled';
 interface BatchJobOptions {
   fakeids: string[];
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
 }
 
 interface BatchJobRuntime {
@@ -433,7 +434,8 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
       userAgent: USER_AGENT,
       accounts,
       syncTimestamp: options.syncTimestamp,
-      accountSyncSeconds: options.accountSyncSeconds,
+      accountSyncMinSeconds: options.accountSyncMinSeconds,
+      accountSyncMaxSeconds: options.accountSyncMaxSeconds,
     },
     progress => {
       applyChildProgress(job, progress);

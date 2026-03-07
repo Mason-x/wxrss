@@ -1,11 +1,13 @@
 import { getSqliteDb } from '~/server/db/sqlite';
+import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
 import { logMemory } from '~/server/utils/memory-debug';
 type SyncDateRange = '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
 
 export interface SchedulerConfig {
   dailySyncEnabled: boolean;
   dailySyncTime: string; // HH:mm
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
   syncDateRange: SyncDateRange;
   syncDatePoint: number;
 }
@@ -42,7 +44,8 @@ const SCHEDULER_INDEX_KEY = 'scheduler:index';
 const DEFAULT_CONFIG: SchedulerConfig = {
   dailySyncEnabled: false,
   dailySyncTime: '06:00',
-  accountSyncSeconds: 3,
+  accountSyncMinSeconds: 3,
+  accountSyncMaxSeconds: 5,
   syncDateRange: 'all',
   syncDatePoint: 0,
 };
@@ -67,16 +70,6 @@ function normalizeDailySyncTime(value?: string): string {
   return `${match[1]}:${match[2]}`;
 }
 
-function normalizeAccountSyncSeconds(value?: number): number {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_CONFIG.accountSyncSeconds;
-  }
-  const parsed = Math.floor(Number(value));
-  if (parsed < 1) return 1;
-  if (parsed > 30) return 30;
-  return parsed;
-}
-
 function normalizeSyncDateRange(value?: string): SyncDateRange {
   const candidates: SyncDateRange[] = ['1d', '3d', '7d', '1m', '3m', '6m', '1y', 'all', 'point'];
   if (value && candidates.includes(value as SyncDateRange)) {
@@ -85,12 +78,18 @@ function normalizeSyncDateRange(value?: string): SyncDateRange {
   return DEFAULT_CONFIG.syncDateRange;
 }
 
-export function normalizeSchedulerConfig(input?: Partial<SchedulerConfig>): SchedulerConfig {
+type SchedulerConfigInput = Partial<SchedulerConfig> & {
+  accountSyncSeconds?: number;
+};
+
+export function normalizeSchedulerConfig(input?: SchedulerConfigInput): SchedulerConfig {
   const config = input || {};
+  const syncDelayRange = normalizeSyncDelayRange(config, DEFAULT_CONFIG);
   return {
     dailySyncEnabled: Boolean(config.dailySyncEnabled),
     dailySyncTime: normalizeDailySyncTime(config.dailySyncTime),
-    accountSyncSeconds: normalizeAccountSyncSeconds(config.accountSyncSeconds),
+    accountSyncMinSeconds: syncDelayRange.accountSyncMinSeconds,
+    accountSyncMaxSeconds: syncDelayRange.accountSyncMaxSeconds,
     syncDateRange: normalizeSyncDateRange(config.syncDateRange),
     syncDatePoint: Number.isFinite(config.syncDatePoint) ? Number(config.syncDatePoint) : 0,
   };

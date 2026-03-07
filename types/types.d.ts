@@ -2,6 +2,8 @@ export interface LoginAccount {
   nickname: string;
   avatar: string;
   expires: string;
+  auth_key?: string;
+  identity_key?: string;
   err?: string;
 }
 

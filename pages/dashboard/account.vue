@@ -13,6 +13,7 @@ import type {
 import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
+import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { getArticleList } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
@@ -151,7 +152,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
         }
         _load(account, begin, true, promise);
       },
-      ((preferences.value as unknown as Preferences).accountSyncSeconds || 5) * 1000
+      pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
     );
   } else {
     syncingRowId.value = null;

@@ -67,7 +67,8 @@ interface ReaderBatchSyncJobChildInput {
   userAgent: string;
   accounts: ReaderBatchAccountRecord[];
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
   requestTimeoutMs: number;
   maxJsonBytes: number;
   accountChildMaxOldSpaceMb: number;
@@ -96,7 +97,8 @@ interface ReaderBatchAccountSubprocessInput {
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
   accountChildMaxOldSpaceMb: number;
   account: ReaderBatchAccountRecord;
 }
@@ -364,7 +366,8 @@ async function runBatch(payload: ReaderBatchSyncJobChildInput): Promise<void> {
           timeoutMs: payload.requestTimeoutMs,
           maxJsonBytes: payload.maxJsonBytes,
           syncTimestamp: payload.syncTimestamp,
-          accountSyncSeconds: payload.accountSyncSeconds,
+          accountSyncMinSeconds: payload.accountSyncMinSeconds,
+          accountSyncMaxSeconds: payload.accountSyncMaxSeconds,
           account,
           accountChildMaxOldSpaceMb: payload.accountChildMaxOldSpaceMb,
         },

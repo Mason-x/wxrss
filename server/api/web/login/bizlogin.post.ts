@@ -2,7 +2,11 @@ import dayjs from 'dayjs';
 import { getRequestHeader, type H3Event } from 'h3';
 import { request } from '#shared/utils/request';
 import { getMpCookie } from '~/server/kv/cookie';
-import { getAuthKeyBindingByAuthKey, getAuthKeyBindingByIdentity, upsertAuthKeyBinding } from '~/server/repositories/auth-key-binding';
+import {
+  getAuthKeyBindingByAuthKey,
+  getAuthKeyBindingByIdentity,
+  upsertAuthKeyBinding,
+} from '~/server/repositories/auth-key-binding';
 import { cookieStore, getCookieFromResponse, getCookiesFromRequest } from '~/server/utils/CookieStore';
 import { getAuthKeyFromRequest, proxyMpRequest } from '~/server/utils/proxy-request';
 
@@ -163,6 +167,7 @@ export default defineEventHandler(async event => {
     avatar: info.head_img,
     expires: dayjs().add(4, 'days').toString(),
     auth_key: canonicalAuthKey,
+    identity_key: info.identity_key || '',
   });
 
   headers.set('Content-Length', new TextEncoder().encode(body).length.toString());

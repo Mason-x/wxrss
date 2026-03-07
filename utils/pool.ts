@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import PQueue from 'p-queue';
 import { v4 as uuid } from 'uuid';
 import { sleep } from '#shared/utils/helpers';
-import { PUBLIC_PROXY_LIST } from '~/config/public-proxy';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
 import type { DownloadableArticle } from '~/types/types';
 import type { AudioResource, VideoResource } from '~/types/video';
 
@@ -171,7 +171,7 @@ class ProxyPool {
 }
 
 // 代理池
-export const pool = new ProxyPool(PUBLIC_PROXY_LIST);
+export const pool = new ProxyPool([]);
 
 /**
  * 使用代理 proxy 下载资源
@@ -297,9 +297,17 @@ export async function downloads<T extends DownloadResource>(
   }
 
   // 初始化 pool
-  pool.init(privateProxy);
+  const normalizedProxyList = sanitizePrivateProxyList(privateProxy);
+  if (normalizedProxyList.length !== privateProxy.length) {
+    window.localStorage.setItem('wechat-proxy', JSON.stringify(normalizedProxyList));
+  }
+  if (useProxy && normalizedProxyList.length === 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
 
-  const queue = new PQueue({ concurrency: pool.proxies.length });
+  pool.init(normalizedProxyList);
+
+  const queue = new PQueue({ concurrency: Math.max(pool.proxies.length, 1) });
 
   const tasks = resources.map(resource => queue.add(() => download<T>(resource, downloadFn, useProxy)));
   await Promise.all(tasks);

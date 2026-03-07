@@ -18,6 +18,7 @@ export interface ReaderAccount {
 export interface ReaderArticle extends Record<string, any> {
   fakeid: string;
   _status: string;
+  favorite?: boolean;
   is_deleted: boolean;
 }
 
@@ -111,6 +112,7 @@ function mapArticleRow(row: any): ReaderArticle {
     ...data,
     fakeid: row.fakeid,
     _status: row.status || '',
+    favorite: Boolean(row.favorite),
     is_deleted: Boolean(row.is_deleted),
   };
 }
@@ -128,6 +130,7 @@ function mapArticleLiteRow(row: any): ReaderArticle {
     create_time: Number(row.create_time) || 0,
     update_time: Number(row.update_time) || 0,
     _status: row.status || '',
+    favorite: Boolean(row.favorite),
     is_deleted: Boolean(row.is_deleted),
   };
 }
@@ -807,7 +810,7 @@ export async function getArticleByLink(authKey: string, link: string): Promise<R
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
-    SELECT fakeid, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, is_deleted, status
+    SELECT fakeid, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, favorite, is_deleted, status
     FROM reader_articles
     WHERE auth_key = ? AND link = ?
     ORDER BY update_time DESC, create_time DESC
@@ -847,6 +850,20 @@ export async function updateArticleDeleted(authKey: string, link: string, isDele
   );
 }
 
+export async function updateArticleFavorite(authKey: string, link: string, favorite: boolean): Promise<void> {
+  const db = await getSqliteDb();
+  await db.run(
+    `
+    UPDATE reader_articles
+    SET favorite = ?
+    WHERE auth_key = ? AND link = ?
+    `,
+    favorite ? 1 : 0,
+    authKey,
+    link
+  );
+}
+
 export async function deleteArticleByLink(authKey: string, link: string): Promise<void> {
   const db = await getSqliteDb();
   await db.run(
@@ -867,6 +884,7 @@ export async function listArticlesPage(
     fakeid?: string;
     category?: string;
     focused?: boolean;
+    favorite?: boolean;
   } = {}
 ): Promise<{ list: ReaderArticle[]; total: number; offset: number; limit: number }> {
   const db = await getSqliteDb();
@@ -887,6 +905,10 @@ export async function listArticlesPage(
   if (typeof options.category === 'string' && options.category.trim()) {
     where.push('COALESCE(ac.category, \'\') = ?');
     params.push(options.category.trim());
+  }
+  if (typeof options.favorite === 'boolean') {
+    where.push('a.favorite = ?');
+    params.push(options.favorite ? 1 : 0);
   }
 
   const whereSql = where.join(' AND ');
@@ -915,6 +937,7 @@ export async function listArticlesPage(
       a.author_name,
       a.create_time,
       a.update_time,
+      a.favorite,
       a.is_deleted,
       a.status,
       ac.nickname AS account_nickname,

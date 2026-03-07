@@ -5,13 +5,12 @@
     </Teleport>
 
     <div class="min-h-0 flex-1 overflow-y-auto py-4 md:py-6">
-      <div class="mx-auto max-w-6xl space-y-6">
+      <div class="mx-auto max-w-6xl space-y-6 px-4 md:px-6">
         <SettingScheduler />
         <SettingProxy />
-        <div class="grid gap-6 lg:grid-cols-2">
-          <SettingExport />
-          <SettingMisc />
-        </div>
+        <SettingExport />
+        <SettingMisc />
+
         <div class="h-16 md:h-24" />
       </div>
     </div>

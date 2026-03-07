@@ -1,26 +1,46 @@
 <template>
-  <UCard class="mx-4 mt-6">
+  <UCard class="h-full">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">每日自动同步</h3>
       <p class="text-sm text-slate-500">由服务端定时执行同步任务，页面无需保持打开。</p>
     </template>
 
-    <div class="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end">
-      <UCheckbox
-        v-model="preferences.dailySyncEnabled"
-        name="dailySyncEnabled"
-        label="启用每日自动同步全部公众号"
-      />
+    <div class="space-y-4">
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div class="min-w-0">
+            <UCheckbox
+              v-model="preferences.dailySyncEnabled"
+              name="dailySyncEnabled"
+              label="启用每日自动同步全部公众号"
+            />
+            <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              开启后，系统会按设定时间自动执行一次“全部公众号同步”。
+            </p>
+          </div>
 
-      <div class="w-full md:w-[180px]">
-        <p class="mb-1 text-sm">执行时间</p>
-        <UInput
-          v-model="preferences.dailySyncTime"
-          type="time"
-          class="font-mono"
-          :disabled="!preferences.dailySyncEnabled"
-          @blur="normalizeDailySyncTime"
-        />
+          <div class="w-full md:w-[180px]">
+            <p class="mb-1 text-sm font-medium">执行时间</p>
+            <UInput
+              v-model="preferences.dailySyncTime"
+              type="time"
+              class="font-mono"
+              :disabled="!preferences.dailySyncEnabled"
+              @blur="normalizeDailySyncTime"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+          <p class="text-xs text-slate-500 dark:text-slate-400">执行方式</p>
+          <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">服务端定时任务</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+          <p class="text-xs text-slate-500 dark:text-slate-400">页面要求</p>
+          <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">无需持续打开</p>
+        </div>
       </div>
     </div>
   </UCard>

@@ -21,7 +21,8 @@ export default defineEventHandler(async event => {
   }
 
   const query = getQuery<AppMsgPublishQuery>(event);
-  if (!query.fakeid) {
+  const fakeid = String(query.fakeid || '').trim();
+  if (!fakeid) {
     return {
       base_resp: {
         ret: -1,
@@ -29,10 +30,27 @@ export default defineEventHandler(async event => {
       },
     };
   }
-  const fakeid = query.fakeid;
-  const keyword = query.keyword || '';
-  const begin: number = query.begin || 0;
-  const size: number = query.size || 5;
+
+  const keyword = String(query.keyword || '').trim();
+  const begin = Number(query.begin ?? 0);
+  if (!Number.isInteger(begin) || begin < 0) {
+    return {
+      base_resp: {
+        ret: -1,
+        err_msg: 'begin必须是大于等于0的整数',
+      },
+    };
+  }
+
+  const size = Number(query.size ?? 5);
+  if (!Number.isInteger(size) || size < 0 || size > 20) {
+    return {
+      base_resp: {
+        ret: -1,
+        err_msg: 'size必须是0到20之间的整数',
+      },
+    };
+  }
 
   const isSearching = !!keyword;
 

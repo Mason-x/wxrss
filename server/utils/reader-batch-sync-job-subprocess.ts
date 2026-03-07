@@ -28,7 +28,8 @@ export interface ReaderBatchSyncJobSubprocessInput {
   userAgent: string;
   accounts: ReaderBatchSyncJobSubprocessAccount[];
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
 }
 
 export type ReaderBatchSyncJobSubprocessEvent =

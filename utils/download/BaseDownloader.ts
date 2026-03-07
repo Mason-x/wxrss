@@ -1,6 +1,6 @@
 import { sleep, timeout } from '#shared/utils/helpers';
 import usePreferences from '~/composables/usePreferences';
-import { PUBLIC_PROXY_LIST } from '~/config/public-proxy';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, validatePrivateProxyList } from '~/config/proxy';
 import type { ParsedCredential } from '~/types/credential';
 import type { Preferences } from '~/types/preferences';
 import { bestConcurrencyCount } from '~/utils';
@@ -33,10 +33,13 @@ export class BaseDownloader {
   constructor(urls: string[], options: DownloadOptions = {}) {
     this.validateInputs(urls);
 
-    const proxies = (preferences.value as Preferences).privateProxyList || [];
+    const configuredProxies = (preferences.value as Preferences).privateProxyList || [];
+    const { proxies } = validatePrivateProxyList(configuredProxies);
+    if (proxies.length !== configuredProxies.length) {
+      preferences.value.privateProxyList = proxies;
+    }
     if (proxies.length === 0) {
-      // 如果没有配置私有代理，则使用公共代理
-      proxies.push(...PUBLIC_PROXY_LIST);
+      throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
     }
 
     this.urls = [...urls].reverse();

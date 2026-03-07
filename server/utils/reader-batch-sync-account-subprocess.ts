@@ -25,7 +25,8 @@ export interface ReaderBatchAccountSubprocessInput {
   token: string;
   cookie: string;
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
   account: ReaderBatchAccountRecord;
 }
 

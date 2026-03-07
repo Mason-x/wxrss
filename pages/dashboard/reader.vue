@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
+import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { getArticleList } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
@@ -22,6 +23,7 @@ import {
   articleDeleted,
   buildArticleStorageKey,
   getArticleCacheSummary,
+  updateArticleFavorite,
   updateArticleStatus,
   upsertArticlesFromRemote,
 } from '~/store/v2/article';
@@ -55,6 +57,7 @@ interface ReaderArticle extends AppMsgExWithFakeID {
   category: string;
   contentDownload?: boolean;
   commentDownload?: boolean;
+  favorite?: boolean;
 }
 
 interface PromiseInstance {
@@ -74,6 +77,20 @@ interface ReaderRuntimeState {
   knownArticleKeys: string[];
   unreadArticleKeys: string[];
   accountNewArticleFakeids: string[];
+}
+
+function normalizeReaderRuntimeState(input?: Partial<ReaderRuntimeState> | null): ReaderRuntimeState {
+  return {
+    knownArticleKeys: Array.isArray(input?.knownArticleKeys)
+      ? input.knownArticleKeys.map(key => String(key || '')).filter(Boolean)
+      : [],
+    unreadArticleKeys: Array.isArray(input?.unreadArticleKeys)
+      ? input.unreadArticleKeys.map(key => String(key || '')).filter(Boolean)
+      : [],
+    accountNewArticleFakeids: Array.isArray(input?.accountNewArticleFakeids)
+      ? input.accountNewArticleFakeids.map(fakeid => String(fakeid || '')).filter(Boolean)
+      : [],
+  };
 }
 
 interface AccountSyncProgress {
@@ -168,11 +185,13 @@ const articlePageLimit = 80;
 const articlePageLoading = ref(false);
 const articlePageHasMore = ref(true);
 let articleLoadSeq = 0;
-const runtimeState = useLocalStorage<ReaderRuntimeState>('reader-runtime-state', {
-  knownArticleKeys: [],
-  unreadArticleKeys: [],
-  accountNewArticleFakeids: [],
+const runtimeStateSync = useAccountSyncedState<ReaderRuntimeState>({
+  storageKey: 'reader-runtime-state',
+  remoteKey: 'reader-runtime-state',
+  defaultValue: normalizeReaderRuntimeState(),
+  normalize: value => normalizeReaderRuntimeState(value as Partial<ReaderRuntimeState> | null),
 });
+const runtimeState = runtimeStateSync.state;
 const legacyMigrationDone = useLocalStorage<boolean>('reader-legacy-migration-v2', false);
 const legacyLargeCacheMigrationDone = useLocalStorage<boolean>('reader-legacy-large-cache-migration-v1', false);
 const schedulerHydrationDone = useLocalStorage<boolean>('reader-scheduler-hydration-v1', false);
@@ -186,6 +205,13 @@ const selectedArticle = ref<ReaderArticle | null>(null);
 const selectedArticleHtml = ref('');
 const selectedArticleKeys = ref<Set<string>>(new Set());
 const selectionMode = ref(false);
+const favoriteOnlySync = useAccountSyncedState<boolean>({
+  storageKey: 'reader-article-favorite-filter-v1',
+  remoteKey: 'reader-article-favorite-filter-v1',
+  defaultValue: false,
+  normalize: value => Boolean(value),
+});
+const favoriteOnly = favoriteOnlySync.state;
 const accountKeyword = ref('');
 const categoryEditorOpen = ref(false);
 const categoryEditorAccount = ref<MpAccount | null>(null);
@@ -408,6 +434,14 @@ function initializeRuntimeState() {
   accountNewArticleMap.value = accountMap;
 }
 
+watch(
+  runtimeState,
+  () => {
+    initializeRuntimeState();
+  },
+  { deep: true }
+);
+
 function markAccountHasNewArticles(fakeid: string) {
   if (!fakeid || accountNewArticleMap.value[fakeid]) {
     return;
@@ -542,6 +576,30 @@ const articleListTitle = computed(() => {
     return `分类：${FOCUS_CATEGORY_LABEL}`;
   }
   return `分类：${selectedCategory.value}`;
+});
+
+const articleListEmptyState = computed(() => {
+  if (favoriteOnly.value) {
+    return {
+      icon: 'i-heroicons:star',
+      title: '暂无收藏文章',
+      description: '点亮发布时间右侧的星标后，这里会只显示已收藏文章。',
+    };
+  }
+
+  if (!selectedAccount.value && accounts.value.length === 0) {
+    return {
+      icon: 'i-lucide:book-marked',
+      title: '还没有公众号',
+      description: '先添加公众号，再同步文章列表。',
+    };
+  }
+
+  return {
+    icon: 'i-lucide:file-text',
+    title: '暂无文章',
+    description: '当前范围内还没有文章，可先执行同步。',
+  };
 });
 
 const canSyncFromHeader = computed(() => {
@@ -804,6 +862,9 @@ async function loadArticlePage(reset = false) {
     } else if (selectedCategory.value !== '__all__') {
       query.category = selectedCategory.value;
     }
+    if (favoriteOnly.value) {
+      query.favorite = 1;
+    }
 
     const resp = await request<{
       list: ReaderArticle[];
@@ -867,6 +928,10 @@ function isArticleUnread(article: ReaderArticle) {
   return Boolean(unreadArticleMap.value[articleKey(article)]);
 }
 
+function isArticleFavorite(article: ReaderArticle) {
+  return Boolean(article.favorite);
+}
+
 function markArticleAsRead(article: ReaderArticle) {
   const key = articleKey(article);
   if (!unreadArticleMap.value[key]) {
@@ -887,7 +952,8 @@ async function syncSchedulerState(accountList: MpAccount[]) {
         config: {
           dailySyncEnabled: Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
           dailySyncTime: String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
-          accountSyncSeconds: Number((preferences.value as unknown as Preferences).accountSyncSeconds || 3),
+          accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
+          accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
           syncDateRange: (preferences.value as unknown as Preferences).syncDateRange,
           syncDatePoint: Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
         },
@@ -1031,7 +1097,7 @@ watch(accountsInSelectedCategory, list => {
 });
 
 watch(
-  () => [selectedCategory.value, selectedAccount.value],
+  () => [selectedCategory.value, selectedAccount.value, Boolean(favoriteOnly.value)],
   async () => {
     await loadArticlePage(true);
     clearSelectionOutOfScope();
@@ -1040,7 +1106,8 @@ watch(
 
 watch(
   () => [
-    Number((preferences.value as unknown as Preferences).accountSyncSeconds || 3),
+    Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
+    Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
     Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
     String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
     String((preferences.value as unknown as Preferences).syncDateRange || 'all'),
@@ -1058,8 +1125,12 @@ watch(
       schedulerHydrationStarted.value = false;
       schedulerHydrationRunning.value = false;
       syncProgressByFakeid.value = {};
+      await runtimeStateSync.hydrate();
+      await favoriteOnlySync.hydrate();
       return;
     }
+    await runtimeStateSync.hydrate();
+    await favoriteOnlySync.hydrate();
     await refreshData();
   }
 );
@@ -1171,6 +1242,33 @@ async function openArticle(article: ReaderArticle) {
     }
   } finally {
     contentLoading.value = false;
+  }
+}
+
+async function toggleArticleFavorite(article: ReaderArticle) {
+  const url = String(article.link || '');
+  if (!url) {
+    toast.error('操作失败', '当前文章缺少链接，无法更新收藏状态');
+    return;
+  }
+
+  const nextFavorite = !Boolean(article.favorite);
+  patchArticleByUrl(url, target => {
+    target.favorite = nextFavorite;
+  });
+
+  try {
+    await updateArticleFavorite(url, nextFavorite);
+    if (favoriteOnly.value) {
+      await loadArticlePage(true);
+      clearSelectionOutOfScope();
+    }
+  } catch (error: any) {
+    patchArticleByUrl(url, target => {
+      target.favorite = !nextFavorite;
+    });
+    const message = normalizeRuntimeErrorMessage(String(error?.message || '未知错误'));
+    toast.error(nextFavorite ? '收藏失败' : '取消收藏失败', message);
   }
 }
 
@@ -1591,7 +1689,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
         }
         _load(account, begin, true, promise);
       },
-      ((preferences.value as unknown as Preferences).accountSyncSeconds || 5) * 1000
+      pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
     );
   } else {
     upsertSyncProgress(account.fakeid, {
@@ -1660,7 +1758,8 @@ async function startRemoteBatchSync(targets: MpAccount[]): Promise<RemoteBatchSy
     body: {
       fakeids: targets.map(account => account.fakeid),
       syncTimestamp: getSyncTimestamp(),
-      accountSyncSeconds: 0,
+      accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
+      accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
     },
   });
   return resp.data;
@@ -1852,6 +1951,8 @@ function updateDesktopViewport() {
 
 onMounted(async () => {
   updateDesktopViewport();
+  await runtimeStateSync.hydrate();
+  await favoriteOnlySync.hydrate();
   initializeRuntimeState();
   await refreshData();
   cookieTimer = window.setInterval(() => {
@@ -1982,7 +2083,12 @@ onUnmounted(() => {
             class="flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             @scroll.passive="onMobileReaderScroll"
           >
-            <ul class="space-y-3">
+            <div class="mb-3 flex items-center justify-between gap-3 rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900">
+              <UCheckbox v-model="favoriteOnly" name="mobile-favorite-only" label="只看收藏" />
+              <span v-if="favoriteOnly" class="text-[11px] text-amber-600 dark:text-amber-400">已开启</span>
+            </div>
+
+            <ul v-if="displayedArticles.length > 0" class="space-y-3">
               <li
                 v-for="article in displayedArticles"
                 :key="articleKey(article)"
@@ -1997,19 +2103,35 @@ onUnmounted(() => {
                     @click.stop
                     @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
                   />
-                  <button type="button" class="min-w-0 flex-1 text-left" @click="openArticle(article)">
+                  <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
                     <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
                     <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span class="truncate">{{ article.accountName }}</span>
                       <span class="inline-flex shrink-0 items-center gap-1.5">
                         <span v-if="isArticleUnread(article)" class="unread-dot" />
                         <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
+                        <UButton
+                          size="2xs"
+                          color="gray"
+                          variant="ghost"
+                          :icon="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                          class="icon-btn article-star-btn"
+                          :class="isArticleFavorite(article) ? 'is-active' : ''"
+                          @click.stop="toggleArticleFavorite(article)"
+                        />
                       </span>
                     </div>
-                  </button>
+                  </div>
                 </div>
               </li>
             </ul>
+            <div v-else class="py-8">
+              <EmptyStatePanel
+                :icon="articleListEmptyState.icon"
+                :title="articleListEmptyState.title"
+                :description="articleListEmptyState.description"
+              />
+            </div>
 
             <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
               <UButton
@@ -2171,14 +2293,14 @@ onUnmounted(() => {
                           <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
                         </div>
                         <div class="min-w-0 flex-1">
-                          <div class="flex items-start justify-between gap-2">
+                          <div class="flex items-center gap-2 min-w-0">
                             <p class="truncate text-sm font-semibold">{{ account.nickname || account.fakeid }}</p>
                             <span
                               v-if="hasAccountNewArticles(account)"
-                              class="account-new-badge shrink-0"
-                            >
-                              新文章
-                            </span>
+                              class="account-new-dot shrink-0"
+                              title="有新文章"
+                              aria-label="有新文章"
+                            />
                           </div>
                           <p
                             class="mt-1 text-xs"
@@ -2365,9 +2487,14 @@ onUnmounted(() => {
                 <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
               </div>
               <div class="min-w-0">
-                <p class="text-sm font-semibold truncate">{{ account.nickname || account.fakeid }}</p>
-                <div v-if="hasAccountNewArticles(account)" class="mt-1">
-                  <span class="account-new-badge">新文章</span>
+                <div class="flex items-center gap-2 min-w-0">
+                  <p class="text-sm font-semibold truncate">{{ account.nickname || account.fakeid }}</p>
+                  <span
+                    v-if="hasAccountNewArticles(account)"
+                    class="account-new-dot shrink-0"
+                    title="有新文章"
+                    aria-label="有新文章"
+                  />
                 </div>
                 <p class="text-xs text-slate-500 mt-1">
                   {{ normalizeCategory(account) }}
@@ -2433,7 +2560,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="flex items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex flex-wrap gap-2 items-center">
             <UTooltip :text="selectionBtnTooltip">
               <UButton
@@ -2481,7 +2608,10 @@ onUnmounted(() => {
             </span>
           </div>
 
-          <div class="flex items-center gap-2 ml-auto">
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <div class="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900/70">
+              <UCheckbox v-model="favoriteOnly" name="desktop-favorite-only" label="只看收藏" />
+            </div>
             <UTooltip text="导出文章">
               <ButtonGroup
                 :items="[
@@ -2517,6 +2647,14 @@ onUnmounted(() => {
         <LoadingCards />
       </div>
 
+      <div v-else-if="displayedArticles.length === 0" class="flex-1">
+        <EmptyStatePanel
+          :icon="articleListEmptyState.icon"
+          :title="articleListEmptyState.title"
+          :description="articleListEmptyState.description"
+        />
+      </div>
+
       <div v-else v-bind="articleContainerProps" class="flex-1 h-0 overflow-y-auto">
       <ul v-bind="articleWrapperProps" class="divide-y divide-slate-100 dark:divide-slate-800">
         <li
@@ -2546,6 +2684,17 @@ onUnmounted(() => {
                 <span class="shrink-0 inline-flex items-center gap-1.5">
                   <span v-if="isArticleUnread(row.data)" class="unread-dot" />
                   <span>{{ formatTimeStamp(row.data.update_time || row.data.create_time) }}</span>
+                  <UTooltip :text="isArticleFavorite(row.data) ? '取消收藏' : '收藏文章'">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="isArticleFavorite(row.data) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      class="icon-btn article-star-btn"
+                      :class="isArticleFavorite(row.data) ? 'is-active' : ''"
+                      @click.stop="toggleArticleFavorite(row.data)"
+                    />
+                  </UTooltip>
                 </span>
               </div>
             </div>
@@ -2849,13 +2998,42 @@ onUnmounted(() => {
   @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
 }
 
-.account-new-badge {
-  @apply inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-emerald-700
-    dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300;
+.article-star-btn {
+  @apply size-6 shrink-0;
+}
+
+.article-star-btn.is-active {
+  @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
+}
+
+.account-new-dot {
+  @apply relative inline-block size-2.5 rounded-full border border-white/90 bg-rose-500 dark:border-slate-900;
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.42);
+  animation: account-new-dot-pulse 1.6s ease-out infinite;
 }
 
 .unread-dot {
   @apply inline-block size-2 rounded-full bg-red-500;
+}
+
+@keyframes account-new-dot-pulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.92;
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.46);
+  }
+
+  55% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);
+  }
+
+  100% {
+    transform: scale(0.92);
+    opacity: 0.92;
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+  }
 }
 
 .mobile-accounts-drawer {

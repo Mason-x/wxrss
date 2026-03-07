@@ -1,5 +1,5 @@
 <template>
-  <UCard class="mx-4 mt-6 lg:mt-0">
+  <UCard class="h-full">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">导出选项</h3>
       <p class="text-sm text-slate-500">配置文章导出时的目录规则和内容包含策略。</p>

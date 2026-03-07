@@ -1,3 +1,4 @@
 # 接口说明
 
-该目录下的接口数据由托管在 Deno Deploy 上面的 [my-cron-service 项目](https://dash.deno.com/projects/my-cron-service) 提供
+公共代理的外部遥测与 Deno Deploy 依赖已停用。
+当前目录下的接口仅保留兼容占位实现，不再向第三方服务发起请求。

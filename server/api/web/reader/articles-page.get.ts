@@ -7,6 +7,7 @@ interface ArticlePageQuery {
   fakeid?: string;
   category?: string;
   focused?: string | number | boolean;
+  favorite?: string | number | boolean;
 }
 
 export default defineEventHandler(async event => {
@@ -25,6 +26,12 @@ export default defineEventHandler(async event => {
     focusedRaw === 'true' ||
     focusedRaw === '1' ||
     focusedRaw === 1;
+  const favoriteRaw = query.favorite;
+  const favorite =
+    favoriteRaw === true ||
+    favoriteRaw === 'true' ||
+    favoriteRaw === '1' ||
+    favoriteRaw === 1;
 
   return await listArticlesPage(authKey, {
     offset: Number(query.offset) || 0,
@@ -32,6 +39,6 @@ export default defineEventHandler(async event => {
     fakeid: query.fakeid ? String(query.fakeid) : undefined,
     category: query.category ? String(query.category) : undefined,
     focused: focusedRaw === undefined ? undefined : focused,
+    favorite: favoriteRaw === undefined ? undefined : favorite,
   });
 });
-

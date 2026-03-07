@@ -73,8 +73,4 @@ export const ITEM_SHOW_TYPE: Record<number, string> = {
   17: '鐭枃',
 };
 
-/**
- * 澶栭儴鎺ュ彛鏈嶅姟
- */
-export const EXTERNAL_API_SERVICE = 'https://my-cron-service.deno.dev';
 

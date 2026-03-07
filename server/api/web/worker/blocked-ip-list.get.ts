@@ -1,8 +1,6 @@
 /**
- * 查询 ip 黑名单
+ * 公共代理黑名单回传已停用。
  */
-import { EXTERNAL_API_SERVICE } from '~/config';
-
-export default defineEventHandler(async event => {
-  return await fetch(`${EXTERNAL_API_SERVICE}/api/cf-worker/blocked-ip-list`).then(res => res.json());
+export default defineEventHandler(() => {
+  return [];
 });

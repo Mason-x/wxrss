@@ -16,7 +16,8 @@ export interface Preferences {
   downloadConfig: DownloadConfig;
 
   // 公众号同步频率(单位:秒)
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
 
   dailySyncEnabled: boolean;
   dailySyncTime: string;

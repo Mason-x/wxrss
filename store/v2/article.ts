@@ -223,6 +223,16 @@ export async function updateArticleStatus(url: string, status: string): Promise<
   });
 }
 
+export async function updateArticleFavorite(url: string, favorite: boolean): Promise<void> {
+  await request('/api/web/reader/article-favorite', {
+    method: 'POST',
+    body: {
+      url,
+      favorite,
+    },
+  });
+}
+
 export async function upsertArticlesFromRemote(
   account: MpAccount,
   articles: AppMsgEx[],

@@ -1,6 +1,18 @@
 // public api
 export const apis = [
   {
+    name: '获取当前 API 密钥',
+    description: '返回当前登录会话或当前请求所携带的有效 API 密钥。',
+    url: '/api/public/v1/authkey',
+    method: 'GET',
+    params: [],
+    responseSample: {
+      code: 0,
+      data: 'your-auth-key',
+    },
+    remark: '需要站点登录态，或已通过 X-Auth-Key / auth-key Cookie 携带有效密钥',
+  },
+  {
     name: '根据关键字搜索公众号',
     description: '根据公众号名称或关键字查询公众号列表。',
     url: '/api/public/v1/account',
@@ -103,7 +115,7 @@ export const apis = [
   },
   {
     name: '获取文章列表',
-    description: '获取公众号的历史文章列表',
+    description: '获取公众号的历史文章列表，可按标题关键字筛选。',
     url: '/api/public/v1/article',
     method: 'GET',
     params: [
@@ -115,6 +127,15 @@ export const apis = [
         default: 'N/A',
         type: 'String',
         remark: '',
+      },
+      {
+        label: '标题关键字',
+        name: 'keyword',
+        location: 'query',
+        required: false,
+        default: 'N/A',
+        type: 'String',
+        remark: '传入后切换为搜索模式，仅返回标题匹配的文章',
       },
       {
         label: '起始索引',
@@ -284,8 +305,8 @@ export const apis = [
     remark: '此接口不需要 API 密钥',
   },
   {
-    name: '查询公众号主体信息 (beta)',
-    description: '根据公众号的 fakeid 查询主体信息',
+    name: '查询公众号基础主体信息 (beta)',
+    description: '根据公众号的 fakeid 查询 authorinfo 接口返回的认证主体与原创文章统计。',
     url: '/api/public/beta/authorinfo',
     method: 'GET',
     params: [
@@ -311,8 +332,8 @@ export const apis = [
     remark: '此接口不需要 API 密钥',
   },
   {
-    name: '查询公众号主体信息 (beta)',
-    description: '根据公众号的 fakeid 查询主体信息',
+    name: '查询公众号资料页信息 (beta)',
+    description: '根据公众号的 fakeid 查询 aboutbiz 页面解析结果，返回简介、微信号、主体类型、授权情况等信息。',
     url: '/api/public/beta/aboutbiz',
     method: 'GET',
     params: [
@@ -332,7 +353,7 @@ export const apis = [
         required: false,
         default: 'N/A',
         type: 'String',
-        remark: '微信抓包获取的x-wechat-key参数',
+        remark: '微信抓包获取的 x-wechat-key 参数；未传时会尝试使用服务端环境变量',
       },
     ],
     responseSample: {

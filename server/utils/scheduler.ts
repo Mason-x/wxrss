@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { USER_AGENT } from '~/config';
 import {
   type SchedulerAccount,
@@ -249,9 +250,7 @@ async function syncOneAccount(authKey: string, token: string, account: Scheduler
     begin += beginStep;
     page++;
 
-    if (config.accountSyncSeconds > 0) {
-      await sleep(config.accountSyncSeconds * 1000);
-    }
+    await sleep(pickRandomSyncDelayMs(config));
   }
 
   const merged = dedupeArticles(collected, oldArticles);

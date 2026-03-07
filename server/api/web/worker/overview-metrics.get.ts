@@ -1,8 +1,6 @@
 /**
- * 查询公共代理状态
+ * 公共代理遥测已停用。
  */
-import { EXTERNAL_API_SERVICE } from '~/config';
-
-export default defineEventHandler(async event => {
-  return await fetch(`${EXTERNAL_API_SERVICE}/api/cf-worker/worker-overview-metrics`).then(res => res.json());
+export default defineEventHandler(() => {
+  return [];
 });

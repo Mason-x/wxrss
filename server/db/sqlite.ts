@@ -236,6 +236,30 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_account_identity_auth_key ON mp_account_identity(auth_key);
 
+    CREATE TABLE IF NOT EXISTS mp_preferences (
+      owner_key TEXT PRIMARY KEY,
+      identity_key TEXT NOT NULL DEFAULT '',
+      auth_key TEXT NOT NULL DEFAULT '',
+      data_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mp_preferences_auth_key ON mp_preferences(auth_key);
+    CREATE INDEX IF NOT EXISTS idx_mp_preferences_updated_at ON mp_preferences(updated_at);
+
+    CREATE TABLE IF NOT EXISTS mp_account_state (
+      owner_key TEXT NOT NULL,
+      state_key TEXT NOT NULL,
+      identity_key TEXT NOT NULL DEFAULT '',
+      auth_key TEXT NOT NULL DEFAULT '',
+      data_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (owner_key, state_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mp_account_state_auth_key ON mp_account_state(auth_key);
+    CREATE INDEX IF NOT EXISTS idx_mp_account_state_updated_at ON mp_account_state(updated_at);
+
     CREATE TABLE IF NOT EXISTS system_flags (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -301,6 +325,7 @@ async function initSqlite(): Promise<SqliteDb> {
       author_name TEXT NOT NULL DEFAULT '',
       create_time INTEGER NOT NULL DEFAULT 0,
       update_time INTEGER NOT NULL DEFAULT 0,
+      favorite INTEGER NOT NULL DEFAULT 0,
       is_deleted INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT '',
       data_json TEXT NOT NULL,
@@ -427,6 +452,18 @@ async function initSqlite(): Promise<SqliteDb> {
   } catch {
     // Ignore when the column already exists.
   }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_articles ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_favorite_time ON reader_articles(auth_key, favorite, update_time DESC, create_time DESC);
+  `);
 
   await compactLegacyArticleJsonIfNeeded(db);
 

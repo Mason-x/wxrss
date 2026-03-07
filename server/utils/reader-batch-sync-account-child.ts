@@ -2,6 +2,7 @@ import path from 'node:path';
 import { request as httpsRequest } from 'node:https';
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
+import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 
 type ChildStartMessage = {
   type: 'start';
@@ -94,7 +95,8 @@ interface ReaderBatchAccountChildInput {
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
-  accountSyncSeconds: number;
+  accountSyncMinSeconds: number;
+  accountSyncMaxSeconds: number;
   account: ReaderAccountRecord;
 }
 
@@ -917,10 +919,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
       break;
     }
 
-    const delayMs = Math.max(0, Math.floor(Number(payload.accountSyncSeconds || 0) * 1000));
-    if (delayMs > 0) {
-      await sleep(delayMs);
-    }
+    await sleep(pickRandomSyncDelayMs(payload));
   }
 
   const latestAccount = await getAccountByFakeid(db, payload.authKey, fakeid);
