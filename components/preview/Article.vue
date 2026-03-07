@@ -2,14 +2,14 @@
   <div>
     <USlideover v-model="isOpen" :ui="{ width: 'max-w-[720px]' }">
       <div class="article-preview h-screen overflow-y-scroll">
-        <HtmlRenderer :html="articleHtml" />
+        <IframeHtmlRenderer :html="articleHtml" />
       </div>
     </USlideover>
   </div>
 </template>
 
 <script setup lang="ts">
-import HtmlRenderer from '~/components/preview/HtmlRenderer.vue';
+import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import usePreferences from '~/composables/usePreferences';
 import { getHtmlCache, type HtmlAsset } from '~/store/v2/html';
 import { getMetadataCache } from '~/store/v2/metadata';

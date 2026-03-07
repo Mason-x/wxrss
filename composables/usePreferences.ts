@@ -21,7 +21,7 @@ const defaultOptions: Partial<Preferences> = {
   accountSyncSeconds: 3,
   dailySyncEnabled: false,
   dailySyncTime: '06:00',
-  syncDateRange: 'all',
+  syncDateRange: '1y',
   syncDatePoint: MP_ORIGIN_TIMESTAMP,
 };
 

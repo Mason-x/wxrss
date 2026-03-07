@@ -10,7 +10,7 @@ import LoadingCards from '~/components/mobile/LoadingCards.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
 import LoginModal from '~/components/modal/Login.vue';
-import HtmlRenderer from '~/components/preview/HtmlRenderer.vue';
+import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { getArticleList } from '~/apis';
@@ -1891,7 +1891,7 @@ onUnmounted(() => {
               size="2xs"
               color="gray"
               variant="ghost"
-              icon="i-lucide:panel-left-open"
+              icon="i-lucide:menu"
               class="icon-btn mt-0.5"
               @click="showMobileAccounts"
             />
@@ -1902,10 +1902,20 @@ onUnmounted(() => {
                   size="2xs"
                   color="gray"
                   variant="ghost"
-                  icon="i-lucide:square-pen"
+                  icon="i-lucide:pencil"
                   :disabled="!selectedAccountInfo"
                   class="icon-btn shrink-0"
                   @click="editSelectedAccountCategory"
+                />
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:minus"
+                  :disabled="!selectedAccount"
+                  :loading="isDeleting"
+                  class="icon-btn shrink-0"
+                  @click="deleteCurrentAccount"
                 />
               </div>
               <h1 v-else class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
@@ -1945,7 +1955,7 @@ onUnmounted(() => {
                 @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
               />
             </UTooltip>
-            <UTooltip text="系统菜单">
+            <UTooltip v-if="mobileView !== 'article'" text="系统菜单">
               <UButton
                 size="2xs"
                 color="gray"
@@ -2039,7 +2049,7 @@ onUnmounted(() => {
                 {{ selectedArticle && formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}
               </p>
             </div>
-            <HtmlRenderer :html="selectedArticleHtml" />
+            <IframeHtmlRenderer :html="selectedArticleHtml" />
           </div>
         </div>
       </div>
@@ -2056,26 +2066,44 @@ onUnmounted(() => {
               class="mobile-accounts-drawer flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
             >
               <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-                <div class="flex items-center justify-between gap-3">
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                      <p class="text-sm font-semibold">公众号列表</p>
-                      <span class="text-[11px] text-slate-500 dark:text-slate-400">{{ accountsInCategory.length }} 个</span>
+                <div class="flex items-start justify-between gap-3">
+                  <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
+                    <div class="size-10 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                      <img
+                        v-if="loginAccount.avatar"
+                        :src="IMAGE_PROXY + loginAccount.avatar"
+                        alt=""
+                        class="size-full object-cover"
+                      />
+                      <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
                     </div>
-                    <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                      {{ accountsInCategory.length }} 个公众号
-                    </p>
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-semibold">{{ loginAccount.nickname || '已登录账号' }}</p>
+                      <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
+                    </div>
+                  </div>
+                  <div v-else class="min-w-0 flex-1">
+                    <UButton
+                      size="sm"
+                      color="gray"
+                      variant="soft"
+                      icon="i-lucide:log-in"
+                      @click="openLogin"
+                    >
+                      登录公众号
+                    </UButton>
                   </div>
                   <div class="flex items-center gap-1.5">
                     <UButton
-                      size="xs"
-                      color="gray"
+                      v-if="loginAccount"
+                      size="2xs"
+                      color="rose"
                       variant="soft"
-                      icon="i-lucide:newspaper"
-                      class="justify-center"
-                      @click="showMobileAggregateArticles"
+                      icon="i-lucide:log-out"
+                      :loading="logoutBtnLoading"
+                      @click="logoutMp"
                     >
-                      全部文章
+                      登出
                     </UButton>
                     <UButton
                       size="2xs"
@@ -2088,35 +2116,7 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div class="mt-2 flex items-center justify-between gap-2">
-                  <div v-if="loginAccount" class="min-w-0">
-                    <p class="truncate text-[13px] font-medium">{{ loginAccount.nickname || '已登录账号' }}</p>
-                    <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Cookie 剩余：{{ cookieRemainText }}</p>
-                  </div>
-                  <UButton
-                    v-if="loginAccount"
-                    size="2xs"
-                    color="rose"
-                    variant="soft"
-                    icon="i-lucide:log-out"
-                    :loading="logoutBtnLoading"
-                    @click="logoutMp"
-                  >
-                    退出
-                  </UButton>
-                  <UButton
-                    v-else
-                    size="xs"
-                    color="gray"
-                    variant="soft"
-                    icon="i-lucide:log-in"
-                    @click="openLogin"
-                  >
-                    登录公众号
-                  </UButton>
-                </div>
-
-                <div class="mt-2 flex items-center gap-2">
+                <div class="mt-3 flex items-center gap-2">
                   <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索公众号名称" />
                   <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
                     添加
@@ -2594,7 +2594,7 @@ onUnmounted(() => {
         />
       </div>
       <div v-else class="flex-1 overflow-y-auto p-4">
-        <HtmlRenderer :html="selectedArticleHtml" />
+        <IframeHtmlRenderer :html="selectedArticleHtml" />
       </div>
     </main>
     </div>
@@ -2724,7 +2724,7 @@ onUnmounted(() => {
             <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
               <div class="min-w-0">
                 <p class="text-base font-semibold">系统菜单</p>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">顶部一栏切换页面，内容区域保持单列滚动。</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">抓取及下载文章及更多高级选项请到桌面网页端。</p>
               </div>
               <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
             </div>
@@ -2751,10 +2751,10 @@ onUnmounted(() => {
                   </div>
                 </section>
 
-                <section class="rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+                <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
                   <div id="title" class="hidden" />
                   <KeepAlive>
-                    <component :is="activeSystemMenuComponent" class="min-h-full" />
+                    <component :is="activeSystemMenuComponent" class="min-h-full bg-white dark:bg-slate-950" />
                   </KeepAlive>
                 </section>
               </div>
@@ -2815,13 +2815,14 @@ onUnmounted(() => {
 .icon-btn :deep(.iconify),
 .icon-btn :deep([class*='i-']) {
   margin: 0 !important;
-  width: 11px !important;
-  height: 11px !important;
-  font-size: 11px !important;
+  width: 14px !important;
+  height: 14px !important;
+  font-size: 14px !important;
 }
 
 .icon-btn :deep(.i-lucide\:plus),
-.icon-btn :deep(.i-lucide\:minus) {
+.icon-btn :deep(.i-lucide\:minus),
+.icon-btn :deep(.i-lucide\:pencil) {
   transform: translateY(-0.5px);
 }
 
