@@ -594,7 +594,7 @@ const exportLabel = computed(() => {
           <div class="flex flex-wrap items-center gap-2">
             <UButton v-if="downloadBtnLoading" size="sm" color="black" @click="stopDownload">停止</UButton>
 
-            <ButtonGroup
+            <ButtonGroup class="hidden md:inline-flex"
               :items="[
                 { label: '文章内容', event: 'download-article-html' },
                 { label: '阅读数据（需要 Credential）', event: 'download-article-metadata' },
@@ -615,7 +615,7 @@ const exportLabel = computed(() => {
               />
             </ButtonGroup>
 
-            <ButtonGroup
+            <ButtonGroup class="hidden md:inline-flex"
               :items="[
                 { label: 'Excel', event: 'export-article-excel' },
                 { label: 'JSON', event: 'export-article-json' },
@@ -791,7 +791,7 @@ const exportLabel = computed(() => {
                     </p>
 
                     <div class="flex flex-wrap gap-2">
-                      <UButton
+                      <UButton class="hidden md:inline-flex"
                         size="sm"
                         color="blue"
                         variant="soft"

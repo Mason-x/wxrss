@@ -637,6 +637,7 @@ function refreshActionCells() {
 
           <div class="flex flex-wrap items-center gap-2">
             <UButton
+              class="hidden md:inline-flex"
               size="sm"
               color="blue"
               variant="soft"
@@ -647,7 +648,7 @@ function refreshActionCells() {
               抓取选中
             </UButton>
 
-            <ButtonGroup
+            <ButtonGroup class="hidden md:inline-flex"
               :items="[
                 { label: 'HTML', event: 'export-html' },
                 { label: 'Excel', event: 'export-excel' },
@@ -751,6 +752,7 @@ function refreshActionCells() {
 
                     <div class="flex flex-wrap gap-2">
                       <UButton
+                        class="hidden md:inline-flex"
                         size="sm"
                         color="blue"
                         variant="soft"

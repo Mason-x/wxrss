@@ -622,6 +622,7 @@ const { getActualDateRange } = useSyncDeadline();
               {{ addBtnLoading ? '添加中...' : '添加账号' }}
             </UButton>
             <UButton
+              class="hidden md:inline-flex"
               size="sm"
               icon="i-lucide:arrow-down-to-line"
               color="gray"
@@ -634,7 +635,7 @@ const { getActualDateRange } = useSyncDeadline();
             </UButton>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="hidden flex-wrap items-center gap-2 md:flex">
             <UButton
               size="sm"
               icon="i-lucide:arrow-up-from-line"

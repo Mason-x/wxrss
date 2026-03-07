@@ -609,6 +609,7 @@ const mobileArticlesListRef = ref<HTMLElement | null>(null);
 const mobileArticleContentRef = ref<HTMLElement | null>(null);
 const mobileScrollTopVisible = ref(false);
 const mobileAccountsPanelOpen = ref(false);
+const isDesktopViewport = ref(false);
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
@@ -1843,12 +1844,18 @@ function exportArticles(type: 'excel' | 'json' | 'html' | 'text' | 'markdown' | 
 }
 
 let cookieTimer: number | null = null;
+function updateDesktopViewport() {
+  isDesktopViewport.value = window.innerWidth >= 768;
+}
+
 onMounted(async () => {
+  updateDesktopViewport();
   initializeRuntimeState();
   await refreshData();
   cookieTimer = window.setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
+  window.addEventListener('resize', updateDesktopViewport);
 });
 
 onUnmounted(() => {
@@ -1860,6 +1867,7 @@ onUnmounted(() => {
     window.clearTimeout(schedulerSyncTimer.value);
     schedulerSyncTimer.value = null;
   }
+  window.removeEventListener('resize', updateDesktopViewport);
 });
 </script>
 
@@ -1919,65 +1927,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-if="mobileView === 'articles'" class="mt-3 flex flex-wrap items-center gap-2">
-          <UTooltip :text="selectionBtnTooltip">
-            <UButton
-              size="sm"
-              color="gray"
-              variant="soft"
-              :icon="selectionBtnIcon"
-              :label="selectionMode ? (allVisibleArticlesSelected ? '清空' : '全选') : '选择'"
-              @click="onSelectionAction"
-            />
-          </UTooltip>
-          <UTooltip text="抓取文章数据">
-            <ButtonGroup
-              :items="[
-                { label: '文章内容', event: 'download-html' },
-                { label: '阅读量(需登录)', event: 'download-metadata' },
-                { label: '留言(需登录)', event: 'download-comment' },
-              ]"
-              @download-html="downloadArticles('html')"
-              @download-metadata="downloadArticles('metadata')"
-              @download-comment="downloadArticles('comment')"
-            >
-              <UButton
-                size="sm"
-                color="blue"
-                variant="soft"
-                icon="i-lucide:download"
-                label="抓取"
-                :loading="downloadBtnLoading"
-              />
-            </ButtonGroup>
-          </UTooltip>
-          <UTooltip text="导出文章">
-            <ButtonGroup
-              :items="[
-                { label: 'Excel', event: 'export-excel' },
-                { label: 'JSON', event: 'export-json' },
-                { label: 'HTML', event: 'export-html' },
-                { label: 'Txt', event: 'export-text' },
-                { label: 'Markdown', event: 'export-markdown' },
-                { label: 'Word', event: 'export-word' },
-              ]"
-              @export-excel="exportArticles('excel')"
-              @export-json="exportArticles('json')"
-              @export-html="exportArticles('html')"
-              @export-text="exportArticles('text')"
-              @export-markdown="exportArticles('markdown')"
-              @export-word="exportArticles('word')"
-            >
-              <UButton
-                size="sm"
-                color="gray"
-                variant="soft"
-                icon="i-lucide:file-output"
-                label="导出"
-                :loading="exportFileLoading"
-              />
-            </ButtonGroup>
-          </UTooltip>
+        <div v-if="mobileView === 'articles' && selectedAccountInfo" class="mt-3 flex flex-wrap items-center gap-2">
           <UTooltip text="编辑当前公众号分类">
             <UButton
               size="sm"
@@ -2148,12 +2098,6 @@ onUnmounted(() => {
                 <div class="mt-3 flex flex-wrap gap-2">
                   <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
                     添加
-                  </UButton>
-                  <UButton size="sm" color="gray" variant="soft" icon="i-lucide:arrow-down-to-line" :loading="importBtnLoading" @click="importAccount">
-                    导入
-                  </UButton>
-                  <UButton size="sm" color="gray" variant="soft" icon="i-lucide:arrow-up-from-line" :loading="exportBtnLoading" @click="exportAccount">
-                    导出
                   </UButton>
                 </div>
 
@@ -2744,7 +2688,61 @@ onUnmounted(() => {
       </UCard>
     </UModal>
 
-    <UModal v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1120px]' }">
+    <Transition name="mobile-menu-fade">
+      <div
+        v-if="systemMenuOpen && !isDesktopViewport"
+        class="fixed inset-0 z-50 bg-slate-950/24 backdrop-blur-[2px] md:hidden"
+        @click.self="systemMenuOpen = false"
+      >
+        <Transition name="mobile-menu-drop">
+          <section
+            v-if="systemMenuOpen && !isDesktopViewport"
+            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white/98 shadow-[0_22px_60px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/98"
+          >
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
+              <div class="min-w-0">
+                <p class="text-base font-semibold">系统菜单</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">顶部一栏切换页面，内容区域保持单列滚动。</p>
+              </div>
+              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
+            </div>
+
+            <div class="max-h-[calc(100vh-176px)] overflow-y-auto px-4 py-4">
+              <div class="space-y-5">
+                <section class="space-y-3">
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="item in systemMenuItems"
+                      :key="item.id"
+                      type="button"
+                      class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors"
+                      :class="
+                        systemMenuActive === item.id
+                          ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                      "
+                      @click="openSystemMenu(item.id)"
+                    >
+                      <UIcon :name="item.icon" class="size-4 shrink-0" />
+                      <span>{{ item.label }}</span>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+                  <div id="title" class="hidden" />
+                  <KeepAlive>
+                    <component :is="activeSystemMenuComponent" class="min-h-full" />
+                  </KeepAlive>
+                </section>
+              </div>
+            </div>
+          </section>
+        </Transition>
+      </div>
+    </Transition>
+
+    <UModal v-if="isDesktopViewport" v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1120px]' }">
       <UCard :ui="{ body: { padding: 'p-0 sm:p-0' } }">
         <template #header>
           <div class="flex items-center justify-between">
@@ -2854,5 +2852,26 @@ onUnmounted(() => {
 .mobile-drawer-slide-leave-to {
   opacity: 0;
   transform: translateX(-18px);
+}
+
+.mobile-menu-fade-enter-active,
+.mobile-menu-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.mobile-menu-fade-enter-from,
+.mobile-menu-fade-leave-to {
+  opacity: 0;
+}
+
+.mobile-menu-drop-enter-active,
+.mobile-menu-drop-leave-active {
+  transition: transform 220ms ease, opacity 220ms ease;
+}
+
+.mobile-menu-drop-enter-from,
+.mobile-menu-drop-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
 }
 </style>

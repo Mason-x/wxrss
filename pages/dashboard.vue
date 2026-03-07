@@ -19,7 +19,7 @@
               variant="ghost"
               icon="i-lucide:menu"
               class="mobile-shell-btn"
-              @click="mobileMenuOpen = true"
+              @click="mobileMenuOpen = !mobileMenuOpen"
             />
           </header>
 
@@ -27,25 +27,21 @@
             <NuxtPage />
           </div>
 
-          <Transition name="mobile-sheet-fade">
+          <Transition name="mobile-menu-fade">
             <div
               v-if="mobileMenuOpen"
-              class="fixed inset-0 z-50 flex items-end bg-slate-950/35 px-3 pb-[calc(env(safe-area-inset-bottom)+0.85rem)] pt-6 backdrop-blur-[3px]"
+              class="fixed inset-0 z-50 bg-slate-950/24 backdrop-blur-[2px]"
               @click.self="mobileMenuOpen = false"
             >
-              <Transition name="mobile-sheet-up">
+              <Transition name="mobile-menu-drop">
                 <section
                   v-if="mobileMenuOpen"
-                  class="mobile-sheet-panel w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950"
+                  class="mobile-top-menu fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white/98 shadow-[0_22px_60px_rgba(15,23,42,0.18)] dark:border-slate-800 dark:bg-slate-950/98"
                 >
-                  <div class="flex justify-center pt-3">
-                    <div class="h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />
-                  </div>
-
-                  <div class="flex items-start justify-between px-5 pb-4 pt-4">
-                    <div>
-                      <p class="text-base font-semibold text-slate-900 dark:text-slate-100">系统菜单</p>
-                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">切换页面，打开全局工具和常用设置。</p>
+                  <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
+                    <div class="min-w-0">
+                      <p class="text-base font-semibold">系统菜单</p>
+                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">页面切换和全局工具统一放在顶部，不再占用底部空间。</p>
                     </div>
                     <UButton
                       size="2xs"
@@ -57,7 +53,7 @@
                     />
                   </div>
 
-                  <div class="max-h-[75vh] overflow-y-auto px-5 pb-5">
+                  <div class="max-h-[calc(100vh-176px)] overflow-y-auto px-4 py-4">
                     <div class="space-y-5">
                       <section class="space-y-3">
                         <div class="flex items-center justify-between">
@@ -65,7 +61,7 @@
                           <span class="text-xs text-slate-400">{{ mobileCurrentTitle }}</span>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-2.5">
+                        <div class="space-y-2">
                           <NuxtLink
                             v-for="item in mobileNavItems"
                             :key="item.href"
@@ -74,8 +70,11 @@
                             :class="{ 'is-active': isMobileNavActive(item.href) }"
                             @click="mobileMenuOpen = false"
                           >
-                            <UIcon :name="item.icon" class="size-4 shrink-0" />
-                            <span class="truncate">{{ item.name }}</span>
+                            <div class="flex min-w-0 items-center gap-3">
+                              <UIcon :name="item.icon" class="size-4 shrink-0" />
+                              <span class="truncate">{{ item.name }}</span>
+                            </div>
+                            <UIcon name="i-lucide:chevron-right" class="size-4 shrink-0 text-slate-400" />
                           </NuxtLink>
                         </div>
                       </section>
@@ -173,12 +172,8 @@ function isMobileNavActive(href: string) {
     dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white;
 }
 
-.mobile-sheet-panel {
-  box-shadow: 0 -24px 80px rgba(15, 23, 42, 0.22);
-}
-
 .mobile-menu-link {
-  @apply inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 transition-all duration-200
+  @apply flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 transition-all duration-200
     hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
 }
 
@@ -186,24 +181,24 @@ function isMobileNavActive(href: string) {
   @apply border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900;
 }
 
-.mobile-sheet-fade-enter-active,
-.mobile-sheet-fade-leave-active {
+.mobile-menu-fade-enter-active,
+.mobile-menu-fade-leave-active {
   transition: opacity 180ms ease;
 }
 
-.mobile-sheet-fade-enter-from,
-.mobile-sheet-fade-leave-to {
+.mobile-menu-fade-enter-from,
+.mobile-menu-fade-leave-to {
   opacity: 0;
 }
 
-.mobile-sheet-up-enter-active,
-.mobile-sheet-up-leave-active {
+.mobile-menu-drop-enter-active,
+.mobile-menu-drop-leave-active {
   transition: transform 220ms ease, opacity 220ms ease;
 }
 
-.mobile-sheet-up-enter-from,
-.mobile-sheet-up-leave-to {
+.mobile-menu-drop-enter-from,
+.mobile-menu-drop-leave-to {
   opacity: 0;
-  transform: translateY(24px);
+  transform: translateY(-12px);
 }
 </style>
