@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 
 type ChildStartMessage = {
   type: 'start';
@@ -140,7 +139,12 @@ function getAccountChildScriptPath(): string {
   if (fs.existsSync(sourcePath)) {
     return sourcePath;
   }
-  return fileURLToPath(new URL('./reader-batch-sync-account-child.ts', import.meta.url));
+
+  const currentScriptPath = String(process.argv[1] || '').trim();
+  const currentDir = currentScriptPath
+    ? path.dirname(path.resolve(currentScriptPath))
+    : path.resolve(process.cwd(), 'server', 'runtime-child-scripts');
+  return path.join(currentDir, 'reader-batch-sync-account-child.ts');
 }
 
 function sendMessage(message: ChildOutboundMessage): void {

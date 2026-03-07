@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { request as httpsRequest } from 'node:https';
-import { fileURLToPath } from 'node:url';
 
 type Sqlite3Module = {
   Database: new (...args: any[]) => any;
@@ -15,7 +14,10 @@ type SqliteModule = {
 };
 
 function createRuntimeRequire() {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const currentScriptPath = String(process.argv[1] || '').trim();
+  const currentDir = currentScriptPath
+    ? path.dirname(path.resolve(currentScriptPath))
+    : path.resolve(process.cwd(), 'server', 'runtime-child-scripts');
   const candidateFiles = Array.from(new Set([
     path.resolve(process.cwd(), 'server', 'package.json'),
     path.resolve(process.cwd(), '.output', 'server', 'package.json'),
