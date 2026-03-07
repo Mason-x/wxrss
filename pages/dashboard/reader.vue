@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
+import { AnimatePresence, motion, type PanInfo, useDragControls, useReducedMotion } from 'motion-v';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -89,16 +90,10 @@ interface MobileHistoryState {
 type MobileSwipeContext = 'articles' | 'article' | 'drawer';
 type MobileSwipeEdge = 'left' | 'right' | 'none';
 
-interface MobileSwipeState {
+interface MobileDragSession {
   context: MobileSwipeContext | null;
-  tracking: boolean;
   interactive: boolean;
-  axis: 'x' | 'y' | null;
-  containerWidth: number;
   startX: number;
-  startY: number;
-  lastX: number;
-  lastY: number;
   edge: MobileSwipeEdge;
 }
 
@@ -696,66 +691,37 @@ const mobileView = computed<'articles' | 'article'>(() => {
 });
 
 const mobileCanGoBack = computed(() => Boolean(selectedArticle.value || selectedAccount.value));
-const mobileAccountsListRef = ref<HTMLElement | null>(null);
-const mobileArticlesListRef = ref<HTMLElement | null>(null);
-const mobileArticleContentRef = ref<HTMLElement | null>(null);
+const mobileAccountsListRef = ref<any>(null);
+const mobileArticlesListRef = ref<any>(null);
+const mobileArticleContentRef = ref<any>(null);
 const mobileScrollTopVisible = ref(false);
 const mobileAccountsPanelOpen = ref(false);
 const isDesktopViewport = ref(false);
 const mobileHistory = ref<MobileHistoryState[]>([]);
 const mobileHistoryIndex = ref(-1);
 const mobileHistoryApplying = ref(false);
-const mobileSwipeOffset = ref(0);
-const mobileSwipeState = reactive<MobileSwipeState>({
+const mobileDragSession = reactive<MobileDragSession>({
   context: null,
-  tracking: false,
   interactive: false,
-  axis: null,
-  containerWidth: 0,
   startX: 0,
-  startY: 0,
-  lastX: 0,
-  lastY: 0,
   edge: 'none',
 });
+const mobileArticlesDragControls = useDragControls();
+const mobileArticleDragControls = useDragControls();
+const mobileDrawerDragControls = useDragControls();
+const prefersReducedMotion = useReducedMotion();
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
-const MOBILE_SWIPE_AXIS_LOCK_THRESHOLD = 14;
 const MOBILE_SWIPE_TRIGGER_THRESHOLD = 72;
+const MOBILE_SWIPE_VELOCITY_THRESHOLD = 520;
 
-const mobileArticlesSurfaceStyle = computed(() =>
-  mobileSwipeState.context === 'articles' && mobileSwipeOffset.value !== 0
-    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
-    : undefined
+const mobilePanelSpring = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.14 } : { type: 'spring' as const, stiffness: 420, damping: 34, mass: 0.78 }
 );
 
-const mobileArticleSurfaceStyle = computed(() =>
-  mobileSwipeState.context === 'article' && mobileSwipeOffset.value !== 0
-    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
-    : undefined
+const mobilePageTransition = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.12 } : { type: 'spring' as const, stiffness: 340, damping: 32, mass: 0.86 }
 );
-
-const mobileDrawerSurfaceStyle = computed(() =>
-  mobileSwipeState.context === 'drawer' && mobileSwipeOffset.value !== 0
-    ? { transform: `translate3d(${mobileSwipeOffset.value}px, 0, 0)` }
-    : undefined
-);
-
-const mobileDrawerBackdropStyle = computed(() => {
-  if (!mobileAccountsPanelOpen.value) {
-    return undefined;
-  }
-
-  const drawerWidth = Math.max(1, mobileSwipeState.containerWidth || 320);
-  const progress =
-    mobileSwipeState.context === 'drawer' && mobileSwipeOffset.value < 0
-      ? 1 - Math.min(1, Math.abs(mobileSwipeOffset.value) / drawerWidth)
-      : 1;
-
-  return {
-    opacity: 0.16 + progress * 0.24,
-  };
-});
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
@@ -1406,51 +1372,6 @@ async function navigateMobileHistory(delta: number) {
   return applied;
 }
 
-function resetMobileSwipeState() {
-  mobileSwipeState.context = null;
-  mobileSwipeState.tracking = false;
-  mobileSwipeState.interactive = false;
-  mobileSwipeState.axis = null;
-  mobileSwipeState.containerWidth = 0;
-  mobileSwipeState.startX = 0;
-  mobileSwipeState.startY = 0;
-  mobileSwipeState.lastX = 0;
-  mobileSwipeState.lastY = 0;
-  mobileSwipeState.edge = 'none';
-  mobileSwipeOffset.value = 0;
-}
-
-function clampSwipeOffset(value: number, limit: number) {
-  const direction = value >= 0 ? 1 : -1;
-  const distance = Math.abs(value);
-  if (distance <= limit) {
-    return value;
-  }
-  return direction * (limit + (distance - limit) * 0.18);
-}
-
-function resolveMobileSwipeOffset(context: MobileSwipeContext, deltaX: number) {
-  const width = Math.max(1, mobileSwipeState.containerWidth || window.innerWidth || 320);
-  const contentLimit = Math.min(width * 0.32, 128);
-
-  if (context === 'drawer') {
-    const drawerLimit = Math.min(width, 360);
-    return Math.max(-drawerLimit, Math.min(0, deltaX));
-  }
-
-  if (context === 'articles') {
-    if (mobileAccountsPanelOpen.value) {
-      return deltaX < 0 ? clampSwipeOffset(deltaX, contentLimit) : 0;
-    }
-    if (!selectedAccount.value) {
-      return deltaX > 0 ? clampSwipeOffset(deltaX, contentLimit) : 0;
-    }
-    return clampSwipeOffset(deltaX, contentLimit);
-  }
-
-  return clampSwipeOffset(deltaX, contentLimit);
-}
-
 function isMobileSwipeInteractiveTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -1462,59 +1383,43 @@ function isMobileSwipeInteractiveTarget(target: EventTarget | null) {
   );
 }
 
-function onMobileSwipeStart(context: MobileSwipeContext, event: TouchEvent) {
-  if (isDesktopViewport.value || event.touches.length !== 1) {
-    resetMobileSwipeState();
-    return;
-  }
+function resetMobileDragSession() {
+  mobileDragSession.context = null;
+  mobileDragSession.interactive = false;
+  mobileDragSession.startX = 0;
+  mobileDragSession.edge = 'none';
+}
 
-  const touch = event.touches[0];
+function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEvent) {
   const container = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const bounds = container?.getBoundingClientRect();
   const width = bounds?.width || window.innerWidth;
-  const localX = touch.clientX - (bounds?.left || 0);
+  const localX = event.clientX - (bounds?.left || 0);
 
-  mobileSwipeState.context = context;
-  mobileSwipeState.tracking = true;
-  mobileSwipeState.interactive = isMobileSwipeInteractiveTarget(event.target);
-  mobileSwipeState.axis = null;
-  mobileSwipeState.containerWidth = width;
-  mobileSwipeState.startX = touch.clientX;
-  mobileSwipeState.startY = touch.clientY;
-  mobileSwipeState.lastX = touch.clientX;
-  mobileSwipeState.lastY = touch.clientY;
-  mobileSwipeState.edge =
+  mobileDragSession.context = context;
+  mobileDragSession.interactive = isMobileSwipeInteractiveTarget(event.target);
+  mobileDragSession.startX = event.clientX;
+  mobileDragSession.edge =
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 }
 
-function onMobileSwipeMove(context: MobileSwipeContext, event: TouchEvent) {
-  if (!mobileSwipeState.tracking || mobileSwipeState.context !== context || event.touches.length !== 1) {
+function beginMobileDrag(
+  context: MobileSwipeContext,
+  event: PointerEvent,
+  controls: ReturnType<typeof useDragControls>
+) {
+  if (isDesktopViewport.value) {
     return;
   }
 
-  const touch = event.touches[0];
-  mobileSwipeState.lastX = touch.clientX;
-  mobileSwipeState.lastY = touch.clientY;
-
-  if (mobileSwipeState.axis) {
-    if (mobileSwipeState.axis === 'x' && !mobileSwipeState.interactive) {
-      mobileSwipeOffset.value = resolveMobileSwipeOffset(context, touch.clientX - mobileSwipeState.startX);
-      event.preventDefault();
-    }
+  rememberMobileDragSession(context, event);
+  if (mobileDragSession.interactive) {
     return;
   }
-
-  const deltaX = touch.clientX - mobileSwipeState.startX;
-  const deltaY = touch.clientY - mobileSwipeState.startY;
-  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < MOBILE_SWIPE_AXIS_LOCK_THRESHOLD) {
+  if (context !== 'drawer' && mobileDragSession.edge === 'none') {
     return;
   }
-
-  mobileSwipeState.axis = Math.abs(deltaX) > Math.abs(deltaY) * 1.15 ? 'x' : 'y';
-  if (mobileSwipeState.axis === 'x' && !mobileSwipeState.interactive) {
-    mobileSwipeOffset.value = resolveMobileSwipeOffset(context, deltaX);
-    event.preventDefault();
-  }
+  controls.start(event);
 }
 
 async function openAdjacentArticle(step: number) {
@@ -1535,7 +1440,7 @@ async function openAdjacentArticle(step: number) {
 async function handleMobileSwipeGesture(context: MobileSwipeContext, deltaX: number, edge: MobileSwipeEdge) {
   if (context === 'articles') {
     if (deltaX > 0) {
-      if (!mobileAccountsPanelOpen.value && (edge === 'left' || !selectedAccount.value)) {
+      if (!mobileAccountsPanelOpen.value && edge === 'left') {
         showMobileAccounts();
       }
       return;
@@ -1577,31 +1482,46 @@ async function handleMobileSwipeGesture(context: MobileSwipeContext, deltaX: num
   await openAdjacentArticle(1);
 }
 
-async function onMobileSwipeEnd(context: MobileSwipeContext, event: TouchEvent) {
-  if (!mobileSwipeState.tracking || mobileSwipeState.context !== context) {
+function shouldCommitSwipe(offsetX: number, velocityX: number) {
+  return Math.abs(offsetX) >= MOBILE_SWIPE_TRIGGER_THRESHOLD || Math.abs(velocityX) >= MOBILE_SWIPE_VELOCITY_THRESHOLD;
+}
+
+async function onArticlesDragEnd(_event: PointerEvent, info: PanInfo) {
+  const context = mobileDragSession.context;
+  const edge = mobileDragSession.edge;
+  const interactive = mobileDragSession.interactive;
+  resetMobileDragSession();
+
+  if (interactive || context !== 'articles' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
     return;
   }
 
-  if (event.changedTouches.length > 0) {
-    const touch = event.changedTouches[0];
-    mobileSwipeState.lastX = touch.clientX;
-    mobileSwipeState.lastY = touch.clientY;
-  }
-
-  const deltaX = mobileSwipeState.lastX - mobileSwipeState.startX;
-  const deltaY = mobileSwipeState.lastY - mobileSwipeState.startY;
-  const isHorizontalSwipe =
-    Math.abs(deltaX) >= MOBILE_SWIPE_TRIGGER_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
-
-  if (!mobileSwipeState.interactive && mobileSwipeState.axis !== 'y' && isHorizontalSwipe) {
-    await handleMobileSwipeGesture(context, deltaX, mobileSwipeState.edge);
-  }
-
-  resetMobileSwipeState();
+  await handleMobileSwipeGesture('articles', info.offset.x || info.velocity.x, edge);
 }
 
-function onMobileSwipeCancel() {
-  resetMobileSwipeState();
+async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
+  const context = mobileDragSession.context;
+  const edge = mobileDragSession.edge;
+  const interactive = mobileDragSession.interactive;
+  resetMobileDragSession();
+
+  if (interactive || context !== 'article' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
+    return;
+  }
+
+  await handleMobileSwipeGesture('article', info.offset.x || info.velocity.x, edge);
+}
+
+async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
+  const context = mobileDragSession.context;
+  const interactive = mobileDragSession.interactive;
+  resetMobileDragSession();
+
+  if (interactive || context !== 'drawer' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
+    return;
+  }
+
+  await handleMobileSwipeGesture('drawer', info.offset.x || info.velocity.x, 'left');
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
@@ -1792,15 +1712,28 @@ function showMobileAggregateArticles() {
   });
 }
 
-function onMobileReaderScroll() {
+function resolveScrollableElement(target: any): HTMLElement | null {
+  if (target instanceof HTMLElement) {
+    return target;
+  }
+  const maybeElement = target?.$el;
+  return maybeElement instanceof HTMLElement ? maybeElement : null;
+}
+
+function onMobileReaderScroll(event?: Event) {
+  const directTarget = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const currentContainer =
-    mobileView.value === 'articles' ? mobileArticlesListRef.value : mobileArticleContentRef.value;
+    directTarget ||
+    resolveScrollableElement(
+      mobileView.value === 'articles' ? mobileArticlesListRef.value : mobileArticleContentRef.value
+    );
   mobileScrollTopVisible.value = (currentContainer?.scrollTop || 0) > 320;
 }
 
 function scrollMobileReaderToTop() {
-  const currentContainer =
-    mobileView.value === 'articles' ? mobileArticlesListRef.value : mobileArticleContentRef.value;
+  const currentContainer = resolveScrollableElement(
+    mobileView.value === 'articles' ? mobileArticlesListRef.value : mobileArticleContentRef.value
+  );
   currentContainer?.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -2515,147 +2448,203 @@ onUnmounted(() => {
       </header>
 
       <div class="min-h-0 flex-1 overflow-hidden">
-        <div v-if="mobileView === 'articles'" class="flex h-full flex-col">
-          <div v-if="loading" class="px-3 py-3">
-            <LoadingCards />
-          </div>
-          <div
-            v-else
-            ref="mobileArticlesListRef"
-            class="mobile-swipe-panel mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-            :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'articles' && mobileSwipeState.axis === 'x' }"
-            :style="mobileArticlesSurfaceStyle"
-            @scroll.passive="onMobileReaderScroll"
-            @touchstart.passive="onMobileSwipeStart('articles', $event)"
-            @touchmove="onMobileSwipeMove('articles', $event)"
-            @touchend="onMobileSwipeEnd('articles', $event)"
-            @touchcancel="onMobileSwipeCancel"
+        <AnimatePresence mode="wait">
+          <motion.div
+            v-if="mobileView === 'articles'"
+            key="mobile-articles"
+            class="flex h-full flex-col"
+            :initial="prefersReducedMotion ? false : { opacity: 0, x: -18, scale: 0.985 }"
+            :animate="{ opacity: 1, x: 0, scale: 1 }"
+            :exit="prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 18, scale: 0.992 }"
+            :transition="mobilePageTransition"
           >
-            <ul v-if="displayedArticles.length > 0" class="space-y-3">
-              <li
-                v-for="article in displayedArticles"
-                :key="articleKey(article)"
-                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
-              >
-                <div class="flex items-start gap-3">
-                  <input
-                    v-if="selectionMode"
-                    type="checkbox"
-                    class="mt-1"
-                    :checked="isArticleSelected(article)"
-                    @click.stop
-                    @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
-                  />
-                  <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
-                    <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
-                    <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span class="min-w-0 flex items-center gap-2 truncate">
-                        <span class="article-account-avatar">
-                          <img
-                            v-if="article.round_head_img"
-                            :src="IMAGE_PROXY + article.round_head_img"
-                            alt=""
-                            class="size-full object-cover"
-                          />
-                          <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+            <div v-if="loading" class="px-3 py-3">
+              <LoadingCards />
+            </div>
+            <motion.div
+              v-else
+              ref="mobileArticlesListRef"
+              class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+              drag="x"
+              :dragConstraints="{ left: 0, right: 0 }"
+              :dragElastic="{ left: 0.16, right: 0.2 }"
+              :dragMomentum="false"
+              :dragDirectionLock="true"
+              :dragSnapToOrigin="true"
+              :dragListener="false"
+              :dragControls="mobileArticlesDragControls"
+              :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
+              :transition="mobilePanelSpring"
+              :onDragEnd="onArticlesDragEnd"
+              @pointerdown="beginMobileDrag('articles', $event, mobileArticlesDragControls)"
+              @scroll.passive="onMobileReaderScroll"
+            >
+              <ul v-if="displayedArticles.length > 0" class="space-y-3">
+                <motion.li
+                  v-for="(article, index) in displayedArticles"
+                  :key="articleKey(article)"
+                  layout
+                  class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
+                  :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
+                  :animate="{ opacity: 1, y: 0, scale: 1 }"
+                  :whileTap="{ scale: 0.988 }"
+                  :transition="
+                    prefersReducedMotion
+                      ? { duration: 0.12 }
+                      : {
+                          type: 'spring',
+                          stiffness: 460,
+                          damping: 32,
+                          mass: 0.75,
+                          delay: Math.min(index, 6) * 0.02,
+                        }
+                  "
+                >
+                  <div class="flex items-start gap-3">
+                    <input
+                      v-if="selectionMode"
+                      type="checkbox"
+                      class="mt-1"
+                      :checked="isArticleSelected(article)"
+                      @click.stop
+                      @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
+                      <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
+                      <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span class="min-w-0 flex items-center gap-2 truncate">
+                          <span class="article-account-avatar">
+                            <img
+                              v-if="article.round_head_img"
+                              :src="IMAGE_PROXY + article.round_head_img"
+                              alt=""
+                              class="size-full object-cover"
+                            />
+                            <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                          </span>
+                          <span class="truncate">{{ article.accountName }}</span>
                         </span>
-                        <span class="truncate">{{ article.accountName }}</span>
-                      </span>
-                      <span class="inline-flex shrink-0 items-center gap-1.5">
-                        <span v-if="isArticleUnread(article)" class="unread-dot" />
-                        <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          :icon="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                          class="icon-btn article-star-btn"
-                          :class="isArticleFavorite(article) ? 'is-active' : ''"
-                          @click.stop="toggleArticleFavorite(article)"
-                        />
-                      </span>
+                        <span class="inline-flex shrink-0 items-center gap-1.5">
+                          <span v-if="isArticleUnread(article)" class="unread-dot" />
+                          <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
+                          <UButton
+                            size="2xs"
+                            color="gray"
+                            variant="ghost"
+                            :icon="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                            class="icon-btn article-star-btn"
+                            :class="isArticleFavorite(article) ? 'is-active' : ''"
+                            @click.stop="toggleArticleFavorite(article)"
+                          />
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </li>
-            </ul>
-            <div v-else class="py-8">
+                </motion.li>
+              </ul>
+              <div v-else class="py-8">
+                <EmptyStatePanel
+                  :icon="articleListEmptyState.icon"
+                  :title="articleListEmptyState.title"
+                  :description="articleListEmptyState.description"
+                />
+              </div>
+
+              <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
+                <UButton
+                  size="sm"
+                  color="gray"
+                  variant="soft"
+                  block
+                  :loading="articlePageLoading"
+                  :disabled="!articlePageHasMore"
+                  @click="loadMoreArticles"
+                >
+                  {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+                </UButton>
+              </div>
+            </motion.div>
+          </motion.div>
+
+          <motion.div
+            v-else
+            key="mobile-article"
+            class="flex h-full flex-col"
+            :initial="prefersReducedMotion ? false : { opacity: 0, x: 28, scale: 0.992 }"
+            :animate="{ opacity: 1, x: 0, scale: 1 }"
+            :exit="prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: -22, scale: 0.988 }"
+            :transition="mobilePageTransition"
+          >
+            <div v-if="contentLoading">
               <EmptyStatePanel
-                :icon="articleListEmptyState.icon"
-                :title="articleListEmptyState.title"
-                :description="articleListEmptyState.description"
+                icon="i-lucide-loader-circle"
+                title="内容加载中"
+                description="正在准备文章内容，请稍候。"
               />
             </div>
-
-            <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
-              <UButton
-                size="sm"
-                color="gray"
-                variant="soft"
-                block
-                :loading="articlePageLoading"
-                :disabled="!articlePageHasMore"
-                @click="loadMoreArticles"
-              >
-                {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
-              </UButton>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="flex h-full flex-col">
-          <div v-if="contentLoading">
-            <EmptyStatePanel
-              icon="i-lucide-loader-circle"
-              title="内容加载中"
-              description="正在准备文章内容，请稍候。"
-            />
-          </div>
-          <div
-            v-else
-            ref="mobileArticleContentRef"
-            class="mobile-swipe-panel mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
-            :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'article' && mobileSwipeState.axis === 'x' }"
-            :style="mobileArticleSurfaceStyle"
-            @scroll.passive="onMobileReaderScroll"
-            @touchstart.passive="onMobileSwipeStart('article', $event)"
-            @touchmove="onMobileSwipeMove('article', $event)"
-            @touchend="onMobileSwipeEnd('article', $event)"
-            @touchcancel="onMobileSwipeCancel"
-          >
-            <div class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
-              <h2 class="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-50">
-                {{ selectedArticleDisplayTitle }}
-              </h2>
-              <p class="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                {{ selectedArticle?.author_name || selectedArticle?.accountName }}
-                <span class="mx-1">·</span>
-                {{ selectedArticle && formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}
-              </p>
-            </div>
-            <IframeHtmlRenderer :html="selectedArticleHtml" />
-          </div>
-        </div>
+            <motion.div
+              v-else
+              ref="mobileArticleContentRef"
+              class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
+              drag="x"
+              :dragConstraints="{ left: 0, right: 0 }"
+              :dragElastic="{ left: 0.18, right: 0.18 }"
+              :dragMomentum="false"
+              :dragDirectionLock="true"
+              :dragSnapToOrigin="true"
+              :dragListener="false"
+              :dragControls="mobileArticleDragControls"
+              :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
+              :transition="mobilePanelSpring"
+              :onDragEnd="onArticleDragEnd"
+              @pointerdown="beginMobileDrag('article', $event, mobileArticleDragControls)"
+              @scroll.passive="onMobileReaderScroll"
+            >
+              <motion.div layout class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
+                <h2 class="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-50">
+                  {{ selectedArticleDisplayTitle }}
+                </h2>
+                <p class="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                  {{ selectedArticle?.author_name || selectedArticle?.accountName }}
+                  <span class="mx-1">·</span>
+                  {{ selectedArticle && formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}
+                </p>
+              </motion.div>
+              <IframeHtmlRenderer :html="selectedArticleHtml" />
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      <Transition name="mobile-drawer-fade">
-        <div
+      <AnimatePresence>
+        <motion.div
           v-if="mobileAccountsPanelOpen"
+          key="mobile-drawer-overlay"
           class="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"
-          :style="mobileDrawerBackdropStyle"
+          :initial="prefersReducedMotion ? false : { opacity: 0 }"
+          :animate="{ opacity: 1 }"
+          :exit="{ opacity: 0 }"
+          :transition="mobilePanelSpring"
           @click.self="mobileAccountsPanelOpen = false"
         >
-          <Transition name="mobile-drawer-slide">
-            <aside
-              v-if="mobileAccountsPanelOpen"
-              class="mobile-accounts-drawer mobile-swipe-panel mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
-              :class="{ 'is-swipe-dragging': mobileSwipeState.context === 'drawer' && mobileSwipeState.axis === 'x' }"
-              :style="mobileDrawerSurfaceStyle"
-              @touchstart.passive="onMobileSwipeStart('drawer', $event)"
-              @touchmove="onMobileSwipeMove('drawer', $event)"
-              @touchend="onMobileSwipeEnd('drawer', $event)"
-              @touchcancel="onMobileSwipeCancel"
-            >
+          <motion.aside
+            class="mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+            :initial="prefersReducedMotion ? false : { x: '-100%' }"
+            :animate="{ x: 0 }"
+            :exit="{ x: '-100%' }"
+            drag="x"
+            :dragConstraints="{ left: 0, right: 0 }"
+            :dragElastic="{ left: 0.14, right: 0 }"
+            :dragMomentum="false"
+            :dragDirectionLock="true"
+            :dragSnapToOrigin="true"
+            :dragListener="false"
+            :dragControls="mobileDrawerDragControls"
+            :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
+            :transition="mobilePanelSpring"
+            :onDragEnd="onDrawerDragEnd"
+            @pointerdown="beginMobileDrag('drawer', $event, mobileDrawerDragControls)"
+          >
               <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
                 <div class="flex items-start justify-between gap-3">
                   <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
@@ -2792,10 +2781,9 @@ onUnmounted(() => {
                   </li>
                 </ul>
               </div>
-            </aside>
-          </Transition>
-        </div>
-      </Transition>
+          </motion.aside>
+        </motion.div>
+      </AnimatePresence>
 
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
@@ -3516,39 +3504,10 @@ onUnmounted(() => {
   will-change: transform;
 }
 
-.mobile-swipe-panel {
-  will-change: transform;
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.mobile-swipe-panel.is-swipe-dragging {
-  transition: none;
-}
-
 .mobile-touch-surface {
   touch-action: pan-y pinch-zoom;
   overscroll-behavior-x: contain;
-}
-
-.mobile-drawer-fade-enter-active,
-.mobile-drawer-fade-leave-active {
-  transition: opacity 180ms ease;
-}
-
-.mobile-drawer-fade-enter-from,
-.mobile-drawer-fade-leave-to {
-  opacity: 0;
-}
-
-.mobile-drawer-slide-enter-active,
-.mobile-drawer-slide-leave-active {
-  transition: transform 220ms ease, opacity 220ms ease;
-}
-
-.mobile-drawer-slide-enter-from,
-.mobile-drawer-slide-leave-to {
-  opacity: 0;
-  transform: translateX(-18px);
+  will-change: transform;
 }
 
 .mobile-menu-fade-enter-active,

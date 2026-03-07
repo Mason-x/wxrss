@@ -4170,6 +4170,15 @@ fraction.js@^4.3.7:
   resolved "https://registry.npmjs.org/fraction.js/-/fraction.js-4.3.7.tgz#06ca0085157e42fda7f9e726e79fefc4068840f7"
   integrity sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==
 
+framer-motion@^12.29.2:
+  version "12.35.1"
+  resolved "https://registry.yarnpkg.com/framer-motion/-/framer-motion-12.35.1.tgz#42fe6cb8c309ec651ece54ff9a47e49a80d10006"
+  integrity sha512-rL8cLrjYZNShZqKV3U0Qj6Y5WDiZXYEM5giiTLfEqsIZxtspzMDCkKmrO5po76jWfvOg04+Vk+sfBvTD0iMmLw==
+  dependencies:
+    motion-dom "^12.35.1"
+    motion-utils "^12.29.2"
+    tslib "^2.4.0"
+
 fresh@^2.0.0:
   version "2.0.0"
   resolved "https://registry.npmjs.org/fresh/-/fresh-2.0.0.tgz#8dd7df6a1b3a1b3a5cf186c05a5dd267622635a4"
@@ -4470,6 +4479,11 @@ hasown@^2.0.2:
   integrity sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==
   dependencies:
     function-bind "^1.1.2"
+
+hey-listen@^1.0.8:
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/hey-listen/-/hey-listen-1.0.8.tgz#8e59561ff724908de1aa924ed6ecc84a56a9aa68"
+  integrity sha512-COpmrF2NOg4TBWUJ5UVyaCU2A88wEMkUPK4hNqyCkqHbxT92BbvfjoSozkAIIm6XhicGlJHhFdullInrdhwU8Q==
 
 highlight.js@^11.11.1:
   version "11.11.1"
@@ -5526,6 +5540,28 @@ monaco-editor@^0.54.0:
   dependencies:
     dompurify "3.1.7"
     marked "14.0.0"
+
+motion-dom@^12.29.2, motion-dom@^12.35.1:
+  version "12.35.1"
+  resolved "https://registry.yarnpkg.com/motion-dom/-/motion-dom-12.35.1.tgz#62e4d0fd7998ebc3a0a648f2eb551850154939fa"
+  integrity sha512-7n6r7TtNOsH2UFSAXzTkfzOeO5616v9B178qBIjmu/WgEyJK0uqwytCEhwKBTuM/HJA40ptAw7hLFpxtPAMRZQ==
+  dependencies:
+    motion-utils "^12.29.2"
+
+motion-utils@^12.29.2:
+  version "12.29.2"
+  resolved "https://registry.yarnpkg.com/motion-utils/-/motion-utils-12.29.2.tgz#8fdd28babe042c2456b078ab33b32daa3bf5938b"
+  integrity sha512-G3kc34H2cX2gI63RqU+cZq+zWRRPSsNIOjpdl9TN4AQwC4sgwYPl/Q/Obf/d53nOm569T0fYK+tcoSV50BWx8A==
+
+motion-v@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/motion-v/-/motion-v-2.0.0.tgz#a45010ca0a297ee0f6a36b898cb75f664b6e02b8"
+  integrity sha512-oQuQMrPhti+Zps6OosOaW3b/eqzaGAuwI54XHJKq/dIWtQWcNzfyhTo4VB5xmp7yLN+3BE9FKF6skLsynfgbHQ==
+  dependencies:
+    framer-motion "^12.29.2"
+    hey-listen "^1.0.8"
+    motion-dom "^12.29.2"
+    motion-utils "^12.29.2"
 
 mrmime@^2.0.0:
   version "2.0.1"
