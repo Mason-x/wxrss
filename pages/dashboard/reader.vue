@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
-import { AnimatePresence, motion, type PanInfo, useDragControls, useReducedMotion } from 'motion-v';
+import { AnimatePresence, motion, type PanInfo, useReducedMotion } from 'motion-v';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -706,9 +706,6 @@ const mobileDragSession = reactive<MobileDragSession>({
   startX: 0,
   edge: 'none',
 });
-const mobileArticlesDragControls = useDragControls();
-const mobileArticleDragControls = useDragControls();
-const mobileDrawerDragControls = useDragControls();
 const prefersReducedMotion = useReducedMotion();
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
@@ -1403,23 +1400,12 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 }
 
-function beginMobileDrag(
-  context: MobileSwipeContext,
-  event: PointerEvent,
-  controls: ReturnType<typeof useDragControls>
-) {
+function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   if (isDesktopViewport.value) {
     return;
   }
 
   rememberMobileDragSession(context, event);
-  if (mobileDragSession.interactive) {
-    return;
-  }
-  if (context !== 'drawer' && mobileDragSession.edge === 'none') {
-    return;
-  }
-  controls.start(event);
 }
 
 async function openAdjacentArticle(step: number) {
@@ -1440,9 +1426,14 @@ async function openAdjacentArticle(step: number) {
 async function handleMobileSwipeGesture(context: MobileSwipeContext, deltaX: number, edge: MobileSwipeEdge) {
   if (context === 'articles') {
     if (deltaX > 0) {
-      if (!mobileAccountsPanelOpen.value && edge === 'left') {
-        showMobileAccounts();
+      if (mobileAccountsPanelOpen.value) {
+        return;
       }
+      if (selectedAccount.value) {
+        await backFromMobileView();
+        return;
+      }
+      showMobileAccounts();
       return;
     }
 
@@ -2471,12 +2462,10 @@ onUnmounted(() => {
               :dragMomentum="false"
               :dragDirectionLock="true"
               :dragSnapToOrigin="true"
-              :dragListener="false"
-              :dragControls="mobileArticlesDragControls"
               :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
               :transition="mobilePanelSpring"
               :onDragEnd="onArticlesDragEnd"
-              @pointerdown="beginMobileDrag('articles', $event, mobileArticlesDragControls)"
+              @pointerdown="beginMobileDrag('articles', $event)"
               @scroll.passive="onMobileReaderScroll"
             >
               <ul v-if="displayedArticles.length > 0" class="space-y-3">
@@ -2592,12 +2581,10 @@ onUnmounted(() => {
               :dragMomentum="false"
               :dragDirectionLock="true"
               :dragSnapToOrigin="true"
-              :dragListener="false"
-              :dragControls="mobileArticleDragControls"
               :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
               :transition="mobilePanelSpring"
               :onDragEnd="onArticleDragEnd"
-              @pointerdown="beginMobileDrag('article', $event, mobileArticleDragControls)"
+              @pointerdown="beginMobileDrag('article', $event)"
               @scroll.passive="onMobileReaderScroll"
             >
               <motion.div layout class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
@@ -2638,12 +2625,10 @@ onUnmounted(() => {
             :dragMomentum="false"
             :dragDirectionLock="true"
             :dragSnapToOrigin="true"
-            :dragListener="false"
-            :dragControls="mobileDrawerDragControls"
             :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
             :transition="mobilePanelSpring"
             :onDragEnd="onDrawerDragEnd"
-            @pointerdown="beginMobileDrag('drawer', $event, mobileDrawerDragControls)"
+            @pointerdown="beginMobileDrag('drawer', $event)"
           >
               <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
                 <div class="flex items-start justify-between gap-3">
