@@ -46,6 +46,9 @@ export default defineNuxtConfig({
   },
   nitro: {
     minify: isProduction,
+    externals: {
+      traceInclude: ['sqlite', 'sqlite3'],
+    },
     storage: {
       kv: {
         driver: nitroKvDriver,
