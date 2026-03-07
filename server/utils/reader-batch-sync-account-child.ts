@@ -1,7 +1,48 @@
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { request as httpsRequest } from 'node:https';
-import sqlite3 from 'sqlite3';
-import { open, type Database } from 'sqlite';
+import { fileURLToPath } from 'node:url';
+
+type Sqlite3Module = {
+  Database: new (...args: any[]) => any;
+};
+
+type SqliteModule = {
+  open: (options: {
+    filename: string;
+    driver: new (...args: any[]) => any;
+  }) => Promise<any>;
+};
+
+function createRuntimeRequire() {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidateFiles = Array.from(new Set([
+    path.resolve(process.cwd(), 'server', 'package.json'),
+    path.resolve(process.cwd(), '.output', 'server', 'package.json'),
+    path.resolve(process.cwd(), 'package.json'),
+    path.resolve(currentDir, '..', 'package.json'),
+    path.resolve(currentDir, '..', '..', 'package.json'),
+  ]));
+
+  for (const candidateFile of candidateFiles) {
+    try {
+      const runtimeRequire = createRequire(candidateFile);
+      runtimeRequire.resolve('sqlite3');
+      runtimeRequire.resolve('sqlite');
+      return runtimeRequire;
+    } catch {
+      // Try the next runtime root candidate.
+    }
+  }
+
+  throw new Error(`failed to resolve sqlite runtime modules from: ${candidateFiles.join(', ')}`);
+}
+
+const runtimeRequire = createRuntimeRequire();
+const sqlite3 = runtimeRequire('sqlite3') as Sqlite3Module;
+const { open } = runtimeRequire('sqlite') as SqliteModule;
+
+type Database = Awaited<ReturnType<SqliteModule['open']>>;
 
 type ChildStartMessage = {
   type: 'start';

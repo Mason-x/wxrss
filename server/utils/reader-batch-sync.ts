@@ -328,6 +328,20 @@ function markAccountError(job: BatchJobRuntime, fakeid: string, nickname: string
   });
 }
 
+function getPrimaryFailureMessage(job: BatchJobRuntime): string {
+  const currentMessage = String(job.currentAccount?.message || '').trim();
+  if (currentMessage) {
+    return currentMessage;
+  }
+
+  const failedMessage = String(job.failedAccounts[0]?.message || '').trim();
+  if (failedMessage) {
+    return failedMessage;
+  }
+
+  return '';
+}
+
 function buildCookieString(auth: NonNullable<Awaited<ReturnType<typeof getMpCookie>>>): string {
   return auth.cookies
     .filter(item => item && item.value && item.value !== 'EXPIRED')
@@ -594,12 +608,17 @@ export function startReaderBatchSyncJob(authKey: string, options: BatchJobOption
         throw new BatchSyncCancelledError();
       }
       const allFailed = job.failedCount > 0 && job.successCount === 0;
+      const primaryFailureMessage = getPrimaryFailureMessage(job);
       updateJob(job, {
         status: allFailed ? 'error' : 'success',
         currentFakeid: '',
         currentNickname: '',
         currentController: null,
-        message: allFailed ? `all ${job.failedCount} accounts failed` : `synced ${job.successCount} accounts`,
+        message: allFailed
+          ? primaryFailureMessage
+            ? `all ${job.failedCount} accounts failed: ${primaryFailureMessage}`
+            : `all ${job.failedCount} accounts failed`
+          : `synced ${job.successCount} accounts`,
         finishedAt: nowMs(),
       });
       logMemory('reader-batch-sync:job-done', {
