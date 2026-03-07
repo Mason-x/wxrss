@@ -1,9 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { USER_AGENT } from '~/config';
 import { logMemory } from '~/server/utils/memory-debug';
+import { ensureRuntimeChildScript } from '~/server/utils/runtime-child-script';
+import { READER_BATCH_SYNC_ACCOUNT_CHILD_SOURCE } from '~/server/utils/runtime-child-sources.generated';
 
 export interface ReaderBatchAccountRecord {
   fakeid: string;
@@ -98,11 +97,7 @@ type ChildInboundMessage =
   | { type: 'cancel' };
 
 function getChildScriptPath(): string {
-  const sourcePath = path.resolve(process.cwd(), 'server/utils/reader-batch-sync-account-child.ts');
-  if (fs.existsSync(sourcePath)) {
-    return sourcePath;
-  }
-  return fileURLToPath(new URL('./reader-batch-sync-account-child.ts', import.meta.url));
+  return ensureRuntimeChildScript('reader-batch-sync-account-child.ts', READER_BATCH_SYNC_ACCOUNT_CHILD_SOURCE);
 }
 
 function getChildMaxOldSpaceMb(): number {

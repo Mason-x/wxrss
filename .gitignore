@@ -17,8 +17,12 @@ dist/
 tmp-*.log
 tmp-*.txt
 temp_*.html
+view-source_*.html
+*.pyc
 
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+scripts/__pycache__/
+截图/

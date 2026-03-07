@@ -2,7 +2,6 @@ import path from 'node:path';
 import { request as httpsRequest } from 'node:https';
 import sqlite3 from 'sqlite3';
 import { open, type Database } from 'sqlite';
-import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 
 type ChildStartMessage = {
   type: 'start';
@@ -145,9 +144,43 @@ const ARTICLE_STORAGE_FIELD_ALLOWLIST = new Set<string>([
 ]);
 
 const CANCEL_ERROR_MESSAGE = 'batch sync canceled';
+const DEFAULT_SYNC_DELAY_MIN_SECONDS = 3;
+const DEFAULT_SYNC_DELAY_MAX_SECONDS = 5;
+const MIN_ALLOWED_SECONDS = 1;
+const MAX_ALLOWED_SECONDS = 30;
 
 let cancelRequested = false;
 let started = false;
+
+function normalizeSingleDelaySeconds(value: unknown, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const parsed = Math.floor(Number(value));
+  if (parsed < MIN_ALLOWED_SECONDS) {
+    return MIN_ALLOWED_SECONDS;
+  }
+  if (parsed > MAX_ALLOWED_SECONDS) {
+    return MAX_ALLOWED_SECONDS;
+  }
+  return parsed;
+}
+
+function pickRandomDelayMs(input?: { accountSyncMinSeconds?: number; accountSyncMaxSeconds?: number }): number {
+  let min = normalizeSingleDelaySeconds(input?.accountSyncMinSeconds, DEFAULT_SYNC_DELAY_MIN_SECONDS);
+  let max = normalizeSingleDelaySeconds(
+    input?.accountSyncMaxSeconds,
+    Math.max(min, DEFAULT_SYNC_DELAY_MAX_SECONDS)
+  );
+
+  if (min > max) {
+    [min, max] = [max, min];
+  }
+
+  const seconds = max <= min ? min : min + Math.floor(Math.random() * (max - min + 1));
+  return seconds * 1000;
+}
 
 function sendMessage(message: ChildOutboundMessage): void {
   if (typeof process.send === 'function') {
@@ -919,7 +952,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
       break;
     }
 
-    await sleep(pickRandomSyncDelayMs(payload));
+    await sleep(pickRandomDelayMs(payload));
   }
 
   const latestAccount = await getAccountByFakeid(db, payload.authKey, fakeid);
