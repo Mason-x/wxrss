@@ -613,7 +613,7 @@ const isDesktopViewport = ref(false);
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
-    return selectedArticleDisplayTitle.value || '文章阅读';
+    return selectedArticle.value?.accountName || selectedAccountInfo.value?.nickname || '文章阅读';
   }
   if (selectedAccount.value) {
     return selectedAccountInfo.value?.nickname || '文章列表';
@@ -623,7 +623,7 @@ const mobileHeaderTitle = computed(() => {
 
 const mobileHeaderMeta = computed(() => {
   if (mobileView.value === 'article' && selectedArticle.value) {
-    return `${selectedArticle.value.author_name || selectedArticle.value.accountName} · ${formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time)}`;
+    return formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time);
   }
   if (selectedAccount.value) {
     return activeAccountSyncStatus.value || `${articleTotalCount.value} 篇文章`;
@@ -1876,7 +1876,7 @@ onUnmounted(() => {
     <div class="flex h-full flex-col md:hidden">
       <header class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/92 px-4 pb-3 pt-3 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
         <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0 flex items-start gap-3">
+          <div class="min-w-0 flex flex-1 items-start gap-3">
             <UButton
               v-if="mobileCanGoBack"
               size="2xs"
@@ -1895,14 +1895,34 @@ onUnmounted(() => {
               class="icon-btn mt-0.5"
               @click="showMobileAccounts"
             />
-            <div class="min-w-0">
-              <h1 class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
-              <p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{{ mobileHeaderMeta }}</p>
+            <div class="min-w-0 flex-1">
+              <div v-if="mobileView === 'articles' && selectedAccountInfo" class="flex items-center gap-2">
+                <h1 class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:square-pen"
+                  :disabled="!selectedAccountInfo"
+                  class="icon-btn shrink-0"
+                  @click="editSelectedAccountCategory"
+                />
+              </div>
+              <h1 v-else class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
+              <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                <template v-if="mobileView === 'articles' && selectedAccountInfo">
+                  {{ articleTotalCount }} 篇文章
+                  <span v-if="activeAccountSyncStatus"> · {{ activeAccountSyncStatus }}</span>
+                </template>
+                <template v-else>
+                  {{ mobileHeaderMeta }}
+                </template>
+              </p>
             </div>
           </div>
 
           <div class="flex items-center gap-2">
-            <UTooltip :text="syncHeaderTooltip">
+            <UTooltip v-if="mobileView !== 'article'" :text="syncHeaderTooltip">
               <UButton
                 size="2xs"
                 color="gray"
@@ -1912,6 +1932,17 @@ onUnmounted(() => {
                 :loading="isSyncing"
                 class="icon-btn"
                 @click="onHeaderSyncClick"
+              />
+            </UTooltip>
+            <UTooltip v-else text="查看原文">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:external-link"
+                class="icon-btn"
+                :disabled="!selectedArticle"
+                @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
               />
             </UTooltip>
             <UTooltip text="系统菜单">
@@ -1925,24 +1956,6 @@ onUnmounted(() => {
               />
             </UTooltip>
           </div>
-        </div>
-
-        <div v-if="mobileView === 'articles' && selectedAccountInfo" class="mt-3 flex flex-wrap items-center gap-2">
-          <UTooltip text="编辑当前公众号分类">
-            <UButton
-              size="sm"
-              color="gray"
-              variant="soft"
-              icon="i-lucide:square-pen"
-              label="分类"
-              :disabled="!selectedAccountInfo"
-              @click="editSelectedAccountCategory"
-            />
-          </UTooltip>
-        </div>
-
-        <div v-else-if="mobileView === 'article'" class="mt-3 flex items-center gap-2">
-          <UButton size="xs" color="gray" variant="soft" @click="selectedArticle && openOriginalArticle(selectedArticle.link)">查看原文</UButton>
         </div>
       </header>
 
@@ -2003,9 +2016,6 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="flex h-full flex-col">
-          <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-            <h2 class="text-xl font-bold leading-tight">{{ selectedArticleDisplayTitle }}</h2>
-          </div>
           <div v-if="contentLoading">
             <EmptyStatePanel
               icon="i-lucide-loader-circle"
@@ -2019,6 +2029,16 @@ onUnmounted(() => {
             class="flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
             @scroll.passive="onMobileReaderScroll"
           >
+            <div class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
+              <h2 class="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-50">
+                {{ selectedArticleDisplayTitle }}
+              </h2>
+              <p class="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                {{ selectedArticle?.author_name || selectedArticle?.accountName }}
+                <span class="mx-1">·</span>
+                {{ selectedArticle && formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}
+              </p>
+            </div>
             <HtmlRenderer :html="selectedArticleHtml" />
           </div>
         </div>
@@ -2035,44 +2055,47 @@ onUnmounted(() => {
               v-if="mobileAccountsPanelOpen"
               class="mobile-accounts-drawer flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
             >
-              <div class="border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
-                <div class="flex items-start justify-between gap-3">
+              <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+                <div class="flex items-center justify-between gap-3">
                   <div class="min-w-0">
-                    <p class="text-base font-semibold">公众号列表</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    <div class="flex items-center gap-2">
+                      <p class="text-sm font-semibold">公众号列表</p>
+                      <span class="text-[11px] text-slate-500 dark:text-slate-400">{{ accountsInCategory.length }} 个</span>
+                    </div>
+                    <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                       {{ accountsInCategory.length }} 个公众号
                     </p>
                   </div>
-                  <UButton
-                    size="2xs"
-                    color="gray"
-                    variant="ghost"
-                    icon="i-lucide:x"
-                    class="icon-btn"
-                    @click="mobileAccountsPanelOpen = false"
-                  />
+                  <div class="flex items-center gap-1.5">
+                    <UButton
+                      size="xs"
+                      color="gray"
+                      variant="soft"
+                      icon="i-lucide:newspaper"
+                      class="justify-center"
+                      @click="showMobileAggregateArticles"
+                    >
+                      全部文章
+                    </UButton>
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:x"
+                      class="icon-btn"
+                      @click="mobileAccountsPanelOpen = false"
+                    />
+                  </div>
                 </div>
 
-                <UButton
-                  size="sm"
-                  color="gray"
-                  variant="soft"
-                  block
-                  class="mt-3 justify-center"
-                  icon="i-lucide:newspaper"
-                  @click="showMobileAggregateArticles"
-                >
-                  全部文章
-                </UButton>
-
-                <div class="mt-3 flex items-center justify-between gap-2">
+                <div class="mt-2 flex items-center justify-between gap-2">
                   <div v-if="loginAccount" class="min-w-0">
-                    <p class="truncate text-sm font-medium">{{ loginAccount.nickname || '已登录账号' }}</p>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Cookie 剩余：{{ cookieRemainText }}</p>
+                    <p class="truncate text-[13px] font-medium">{{ loginAccount.nickname || '已登录账号' }}</p>
+                    <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Cookie 剩余：{{ cookieRemainText }}</p>
                   </div>
                   <UButton
                     v-if="loginAccount"
-                    size="xs"
+                    size="2xs"
                     color="rose"
                     variant="soft"
                     icon="i-lucide:log-out"
@@ -2083,7 +2106,7 @@ onUnmounted(() => {
                   </UButton>
                   <UButton
                     v-else
-                    size="sm"
+                    size="xs"
                     color="gray"
                     variant="soft"
                     icon="i-lucide:log-in"
@@ -2093,15 +2116,14 @@ onUnmounted(() => {
                   </UButton>
                 </div>
 
-                <UInput v-model="accountKeyword" class="mt-3" size="sm" icon="i-lucide:search" placeholder="搜索公众号名称" />
-
-                <div class="mt-3 flex flex-wrap gap-2">
+                <div class="mt-2 flex items-center gap-2">
+                  <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索公众号名称" />
                   <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
                     添加
                   </UButton>
                 </div>
 
-                <div class="mt-3 flex max-h-[112px] flex-wrap gap-1 overflow-y-auto">
+                <div class="mt-2 flex max-h-[112px] flex-wrap gap-1 overflow-y-auto">
                   <button
                     v-for="category in categories"
                     :key="category.id"
