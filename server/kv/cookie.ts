@@ -85,3 +85,25 @@ export async function getMpCookie(key: CookieKVKey): Promise<CookieKVValue | nul
     return null;
   }
 }
+
+export async function deleteMpCookie(key: CookieKVKey): Promise<boolean> {
+  try {
+    const db = await getSqliteDb();
+    await db.run(
+      `
+      DELETE FROM mp_cookie
+      WHERE auth_key = ?
+      `,
+      key
+    );
+
+    const kv = useStorage('kv') as {
+      removeItem?: (name: string) => Promise<void>;
+    };
+    await kv.removeItem?.(`cookie:${key}`);
+    return true;
+  } catch (err) {
+    console.error('sqlite deleteMpCookie failed:', err);
+    return false;
+  }
+}

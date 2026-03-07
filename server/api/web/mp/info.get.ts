@@ -1,18 +1,46 @@
-/**
- * 获取登录用户信息接口
- *
- * 备注：
- * 这个接口用于后端登录成功之后调用，非客户端直接调用
- */
-
 import { getTokenFromStore } from '~/server/utils/CookieStore';
 import { proxyMpRequest } from '~/server/utils/proxy-request';
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractCgiDataValue(html: string, keys: string[]): string {
+  for (const key of keys) {
+    const pattern = new RegExp(
+      `(?:wx|window)\\.cgiData\\.${escapeRegExp(key)}\\s*=\\s*(['"])(?<value>[\\s\\S]*?)\\1`,
+      'i'
+    );
+    const match = html.match(pattern);
+    const value = match?.groups?.value;
+    if (value) {
+      return value
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .trim();
+    }
+  }
+  return '';
+}
+
+function buildIdentityKey(info: { user_name?: string; biz_uin?: string; alias?: string }): string {
+  if (info.user_name) {
+    return `user_name:${info.user_name}`;
+  }
+  if (info.biz_uin) {
+    return `biz_uin:${info.biz_uin}`;
+  }
+  if (info.alias) {
+    return `alias:${info.alias}`;
+  }
+  return '';
+}
 
 export default defineEventHandler(async event => {
   const token = await getTokenFromStore(event);
 
   const html: string = await proxyMpRequest({
-    event: event,
+    event,
     method: 'GET',
     endpoint: 'https://mp.weixin.qq.com/cgi-bin/home',
     query: {
@@ -22,22 +50,19 @@ export default defineEventHandler(async event => {
     },
   }).then(resp => resp.text());
 
-  // 提取昵称
-  let nick_name = '';
-  const nicknameMatchResult = html.match(/wx\.cgiData\.nick_name\s*?=\s*?"(?<nick_name>[^"]+)"/);
-  if (nicknameMatchResult && nicknameMatchResult.groups && nicknameMatchResult.groups.nick_name) {
-    nick_name = nicknameMatchResult.groups.nick_name;
-  }
-
-  // 提取头像
-  let head_img = '';
-  const headImgMatchResult = html.match(/wx\.cgiData\.head_img\s*?=\s*?"(?<head_img>[^"]+)"/);
-  if (headImgMatchResult && headImgMatchResult.groups && headImgMatchResult.groups.head_img) {
-    head_img = headImgMatchResult.groups.head_img;
-  }
+  const nick_name = extractCgiDataValue(html, ['nick_name']);
+  const head_img = extractCgiDataValue(html, ['head_img']);
+  const user_name = extractCgiDataValue(html, ['user_name', 'user_name_new']);
+  const biz_uin = extractCgiDataValue(html, ['bizuin', 'biz_uin']);
+  const alias = extractCgiDataValue(html, ['alias', 'wx_alias']);
+  const identity_key = buildIdentityKey({ user_name, biz_uin, alias });
 
   return {
-    nick_name: nick_name,
-    head_img: head_img,
+    nick_name,
+    head_img,
+    user_name,
+    biz_uin,
+    alias,
+    identity_key,
   };
 });

@@ -223,6 +223,19 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE INDEX IF NOT EXISTS idx_mp_cookie_expires_at ON mp_cookie(expires_at);
 
+    CREATE TABLE IF NOT EXISTS mp_account_identity (
+      identity_key TEXT PRIMARY KEY,
+      auth_key TEXT NOT NULL,
+      user_name TEXT NOT NULL DEFAULT '',
+      biz_uin TEXT NOT NULL DEFAULT '',
+      alias TEXT NOT NULL DEFAULT '',
+      nickname TEXT NOT NULL DEFAULT '',
+      head_img TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_account_identity_auth_key ON mp_account_identity(auth_key);
+
     CREATE TABLE IF NOT EXISTS system_flags (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

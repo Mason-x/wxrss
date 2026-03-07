@@ -1,6 +1,6 @@
 import { H3Event, parseCookies } from 'h3';
 import type { CookieKVValue } from '~/server/kv/cookie';
-import { getMpCookie, setMpCookie } from '~/server/kv/cookie';
+import { deleteMpCookie, getMpCookie, setMpCookie } from '~/server/kv/cookie';
 
 // 表示一条 set-cookie 记录的解析结果
 export type CookieEntity = Record<string, string | number>;
@@ -153,6 +153,17 @@ class CookieStore {
     const accountCookie = new AccountCookie(token, cookie);
     this.store.set(authKey, accountCookie);
     return await setMpCookie(authKey, accountCookie.toJSON());
+  }
+
+  async setCookieValue(authKey: string, value: CookieKVValue): Promise<boolean> {
+    const accountCookie = AccountCookie.create(value.token, value.cookies);
+    this.store.set(authKey, accountCookie);
+    return await setMpCookie(authKey, accountCookie.toJSON());
+  }
+
+  async deleteCookie(authKey: string): Promise<boolean> {
+    this.store.delete(authKey);
+    return await deleteMpCookie(authKey);
   }
 
   /**

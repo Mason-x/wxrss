@@ -1,7 +1,7 @@
 <script setup lang="ts">
-navigateTo('/dashboard/reader');
+import ReaderHomePage from '~/pages/dashboard/reader.vue';
 </script>
 
 <template>
-  <div class="flex justify-center items-center w-full h-full">loading...</div>
+  <ReaderHomePage />
 </template>
