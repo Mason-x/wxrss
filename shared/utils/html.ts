@@ -4,6 +4,7 @@ import { extractCommentId } from '~/utils/comment';
 interface DynamicArticleFallback {
   title: string;
   paragraphs: string[];
+  htmlContent?: string;
   coverUrl?: string;
   galleryImages?: DynamicGalleryImage[];
 }
@@ -104,6 +105,173 @@ function normalizeMultilineText(text: string): string {
     .trim();
 }
 
+const DYNAMIC_FALLBACK_BLOCK_TAGS = new Set([
+  'article',
+  'aside',
+  'blockquote',
+  'div',
+  'dl',
+  'figure',
+  'figcaption',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+]);
+
+function fixBrokenAnchorMarkup(source: string): string {
+  if (!source) {
+    return '';
+  }
+
+  let next = source.replace(
+    /&lt;a([\s\S]*?)&gt;([\s\S]*?)&lt;\/a&gt;/gi,
+    (match, attrs, content) => {
+      const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
+      return `<a${fixedAttrs}>${content}</a>`;
+    }
+  );
+
+  next = next.replace(
+    /<a([^>]*?)>/gi,
+    (match, attrs) => {
+      const fixedAttrs = attrs.replace(/href=(["'])([^"'\s>]+)\s+([a-zA-Z0-9_\-]+)=/i, 'href=$1$2$1 $3=');
+      return `<a${fixedAttrs}>`;
+    }
+  );
+
+  return next;
+}
+
+function containsHtmlLikeMarkup(text: string): boolean {
+  return /<\/?[a-z][\w:-]*(?:\s[^>]*)?>/i.test(text);
+}
+
+function normalizeDynamicFallbackAttrUrl(url: string): string {
+  if (!url) {
+    return '';
+  }
+
+  const normalized = normalizeMediaUrl(url);
+  if (normalized.startsWith('//')) {
+    return `https:${normalized}`;
+  }
+  return normalized;
+}
+
+function sanitizeDynamicFallbackFragment($: cheerio.CheerioAPI, $root: cheerio.Cheerio<any>): void {
+  $root.find('script,noscript,style,meta,link').remove();
+
+  $root.find('*').each((_, el) => {
+    const $element = $(el);
+
+    ['src', 'data-src', 'poster'].forEach(attr => {
+      const value = ($element.attr(attr) || '').trim();
+      if (!value) {
+        return;
+      }
+      $element.attr(attr, normalizeDynamicFallbackAttrUrl(value));
+    });
+
+    if ($element.is('img')) {
+      const src = ($element.attr('src') || $element.attr('data-src') || '').trim();
+      if (src) {
+        $element.attr('src', normalizeDynamicFallbackAttrUrl(src));
+      }
+      $element.attr('loading', 'lazy');
+    }
+
+    if ($element.is('a')) {
+      const href = ($element.attr('href') || '').trim();
+      if (href) {
+        $element.attr('href', normalizeDynamicFallbackAttrUrl(href));
+      }
+      $element.attr('target', '_blank');
+      $element.attr('rel', 'noopener noreferrer');
+    }
+  });
+}
+
+function buildDynamicFallbackBlockHtml(block: string): string {
+  const normalizedBlock = block.replace(/\r\n?/g, '\n').trim();
+  if (!normalizedBlock) {
+    return '';
+  }
+
+  const fixedBlock = fixBrokenAnchorMarkup(normalizedBlock);
+  const $ = cheerio.load(`<div id="__dynamic_fallback_root">${fixedBlock}</div>`, null, false);
+  const $root = $('#__dynamic_fallback_root');
+  sanitizeDynamicFallbackFragment($, $root);
+
+  const html = ($root.html() || '').trim();
+  if (!html) {
+    return '';
+  }
+
+  const childNodes = $root.contents().toArray().filter(node => node.type !== 'text' || $(node).text().trim());
+  const hasOnlyBlockChildren =
+    childNodes.length > 0 &&
+    childNodes.every(node => node.type === 'tag' && DYNAMIC_FALLBACK_BLOCK_TAGS.has((node as any).tagName || ''));
+
+  return hasOnlyBlockChildren ? html : `<p>${html}</p>`;
+}
+
+function buildDynamicFallbackHtmlContent(content: string): string {
+  const normalizedContent = content.replace(/\r\n?/g, '\n').trim();
+  if (!normalizedContent) {
+    return '';
+  }
+
+  const blocks = normalizedContent
+    .split(/\n{2,}/)
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return '';
+  }
+
+  return blocks
+    .map(block => {
+      if (!containsHtmlLikeMarkup(block)) {
+        return `<p>${escapeHtml(block)}</p>`;
+      }
+      return buildDynamicFallbackBlockHtml(block);
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function extractTextFromHtmlFragment(fragmentHtml: string): string {
+  if (!fragmentHtml) {
+    return '';
+  }
+
+  const $ = cheerio.load(`<div id="__dynamic_fallback_text_root">${fragmentHtml}</div>`, null, false);
+  const $root = $('#__dynamic_fallback_text_root');
+  $root.find('br').replaceWith('\n');
+  $root.find('p,div,section,article,figure,figcaption,blockquote,li,h1,h2,h3,h4,h5,h6').each((_, el) => {
+    $(el).append('\n');
+  });
+  return normalizeMultilineText($root.text());
+}
+
 function parseCgiDataArticleFallback(rawHTML: string): DynamicArticleFallback | null {
   const rawTitle = extractJsDecodeField(rawHTML, 'title');
   const rawContent = extractJsDecodeField(rawHTML, 'content_noencode') || extractJsDecodeField(rawHTML, 'desc');
@@ -111,30 +279,44 @@ function parseCgiDataArticleFallback(rawHTML: string): DynamicArticleFallback | 
 
   const title = normalizeMultilineText(decodeJsEscapedText(rawTitle));
   const content = normalizeMultilineText(decodeJsEscapedText(rawContent));
+  const htmlContent = containsHtmlLikeMarkup(content) ? buildDynamicFallbackHtmlContent(content) : '';
+  const contentText = htmlContent ? extractTextFromHtmlFragment(htmlContent) : content;
   const coverUrl = normalizeMultilineText(decodeJsEscapedText(rawCoverUrl)).replace(/^http:\/\//, 'https://');
 
-  if (!title && !content) {
+  if (!title && !contentText) {
     return null;
   }
 
   if (!title) {
-    const fallback = splitTextToTitleAndParagraphs(content);
+    const fallback = splitTextToTitleAndParagraphs(contentText);
     if (!fallback) {
       return null;
     }
     return {
       ...fallback,
+      htmlContent: htmlContent || undefined,
       coverUrl: coverUrl || undefined,
     };
   }
 
-  const paragraphs = content
-    .split(/\n+/)
-    .map(line => line.trim())
-    .filter(Boolean)
-    .filter(line => line !== title);
+  const paragraphs = htmlContent
+    ? []
+    : content
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .filter(line => line !== title);
 
   if (paragraphs.length === 0) {
+    if (htmlContent) {
+      return {
+        title,
+        paragraphs: [],
+        htmlContent,
+        coverUrl: coverUrl || undefined,
+      };
+    }
+
     const fallback = splitTextToTitleAndParagraphs(title);
     if (!fallback) {
       return null;
@@ -148,6 +330,7 @@ function parseCgiDataArticleFallback(rawHTML: string): DynamicArticleFallback | 
   return {
     title,
     paragraphs,
+    htmlContent: htmlContent || undefined,
     coverUrl: coverUrl || undefined,
   };
 }
@@ -474,6 +657,7 @@ function hasRenderableArticleContent($jsArticleContent: cheerio.Cheerio<any>): b
 
 function buildFallbackArticleHtml(fallback: DynamicArticleFallback | null): string {
   const paragraphs = fallback?.paragraphs || [];
+  const richBodyHtml = (fallback?.htmlContent || '').trim();
   const galleryImages = fallback?.galleryImages || [];
   const hasGallery = galleryImages.length > 0;
   const titleHtml = fallback?.title ? `<h1 class="dynamic-fallback-title">${escapeHtml(fallback.title)}</h1>` : '';
@@ -503,9 +687,10 @@ function buildFallbackArticleHtml(fallback: DynamicArticleFallback | null): stri
       </section>`
     : '';
 
+  const bodyContentHtml = richBodyHtml || paragraphHtml;
   const articleBodyHtml = hasGallery
-    ? [titleHtml, paragraphHtml].filter(Boolean).join('\n')
-    : [titleHtml, coverHtml, paragraphHtml].filter(Boolean).join('\n');
+    ? [titleHtml, bodyContentHtml].filter(Boolean).join('\n')
+    : [titleHtml, coverHtml, bodyContentHtml].filter(Boolean).join('\n');
   const bodyHtml = articleBodyHtml ? `<div class="dynamic-fallback-body">${articleBodyHtml}</div>` : '';
   const contentHtml =
     [galleryHtml, bodyHtml].filter(Boolean).join('\n') ||
@@ -533,6 +718,9 @@ function normalizeTextResult(text: string): string {
  */
 export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html'): string {
   rawHTML = unwrapViewSourceHtml(rawHTML);
+
+  rawHTML = fixBrokenAnchorMarkup(rawHTML);
+
   const originalArticleUrl = extractOriginalArticleUrl(rawHTML);
 
   const $ = cheerio.load(rawHTML);
@@ -575,7 +763,10 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
       return normalizeTextResult($jsArticleContent.text());
     }
 
-    const fallbackText = [fallback?.title || '', ...(fallback?.paragraphs || [])].filter(Boolean).join('\n');
+    const fallbackBodyText = fallback?.htmlContent
+      ? extractTextFromHtmlFragment(fallback.htmlContent)
+      : (fallback?.paragraphs || []).join('\n');
+    const fallbackText = [fallback?.title || '', fallbackBodyText].filter(Boolean).join('\n');
     return normalizeTextResult(fallbackText);
   } else if (format === 'html') {
     // 鑾峰彇淇敼鍚庣殑 HTML
@@ -720,6 +911,25 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
           .article_dynamic_fallback p {
               margin: 0 0 12px 0;
               white-space: pre-wrap;
+          }
+          .article_dynamic_fallback .dynamic-fallback-body a {
+              color: #2563eb;
+              text-decoration: underline;
+              text-underline-offset: 2px;
+              word-break: break-word;
+          }
+          .article_dynamic_fallback .dynamic-fallback-body img {
+              display: block;
+              max-width: 100%;
+              height: auto;
+              margin: 16px auto;
+              border-radius: 12px;
+          }
+          .article_dynamic_fallback .dynamic-fallback-body figure {
+              margin: 16px 0;
+          }
+          .article_dynamic_fallback .dynamic-fallback-body figure img {
+              margin: 0;
           }
           .article_dynamic_fallback .dynamic-fallback-tip {
               color: #64748b;
