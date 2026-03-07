@@ -45,6 +45,24 @@ function getHeaderValue(headers: IncomingHttpHeaders, name: string): string {
   return String(value || '');
 }
 
+function getCookieValueFromSetCookie(setCookie: string, name: string): string | null {
+  const prefix = `${name}=`;
+  if (!setCookie.startsWith(prefix)) {
+    return null;
+  }
+  const semicolonIndex = setCookie.indexOf(';');
+  if (semicolonIndex === -1) {
+    return setCookie.slice(prefix.length);
+  }
+  return setCookie.slice(prefix.length, semicolonIndex);
+}
+
+function createLocalProxyCookie(name: string, value: string, event: H3Event, expiresAt?: Date): string {
+  const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
+  const expiresAttr = expiresAt ? `; Expires=${expiresAt.toUTCString()}` : '';
+  return `${name}=${value}; Path=/${expiresAttr}; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
 function assertProxyHeapAvailable(
   endpoint: string,
   method: string,
@@ -374,7 +392,13 @@ export async function proxyMpRequest(options: RequestOptions) {
   let setCookies: string[] = [];
 
   if (options.action === 'start_login') {
-    setCookies = mpResponse.headers.getSetCookie().filter(cookieValue => cookieValue.startsWith('uuid='));
+    const uuidCookie = mpResponse.headers
+      .getSetCookie()
+      .find(cookieValue => cookieValue.startsWith('uuid='));
+    const uuid = uuidCookie ? getCookieValueFromSetCookie(uuidCookie, 'uuid') : null;
+    if (uuid) {
+      setCookies = [createLocalProxyCookie('uuid', uuid, options.event, dayjs().add(10, 'minutes').toDate())];
+    }
   } else if (options.action === 'login') {
     try {
       const authKey = crypto.randomUUID().replace(/-/g, '');
@@ -386,11 +410,9 @@ export async function proxyMpRequest(options: RequestOptions) {
       } else {
         console.log('cookie 鍐欏叆澶辫触');
       }
-      const secureAttr = isHttpsRequest(options.event) ? '; Secure' : '';
-
       setCookies = [
-        `auth-key=${authKey}; Path=/; Expires=${dayjs().add(4, 'days').toString()}; HttpOnly; SameSite=Lax${secureAttr}`,
-        `uuid=EXPIRED; Path=/; Expires=${dayjs().subtract(1, 'days').toString()}; HttpOnly; SameSite=Lax${secureAttr}`,
+        createLocalProxyCookie('auth-key', authKey, options.event, dayjs().add(4, 'days').toDate()),
+        createLocalProxyCookie('uuid', 'EXPIRED', options.event, dayjs().subtract(1, 'days').toDate()),
       ];
     } catch (error) {
       console.error('action(login) failed:', error);
