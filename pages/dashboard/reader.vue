@@ -762,8 +762,8 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
-const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 152;
-const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
+const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
+const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -834,7 +834,7 @@ const mobileArticleFavoriteCornerX = transformValue(() => {
 
 const mobileArticleFavoriteCornerOpacity = transformValue(() => {
   const progress = getMobileArticleSwipeProgress();
-  return Math.max(0, Math.min(1, (progress - 0.03) / 0.18));
+  return Math.max(0, Math.min(1, (progress - 0.01) / 0.08));
 });
 
 const mobileArticleFavoriteCornerScale = transformValue(() => {

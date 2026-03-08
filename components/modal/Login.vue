@@ -125,8 +125,14 @@ async function bizLogin() {
 </script>
 
 <template>
-  <UModal prevent-close>
-    <UCard>
+  <UModal
+    prevent-close
+    :ui="{
+      container: 'flex min-h-full items-center justify-center text-center',
+      width: 'w-[84vw] max-w-[22rem]',
+    }"
+  >
+    <UCard class="mx-auto w-full">
       <template #header>
         <h2 class="text-lg font-semibold">登录微信公众号</h2>
         <UButton
@@ -140,10 +146,10 @@ async function bizLogin() {
       </template>
 
       <!-- 二维码图片展示区 -->
-      <div class="flex flex-col justify-center items-center mx-auto size-80">
+      <div class="mx-auto flex aspect-square w-[62vw] max-w-[15rem] items-center justify-center">
         <UIcon v-if="loading" name="i-lucide:loader" :size="28" class="animate-spin text-slate-500" />
         <p v-if="msg" class="text-rose-500">{{ msg }}</p>
-        <img v-if="qrcodeSrc" :src="qrcodeSrc" alt="" class="w-full rounded-md" />
+        <img v-if="qrcodeSrc" :src="qrcodeSrc" alt="" class="h-full w-full rounded-md object-contain" />
       </div>
     </UCard>
   </UModal>
