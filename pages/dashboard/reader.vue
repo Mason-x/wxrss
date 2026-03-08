@@ -761,9 +761,10 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
-const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 116;
-const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 72;
+const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 88;
+const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 56;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
+const MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN = 14;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -1774,10 +1775,10 @@ function getMobileArticleFavoriteZoneRect() {
   const revealOffset = (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
 
   return {
-    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE + revealOffset,
-    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE,
-    right: width,
-    bottom: height,
+    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE + revealOffset,
+    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE,
+    right: width - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN + revealOffset,
+    bottom: height - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN,
   };
 }
 
@@ -1795,7 +1796,10 @@ function canTriggerMobileArticleFavorite(pointX: number, pointY: number) {
   }
 
   const zone = getMobileArticleFavoriteZoneRect();
-  return pointX >= zone.left && pointX <= zone.right && pointY >= zone.top && pointY <= zone.bottom;
+  const centerX = (zone.left + zone.right) / 2;
+  const centerY = (zone.top + zone.bottom) / 2;
+  const radius = MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2;
+  return Math.hypot(pointX - centerX, pointY - centerY) <= radius;
 }
 
 function onArticleDrag(_event: PointerEvent, info: PanInfo) {
@@ -3200,21 +3204,13 @@ onUnmounted(() => {
           <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
 
           <motion.div
-            class="pointer-events-none absolute bottom-0 right-0 z-20"
+            v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
+            class="pointer-events-none absolute bottom-[14px] right-[14px] z-20"
             :style="{ x: mobileArticleFavoriteCornerX, opacity: mobileArticleFavoriteCornerOpacity, scale: mobileArticleFavoriteCornerScale }"
           >
-            <div
-              class="mobile-article-favorite-corner"
-              :class="{
-                'is-ready': mobileArticleFavoriteHovering,
-                'is-active': selectedArticle && isArticleFavorite(selectedArticle),
-              }"
-            >
-              <UIcon
-                :name="selectedArticle && isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                class="size-5"
-              />
-              <span>{{ selectedArticle && isArticleFavorite(selectedArticle) ? '已收藏' : '收藏' }}</span>
+            <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
+              <UIcon name="i-heroicons:star" class="size-5" />
+              <span>收藏</span>
             </div>
           </motion.div>
 
@@ -4210,22 +4206,17 @@ onUnmounted(() => {
 }
 
 .mobile-article-favorite-corner {
-  @apply flex h-[116px] w-[116px] flex-col items-center justify-center gap-1.5 rounded-tl-[34px] text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
+  @apply flex h-[88px] w-[88px] flex-col items-center justify-center gap-1 rounded-full text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
   background-color: rgba(148, 163, 184, 0.96);
 }
 
 .mobile-article-favorite-corner span {
-  @apply text-[11px] font-medium tracking-[0.08em];
+  @apply text-[10px] font-medium tracking-[0.08em];
 }
 
 .mobile-article-favorite-corner.is-ready {
   @apply text-amber-600 dark:text-amber-300;
   background-color: rgba(252, 211, 77, 0.94);
-}
-
-.mobile-article-favorite-corner.is-active {
-  @apply text-amber-500 dark:text-amber-300;
-  background-color: rgba(251, 191, 36, 0.92);
 }
 
 :global(.dark) .mobile-article-favorite-corner {
@@ -4234,10 +4225,6 @@ onUnmounted(() => {
 
 :global(.dark) .mobile-article-favorite-corner.is-ready {
   background-color: rgba(245, 158, 11, 0.34);
-}
-
-:global(.dark) .mobile-article-favorite-corner.is-active {
-  background-color: rgba(245, 158, 11, 0.28);
 }
 
 .mobile-article-edge-sensor {
