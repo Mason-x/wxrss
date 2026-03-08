@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
-import { AnimatePresence, animate, motion, transformValue, type PanInfo, useMotionValue, useReducedMotion } from 'motion-v';
+import { AnimatePresence, animate, motion, transformValue, type PanInfo, useDragControls, useMotionValue, useReducedMotion } from 'motion-v';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -745,6 +745,8 @@ const mobileDragSession = reactive<MobileDragSession>({
   edge: 'none',
   width: 0,
 });
+const mobileArticlesDragControls = useDragControls();
+const mobileArticleDragControls = useDragControls();
 const prefersReducedMotion = useReducedMotion();
 const mobileArticlesSwipeX = useMotionValue(0);
 const mobileArticleSwipeX = useMotionValue(0);
@@ -1712,6 +1714,22 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 
   rememberMobileDragSession(context, event);
+
+  if (mobileDragSession.interactive) {
+    return;
+  }
+
+  if (context === 'articles') {
+    if (mobileDragSession.edge !== 'left' || !canNavigateMobileHistory(-1)) {
+      return;
+    }
+    mobileArticlesDragControls.start(event);
+    return;
+  }
+
+  if (context === 'article') {
+    mobileArticleDragControls.start(event);
+  }
 }
 
 async function openAdjacentArticle(step: number) {
@@ -2821,7 +2839,7 @@ onUnmounted(() => {
           </div>
         </motion.div>
 
-        <motion.header class="relative z-10 px-4 pb-3 pt-3" :style="{ x: mobileCurrentHeaderX }">
+        <motion.header class="relative z-10 px-4 pb-3 pt-3" :style="{ x: mobileCurrentHeaderX }" @pointerdown="beginMobileDrag(mobileView, $event)">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex flex-1 items-start gap-3">
               <UButton
@@ -2989,6 +3007,16 @@ onUnmounted(() => {
           key="mobile-articles"
           class="absolute inset-0 z-[2] flex h-full flex-col app-shell-bg"
           :class="mobileArticlesUnderlayActive ? 'shadow-[-18px_0_40px_rgba(15,23,42,0.12)]' : ''"
+          :drag="selectedArticle ? false : 'x'"
+          :dragControls="mobileArticlesDragControls"
+          :dragListener="false"
+          :dragConstraints="{ left: 0, right: 0 }"
+          :dragElastic="mobileSwipeElastic"
+          :dragMomentum="false"
+          :dragDirectionLock="true"
+          :dragSnapToOrigin="false"
+          :dragTransition="mobileSwipeSnapTransition"
+          :onDragEnd="onArticlesDragEnd"
           :style="
             selectedArticle
               ? mobileArticleUnderlayActive
@@ -3005,14 +3033,6 @@ onUnmounted(() => {
             ref="mobileArticlesListRef"
             class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             :class="selectedArticle ? 'pointer-events-none' : ''"
-            :drag="selectedArticle ? false : 'x'"
-            :dragConstraints="{ left: 0, right: 0 }"
-            :dragElastic="mobileSwipeElastic"
-            :dragMomentum="false"
-            :dragDirectionLock="true"
-            :dragSnapToOrigin="false"
-            :dragTransition="mobileSwipeSnapTransition"
-            :onDragEnd="onArticlesDragEnd"
             @pointerdown="beginMobileDrag('articles', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
@@ -3113,6 +3133,16 @@ onUnmounted(() => {
           v-if="selectedArticle"
           key="mobile-article"
           class="absolute inset-0 z-10 flex h-full flex-col app-shell-bg shadow-[-22px_0_44px_rgba(15,23,42,0.16)]"
+          drag="x"
+          :dragControls="mobileArticleDragControls"
+          :dragListener="false"
+          :dragConstraints="{ left: 0, right: 0 }"
+          :dragElastic="mobileSwipeElastic"
+          :dragMomentum="false"
+          :dragDirectionLock="true"
+          :dragSnapToOrigin="false"
+          :dragTransition="mobileSwipeSnapTransition"
+          :onDragEnd="onArticleDragEnd"
           :style="{ x: mobileArticleSwipeX }"
           :initial="prefersReducedMotion ? false : { opacity: 0, scale: 0.996 }"
           :animate="{ opacity: 1, scale: 1 }"
@@ -3129,14 +3159,6 @@ onUnmounted(() => {
             v-else
             ref="mobileArticleContentRef"
             class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-            drag="x"
-            :dragConstraints="{ left: 0, right: 0 }"
-            :dragElastic="mobileSwipeElastic"
-            :dragMomentum="false"
-            :dragDirectionLock="true"
-            :dragSnapToOrigin="false"
-            :dragTransition="mobileSwipeSnapTransition"
-            :onDragEnd="onArticleDragEnd"
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
