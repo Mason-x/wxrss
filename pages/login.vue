@@ -15,30 +15,29 @@ const stage = ref<LoginStage>('loading');
 
 const redirectTarget = computed(() => resolvePostLoginRedirect(route.query.redirect));
 
-const stageLabel = computed(() => {
+const statusText = computed(() => {
+  if (message.value) {
+    return message.value;
+  }
+
   switch (stage.value) {
-    case 'ready':
-      return '待扫码';
     case 'confirming':
-      return '待确认';
+      return '请在微信中确认登录';
     case 'error':
-      return '异常';
+      return '二维码不可用，请刷新重试';
+    case 'ready':
+      return '请使用微信扫码登录公众号';
     default:
-      return '生成中';
+      return '二维码生成中';
   }
 });
 
-const stageClass = computed(() => {
-  switch (stage.value) {
-    case 'ready':
-      return 'bg-emerald-500/12 text-emerald-600 ring-1 ring-emerald-500/15 dark:bg-emerald-400/12 dark:text-emerald-300 dark:ring-emerald-400/20';
-    case 'confirming':
-      return 'bg-amber-500/12 text-amber-600 ring-1 ring-amber-500/15 dark:bg-amber-400/12 dark:text-amber-300 dark:ring-amber-400/20';
-    case 'error':
-      return 'bg-rose-500/12 text-rose-600 ring-1 ring-rose-500/15 dark:bg-rose-400/12 dark:text-rose-300 dark:ring-rose-400/20';
-    default:
-      return 'bg-slate-900/6 text-slate-500 ring-1 ring-slate-900/6 dark:bg-white/10 dark:text-slate-300 dark:ring-white/10';
+const statusClass = computed(() => {
+  if (stage.value === 'error') {
+    return 'text-rose-500';
   }
+
+  return 'text-slate-500 dark:text-slate-400';
 });
 
 let checkTimer: number | null = null;
@@ -76,17 +75,17 @@ async function refreshQrcode() {
   qrcodeSrc.value = '';
   loading.value = true;
   stage.value = 'loading';
-  message.value = '正在生成登录二维码';
+  message.value = '二维码生成中';
 
   try {
     await newLoginSession();
     qrcodeSrc.value = `/api/web/login/getqrcode?rnd=${Math.random()}`;
     stage.value = 'ready';
-    message.value = '请使用微信扫描二维码，并在微信中选择要登录的公众号确认登录。';
+    message.value = '请使用微信扫码登录公众号';
     scheduleCheck();
   } catch (error: any) {
     stage.value = 'error';
-    message.value = String(error?.message || '获取登录二维码失败');
+    message.value = String(error?.message || '获取二维码失败');
   } finally {
     loading.value = false;
   }
@@ -102,12 +101,12 @@ async function checkQrcodeStatus() {
     switch (resp.status) {
       case 0:
         stage.value = 'ready';
-        message.value = '请扫描二维码，并在微信中确认本次登录。';
+        message.value = '请使用微信扫码登录公众号';
         scheduleCheck();
         break;
       case 1:
         stage.value = 'confirming';
-        message.value = '已确认，正在进入工作台';
+        message.value = '请在微信中确认登录';
         await finalizeLogin();
         break;
       case 2:
@@ -119,16 +118,16 @@ async function checkQrcodeStatus() {
         qrcodeSrc.value = '';
         if (resp.acct_size >= 1) {
           stage.value = 'confirming';
-          message.value = '扫码成功，请在微信里选择公众号后继续确认。';
+          message.value = '请在微信中选择公众号后确认';
           scheduleCheck();
         } else {
           stage.value = 'error';
-          message.value = '当前微信下没有可登录的公众号，请切换账号后重试。';
+          message.value = '当前微信没有可登录的公众号';
         }
         break;
       case 5:
         stage.value = 'error';
-        message.value = '当前公众号账号未绑定邮箱，无法扫码登录。';
+        message.value = '当前公众号未绑定邮箱，无法扫码登录';
         break;
       default:
         scheduleCheck();
@@ -161,171 +160,165 @@ async function finalizeLogin() {
 </script>
 
 <template>
-  <main class="relative min-h-screen overflow-hidden px-4 py-4 sm:px-6 sm:py-6">
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div class="login-orb login-orb-primary"></div>
-      <div class="login-orb login-orb-secondary"></div>
-      <div class="login-grid"></div>
-    </div>
-
-    <div class="relative mx-auto flex min-h-[calc(100vh-2rem)] max-w-5xl items-center justify-center">
-      <div class="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)]">
-        <section class="order-2 app-shell-panel rounded-[32px] p-5 sm:p-7 lg:order-1">
-          <div class="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-300">
-            <span class="size-2 rounded-full bg-[var(--app-accent)]"></span>
-            MP Login
-          </div>
-
-          <div class="mt-5 space-y-4">
-            <div class="space-y-3">
-              <h1 class="max-w-xl text-[2rem] font-semibold leading-[1.05] tracking-[-0.04em] text-slate-950 dark:text-white sm:text-[2.75rem]">
-                扫码登录公众号，进入你的阅读与同步工作台
-              </h1>
-              <p class="max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300 sm:text-base">
-                登录后才会显示文章阅读、同步、设置和导出等全部页面。登录态失效时，系统会自动跳回这里。
-              </p>
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-3">
-              <div class="app-shell-muted rounded-[24px] p-4">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Step 1</p>
-                <p class="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">微信扫码</p>
-                <p class="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">使用微信扫描右侧二维码。</p>
-              </div>
-              <div class="app-shell-muted rounded-[24px] p-4">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Step 2</p>
-                <p class="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">选择公众号</p>
-                <p class="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">在微信中选择要登录的公众号账号。</p>
-              </div>
-              <div class="app-shell-muted rounded-[24px] p-4">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Step 3</p>
-                <p class="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">进入工作台</p>
-                <p class="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">确认后自动跳转回你的目标页面。</p>
-              </div>
-            </div>
-
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="rounded-[28px] border border-white/80 bg-white/72 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-                <div class="flex items-center gap-3">
-                  <span class="inline-flex size-10 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-950">
-                    <UIcon name="i-lucide:shield-check" class="size-5" />
-                  </span>
-                  <div>
-                    <p class="font-medium text-slate-900 dark:text-slate-100">登录态自动守卫</p>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">未登录或过期会自动回到登录页。</p>
-                  </div>
-                </div>
-              </div>
-              <div class="rounded-[28px] border border-white/80 bg-white/72 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70">
-                <div class="flex items-center gap-3">
-                  <span class="inline-flex size-10 items-center justify-center rounded-2xl bg-[var(--app-accent)] text-white">
-                    <UIcon name="i-lucide:smartphone" class="size-5" />
-                  </span>
-                  <div>
-                    <p class="font-medium text-slate-900 dark:text-slate-100">移动端优先布局</p>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">手机打开直接扫码，不再先弹模态框。</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="order-1 app-shell-panel rounded-[32px] p-4 sm:p-5 lg:order-2">
-          <div class="rounded-[28px] border border-white/75 bg-white/84 p-4 shadow-[0_22px_60px_rgba(15,23,42,0.09)] dark:border-white/10 dark:bg-slate-950/84 sm:p-5">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-slate-500 dark:text-slate-400">微信公众号登录</p>
-                <h2 class="mt-1 text-2xl font-semibold tracking-[-0.03em] text-slate-950 dark:text-white">扫码确认</h2>
-              </div>
-              <span class="rounded-full px-3 py-1 text-xs font-semibold" :class="stageClass">{{ stageLabel }}</span>
-            </div>
-
-            <div class="mt-5 rounded-[28px] border border-slate-200/70 bg-slate-50/90 p-4 dark:border-slate-800/80 dark:bg-slate-950/90">
-              <div class="mx-auto flex aspect-square w-full max-w-[18rem] items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <UIcon
-                  v-if="loading"
-                  name="i-lucide:loader"
-                  :size="36"
-                  class="animate-spin text-slate-400 dark:text-slate-500"
-                />
-                <img
-                  v-else-if="qrcodeSrc"
-                  :src="qrcodeSrc"
-                  alt="微信公众号登录二维码"
-                  class="h-full w-full rounded-[20px] object-contain"
-                />
-                <p v-else class="px-5 text-center text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  {{ message || '二维码暂不可用，请刷新后重试。' }}
-                </p>
-              </div>
-
-              <p class="mt-4 min-h-[48px] text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {{ message }}
-              </p>
-
-              <div class="mt-4 flex gap-2">
-                <UButton
-                  color="gray"
-                  variant="solid"
-                  class="flex-1 justify-center rounded-full"
-                  :loading="loading"
-                  @click="refreshQrcode"
-                >
-                  刷新二维码
-                </UButton>
-              </div>
-            </div>
-
-            <div class="mt-4 space-y-2 rounded-[24px] border border-slate-200/70 bg-slate-50/80 p-4 text-sm text-slate-500 dark:border-slate-800/80 dark:bg-slate-950/70 dark:text-slate-400">
-              <div class="flex items-start gap-2">
-                <UIcon name="i-lucide:arrow-right" class="mt-0.5 size-4 shrink-0 text-[var(--app-accent)]" />
-                <p>请在微信里选择你实际要登录的公众号，而不是个人微信身份。</p>
-              </div>
-              <div class="flex items-start gap-2">
-                <UIcon name="i-lucide:arrow-right" class="mt-0.5 size-4 shrink-0 text-[var(--app-accent)]" />
-                <p>登录成功后将自动返回到 <span class="font-medium text-slate-900 dark:text-slate-100">{{ redirectTarget }}</span>。</p>
-              </div>
-            </div>
-          </div>
-        </section>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="login-copy">
+        <h1>扫码登录公众号</h1>
+        <p>登录后即可访问全部页面</p>
       </div>
-    </div>
+
+      <div class="login-qr-shell">
+        <div class="login-qr-box">
+          <UIcon
+            v-if="loading"
+            name="i-lucide:loader"
+            :size="34"
+            class="animate-spin text-slate-400 dark:text-slate-500"
+          />
+          <img
+            v-else-if="qrcodeSrc"
+            :src="qrcodeSrc"
+            alt="微信公众号登录二维码"
+            class="login-qr-image"
+          />
+          <p v-else class="login-empty">
+            二维码不可用
+          </p>
+        </div>
+      </div>
+
+      <p class="login-status" :class="statusClass">
+        {{ statusText }}
+      </p>
+
+      <UButton
+        color="gray"
+        variant="solid"
+        class="login-refresh"
+        :loading="loading"
+        @click="refreshQrcode"
+      >
+        刷新二维码
+      </UButton>
+    </section>
   </main>
 </template>
 
 <style scoped>
-.login-orb {
-  position: absolute;
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98) 38%, #f8fafc 100%);
+}
+
+.dark .login-page {
+  background:
+    radial-gradient(circle at top, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.98) 42%, #0f172a 100%);
+}
+
+.login-card {
+  width: min(100%, 24rem);
+  padding: 24px;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(18px);
+}
+
+.dark .login-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.55);
+}
+
+.login-copy {
+  text-align: center;
+}
+
+.login-copy h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: rgb(15 23 42);
+}
+
+.dark .login-copy h1 {
+  color: white;
+}
+
+.login-copy p {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: rgb(100 116 139);
+}
+
+.dark .login-copy p {
+  color: rgb(148 163 184);
+}
+
+.login-qr-shell {
+  margin-top: 20px;
+  border-radius: 28px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 16px;
+}
+
+.dark .login-qr-shell {
+  background: rgba(2, 6, 23, 0.68);
+  border-color: rgba(51, 65, 85, 0.92);
+}
+
+.login-qr-box {
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: 24px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.dark .login-qr-box {
+  background: rgb(15 23 42);
+}
+
+.login-qr-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.login-empty {
+  margin: 0;
+  padding: 0 16px;
+  text-align: center;
+  font-size: 0.95rem;
+  color: rgb(100 116 139);
+}
+
+.dark .login-empty {
+  color: rgb(148 163 184);
+}
+
+.login-status {
+  min-height: 1.5rem;
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.login-refresh {
+  width: 100%;
+  margin-top: 16px;
+  justify-content: center;
   border-radius: 9999px;
-  filter: blur(40px);
-  opacity: 0.72;
-}
-
-.login-orb-primary {
-  top: -7rem;
-  right: -4rem;
-  height: 18rem;
-  width: 18rem;
-  background: radial-gradient(circle, rgba(255, 107, 44, 0.26) 0%, rgba(255, 107, 44, 0) 72%);
-}
-
-.login-orb-secondary {
-  bottom: -8rem;
-  left: -4rem;
-  height: 22rem;
-  width: 22rem;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.18) 0%, rgba(14, 165, 233, 0) 70%);
-}
-
-.login-grid {
-  position: absolute;
-  inset: 0;
-  opacity: 0.24;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  background-size: 20px 20px;
-  mask-image: linear-gradient(180deg, rgba(15, 23, 42, 0.7), transparent 84%);
 }
 </style>

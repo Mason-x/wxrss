@@ -30,11 +30,72 @@ export default defineNuxtConfig({
     debugMpRequest: false,
   },
   app: {
+    viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
     head: {
       meta: [
         {
           name: 'referrer',
           content: 'no-referrer',
+        },
+        {
+          name: 'application-name',
+          content: '公众号文章下载',
+        },
+        {
+          name: 'apple-mobile-web-app-capable',
+          content: 'yes',
+        },
+        {
+          name: 'apple-mobile-web-app-status-bar-style',
+          content: 'default',
+        },
+        {
+          name: 'apple-mobile-web-app-title',
+          content: '公众号文章下载',
+        },
+        {
+          name: 'mobile-web-app-capable',
+          content: 'yes',
+        },
+        {
+          name: 'theme-color',
+          content: '#fff7f2',
+        },
+        {
+          name: 'msapplication-TileColor',
+          content: '#fff7f2',
+        },
+      ],
+      link: [
+        {
+          rel: 'icon',
+          type: 'image/svg+xml',
+          href: '/icon.svg',
+        },
+        {
+          rel: 'shortcut icon',
+          href: '/favicon.ico',
+        },
+        {
+          rel: 'icon',
+          type: 'image/png',
+          sizes: '32x32',
+          href: '/favicon-32x32.png',
+        },
+        {
+          rel: 'icon',
+          type: 'image/png',
+          sizes: '16x16',
+          href: '/favicon-16x16.png',
+        },
+        {
+          rel: 'apple-touch-icon',
+          sizes: '180x180',
+          href: '/apple-touch-icon.png',
+        },
+        {
+          rel: 'manifest',
+          href: '/site.webmanifest',
         },
       ],
       script: [
