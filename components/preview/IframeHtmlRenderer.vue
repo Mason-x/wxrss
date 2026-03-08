@@ -81,6 +81,9 @@ function buildSrcdoc(html: string): string {
   const baseMarkup = '<base target="_blank" />';
   const styleMarkup = `
     <style>
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
       html, body {
         margin: 0;
         padding: 0;
@@ -88,6 +91,9 @@ function buildSrcdoc(html: string): string {
       }
       body {
         overflow-x: hidden;
+        max-width: 100%;
+        -webkit-text-size-adjust: 100%;
+        overflow-wrap: break-word;
       }
       img, video, iframe {
         max-width: 100%;
@@ -97,6 +103,33 @@ function buildSrcdoc(html: string): string {
         width: 100%;
         height: auto;
         background: #000;
+      }
+      table {
+        max-width: none;
+        border-collapse: collapse;
+      }
+      .iframe-table-wrap {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+      }
+      .iframe-table-wrap > table {
+        min-width: 100%;
+        width: max-content !important;
+        max-width: none !important;
+      }
+      .iframe-table-wrap + .iframe-table-wrap {
+        margin-top: 0.75rem;
+      }
+      pre {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      td, th {
+        word-break: break-word;
       }
     </style>
   `;
@@ -216,6 +249,28 @@ function rewriteVideoUrls(doc: Document): void {
   });
 }
 
+function wrapResponsiveTables(doc: Document): void {
+  doc.querySelectorAll('table').forEach(table => {
+    if (table.closest('.iframe-table-wrap')) {
+      return;
+    }
+
+    if (table.parentElement?.closest('td, th')) {
+      return;
+    }
+
+    const parent = table.parentElement;
+    if (!parent) {
+      return;
+    }
+
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'iframe-table-wrap';
+    parent.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+  });
+}
+
 async function buildPreparedHtml(html: string): Promise<string> {
   if (!html || typeof window === 'undefined' || typeof DOMParser === 'undefined') {
     return buildSrcdoc(html);
@@ -226,6 +281,7 @@ async function buildPreparedHtml(html: string): Promise<string> {
 
   await refreshMpVideos(doc);
   rewriteVideoUrls(doc);
+  wrapResponsiveTables(doc);
 
   return buildSrcdoc('<!doctype html>\n' + doc.documentElement.outerHTML);
 }
@@ -570,11 +626,13 @@ watch(
 
 onMounted(() => {
   window.addEventListener('resize', updateHeight);
+  window.visualViewport?.addEventListener('resize', updateHeight);
 });
 
 onUnmounted(() => {
   clearGalleryInteractions();
   disconnectResizeObserver();
   window.removeEventListener('resize', updateHeight);
+  window.visualViewport?.removeEventListener('resize', updateHeight);
 });
 </script>

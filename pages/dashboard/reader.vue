@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
-import { AnimatePresence, animate, motion, type PanInfo, useMotionValue, useReducedMotion } from 'motion-v';
+import { AnimatePresence, animate, motion, transformValue, type PanInfo, useMotionValue, useReducedMotion } from 'motion-v';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -102,6 +102,7 @@ type MobileInteractiveSwipeContext = Extract<MobileSwipeContext, 'articles' | 'a
 
 interface MobileSwipeResolvedAction {
   kind: 'transition' | 'rebound' | 'noop';
+  revealPreviousLayer?: boolean;
   execute: () => Promise<void>;
 }
 
@@ -708,6 +709,7 @@ const isDesktopViewport = ref(false);
 const mobileHistory = ref<MobileHistoryState[]>([]);
 const mobileHistoryIndex = ref(-1);
 const mobileHistoryApplying = ref(false);
+const mobileArticleUnderlayActive = ref(false);
 const mobileDragSession = reactive<MobileDragSession>({
   context: null,
   interactive: false,
@@ -724,6 +726,37 @@ const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
 const MOBILE_SWIPE_VELOCITY_THRESHOLD = 280;
 const MOBILE_SWIPE_REENTRY_OFFSET_RATIO = 0.12;
 const MOBILE_SWIPE_REENTRY_MAX_OFFSET = 44;
+const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
+const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
+const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
+const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
+
+function getMobileViewportWidth() {
+  if (typeof window === 'undefined') {
+    return 390;
+  }
+  return Math.max(window.innerWidth || 390, 1);
+}
+
+const mobileArticleUnderlayX = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLE_UNDERLAY_BASE_X + progress * Math.abs(MOBILE_ARTICLE_UNDERLAY_BASE_X);
+});
+
+const mobileArticleUnderlayScale = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLE_UNDERLAY_BASE_SCALE + progress * (1 - MOBILE_ARTICLE_UNDERLAY_BASE_SCALE);
+});
+
+const mobileArticleUnderlayOpacity = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY + progress * (1 - MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY);
+});
+
+const mobileArticleUnderlayScrimOpacity = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY * (1 - progress);
+});
 
 const mobilePanelSpring = computed(() =>
   prefersReducedMotion.value ? { duration: 0.12 } : { type: 'spring' as const, stiffness: 520, damping: 40, mass: 0.68 }
@@ -734,7 +767,7 @@ const mobilePageTransition = computed(() =>
 );
 
 const mobileSwipeElastic = computed(() =>
-  prefersReducedMotion.value ? { left: 1, right: 1 } : { left: 0.98, right: 0.98 }
+  prefersReducedMotion.value ? { left: 1, right: 1 } : { left: 0.96, right: 0.96 }
 );
 
 const mobileDrawerElastic = computed(() =>
@@ -792,6 +825,13 @@ const mobileHeaderMeta = computed(() => {
 
 watch(mobileView, () => {
   mobileScrollTopVisible.value = false;
+  if (mobileView.value !== 'article') {
+    mobileArticleSwipeX.set(0);
+    mobileArticleUnderlayActive.value = false;
+  }
+  if (mobileView.value !== 'articles') {
+    mobileArticlesSwipeX.set(0);
+  }
 });
 
 const cookieRemainText = computed(() => {
@@ -1447,6 +1487,10 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   mobileDragSession.width = width;
   mobileDragSession.edge =
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
+
+  if (context === 'article') {
+    mobileArticleUnderlayActive.value = !mobileDragSession.interactive && mobileDragSession.edge === 'left';
+  }
 }
 
 function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
@@ -1553,9 +1597,17 @@ function resolveMobileSwipeAction(
   if (deltaX > 0) {
     if (edge === 'left') {
       if (canNavigateMobileHistory(-1)) {
-        return { kind: 'transition', execute: async () => void (await navigateMobileHistory(-1)) };
+        return {
+          kind: 'transition',
+          revealPreviousLayer: true,
+          execute: async () => void (await navigateMobileHistory(-1)),
+        };
       }
-      return { kind: 'transition', execute: () => backFromMobileView() };
+      return {
+        kind: 'transition',
+        revealPreviousLayer: true,
+        execute: () => backFromMobileView(),
+      };
     }
 
     if (hasAdjacentArticle(-1)) {
@@ -1594,21 +1646,33 @@ async function performMobileInteractiveSwipe(
 
   if (interactive || !committed) {
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
+    if (context === 'article') {
+      mobileArticleUnderlayActive.value = false;
+    }
     return;
   }
 
   const action = resolveMobileSwipeAction(context, effectiveOffset, edge);
   if (action.kind === 'noop') {
+    if (context === 'article') {
+      mobileArticleUnderlayActive.value = false;
+    }
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
     return;
   }
 
   if (action.kind === 'rebound') {
+    if (context === 'article') {
+      mobileArticleUnderlayActive.value = false;
+    }
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
     await action.execute();
     return;
   }
 
+  if (context === 'article') {
+    mobileArticleUnderlayActive.value = Boolean(action.revealPreviousLayer);
+  }
   const direction = effectiveOffset >= 0 ? 1 : -1;
   await animateMobileSwipeValue(context, getMobileSwipeCommitTarget(width, direction), mobileSwipeCommitTransition.value);
   await action.execute();
@@ -1617,10 +1681,16 @@ async function performMobileInteractiveSwipe(
     (context === 'articles' && mobileView.value === 'articles') || (context === 'article' && mobileView.value === 'article');
 
   if (!contextStillActive) {
+    if (context === 'article') {
+      mobileArticleUnderlayActive.value = false;
+    }
     motionValue.set(0);
     return;
   }
 
+  if (context === 'article') {
+    mobileArticleUnderlayActive.value = false;
+  }
   motionValue.set(getMobileSwipeReentryOffset(width, direction));
   await animateMobileSwipeValue(context, 0, mobileSwipeReentryTransition.value);
 }
@@ -1670,6 +1740,8 @@ async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
+  mobileArticleUnderlayActive.value = false;
+  mobileArticleSwipeX.set(0);
   if (options.trackHistory !== false) {
     pushMobileHistoryState(buildMobileHistoryState({ articleKey: articleKey(article) }));
   }
@@ -2447,8 +2519,21 @@ function exportArticles(type: 'excel' | 'json' | 'html' | 'text' | 'markdown' | 
 }
 
 let cookieTimer: number | null = null;
+function isLikelyMobileHandset() {
+  const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
+  const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
+  const shortestSide = Math.min(viewportWidth, viewportHeight);
+  const hasTouch = navigator.maxTouchPoints > 0;
+  const coarsePointer = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)').matches : false;
+  const userAgent = navigator.userAgent || '';
+  const mobileUa = /Android.+Mobile|iPhone|iPod|Windows Phone|Mobile/i.test(userAgent);
+
+  return mobileUa || (hasTouch && coarsePointer && shortestSide > 0 && shortestSide < 768);
+}
+
 function updateDesktopViewport() {
-  isDesktopViewport.value = window.innerWidth >= 768;
+  const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
+  isDesktopViewport.value = !isLikelyMobileHandset() && viewportWidth >= 768;
 }
 
 watch(isDesktopViewport, desktop => {
@@ -2468,6 +2553,8 @@ onMounted(async () => {
     nowTick.value = Date.now();
   }, 1000);
   window.addEventListener('resize', updateDesktopViewport);
+  window.visualViewport?.addEventListener('resize', updateDesktopViewport);
+  screen.orientation?.addEventListener?.('change', updateDesktopViewport);
 });
 
 onUnmounted(() => {
@@ -2480,12 +2567,14 @@ onUnmounted(() => {
     schedulerSyncTimer.value = null;
   }
   window.removeEventListener('resize', updateDesktopViewport);
+  window.visualViewport?.removeEventListener('resize', updateDesktopViewport);
+  screen.orientation?.removeEventListener?.('change', updateDesktopViewport);
 });
 </script>
 
 <template>
   <div class="h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-    <div class="flex h-full flex-col md:hidden">
+    <div v-if="!isDesktopViewport" class="flex h-full flex-col">
       <header class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/92 px-4 pb-3 pt-3 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -2598,159 +2687,164 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-hidden">
-        <AnimatePresence mode="wait">
-          <motion.div
-            v-if="mobileView === 'articles'"
-            key="mobile-articles"
-            class="flex h-full flex-col"
-            :initial="prefersReducedMotion ? false : { opacity: 0, x: -18, scale: 0.985 }"
-            :animate="{ opacity: 1, x: 0, scale: 1 }"
-            :exit="prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 18, scale: 0.992 }"
-            :transition="mobilePageTransition"
-          >
-            <div v-if="loading" class="px-3 py-3">
-              <LoadingCards />
-            </div>
-            <motion.div
-              v-else
-              ref="mobileArticlesListRef"
-              class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-              :style="{ x: mobileArticlesSwipeX }"
-              drag="x"
-              :dragConstraints="{ left: 0, right: 0 }"
-              :dragElastic="mobileSwipeElastic"
-              :dragMomentum="false"
-              :dragDirectionLock="true"
-              :dragSnapToOrigin="false"
-              :dragTransition="mobileSwipeSnapTransition"
-              :onDragEnd="onArticlesDragEnd"
-              @pointerdown="beginMobileDrag('articles', $event)"
-              @scroll.passive="onMobileReaderScroll"
-            >
-              <ul v-if="displayedArticles.length > 0" class="space-y-3">
-                <motion.li
-                  v-for="(article, index) in displayedArticles"
-                  :key="articleKey(article)"
-                  layout
-                  class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
-                  :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
-                  :animate="{ opacity: 1, y: 0, scale: 1 }"
-                  :whileTap="{ scale: 0.988 }"
-                  :transition="
-                    prefersReducedMotion
-                      ? { duration: 0.12 }
-                      : {
-                          type: 'spring',
-                          stiffness: 460,
-                          damping: 32,
-                          mass: 0.75,
-                          delay: Math.min(index, 6) * 0.02,
-                        }
-                  "
-                >
-                  <div class="flex items-start gap-3">
-                    <input
-                      v-if="selectionMode"
-                      type="checkbox"
-                      class="mt-1"
-                      :checked="isArticleSelected(article)"
-                      @click.stop
-                      @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
-                      <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
-                      <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span class="min-w-0 flex items-center gap-2 truncate">
-                          <span class="article-account-avatar">
-                            <img
-                              v-if="article.round_head_img"
-                              :src="IMAGE_PROXY + article.round_head_img"
-                              alt=""
-                              class="size-full object-cover"
-                            />
-                            <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
-                          </span>
-                          <span class="truncate">{{ article.accountName }}</span>
-                        </span>
-                        <span class="inline-flex shrink-0 items-center gap-1.5">
-                          <span v-if="isArticleUnread(article)" class="unread-dot" />
-                          <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
-                          <UButton
-                            size="2xs"
-                            color="gray"
-                            variant="ghost"
-                            :icon="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                            class="icon-btn article-star-btn"
-                            :class="isArticleFavorite(article) ? 'is-active' : ''"
-                            @click.stop="toggleArticleFavorite(article)"
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </motion.li>
-              </ul>
-              <div v-else class="py-8">
-                <EmptyStatePanel
-                  :icon="articleListEmptyState.icon"
-                  :title="articleListEmptyState.title"
-                  :description="articleListEmptyState.description"
-                />
-              </div>
-
-              <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
-                <UButton
-                  size="sm"
-                  color="gray"
-                  variant="soft"
-                  block
-                  :loading="articlePageLoading"
-                  :disabled="!articlePageHasMore"
-                  @click="loadMoreArticles"
-                >
-                  {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
-                </UButton>
-              </div>
-            </motion.div>
-          </motion.div>
-
+      <div class="relative min-h-0 flex-1 overflow-hidden">
+        <motion.div
+          key="mobile-articles"
+          class="absolute inset-0 flex h-full flex-col bg-slate-50 dark:bg-slate-950"
+          :style="
+            selectedArticle
+              ? mobileArticleUnderlayActive
+                ? { x: mobileArticleUnderlayX, scale: mobileArticleUnderlayScale, opacity: mobileArticleUnderlayOpacity }
+                : { x: 0, scale: 1, opacity: 0 }
+              : { x: mobileArticlesSwipeX, scale: 1, opacity: 1 }
+          "
+        >
+          <div v-if="loading" class="px-3 py-3">
+            <LoadingCards />
+          </div>
           <motion.div
             v-else
-            key="mobile-article"
-            class="flex h-full flex-col"
-            :initial="prefersReducedMotion ? false : { opacity: 0, x: 28, scale: 0.992 }"
-            :animate="{ opacity: 1, x: 0, scale: 1 }"
-            :exit="prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: -22, scale: 0.988 }"
-            :transition="mobilePageTransition"
+            ref="mobileArticlesListRef"
+            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            :class="selectedArticle ? 'pointer-events-none' : ''"
+            :drag="selectedArticle ? false : 'x'"
+            :dragConstraints="{ left: 0, right: 0 }"
+            :dragElastic="mobileSwipeElastic"
+            :dragMomentum="false"
+            :dragDirectionLock="true"
+            :dragSnapToOrigin="false"
+            :dragTransition="mobileSwipeSnapTransition"
+            :onDragEnd="onArticlesDragEnd"
+            @pointerdown="beginMobileDrag('articles', $event)"
+            @scroll.passive="onMobileReaderScroll"
           >
-            <div v-if="contentLoading">
+            <ul v-if="displayedArticles.length > 0" class="space-y-3">
+              <motion.li
+                v-for="(article, index) in displayedArticles"
+                :key="articleKey(article)"
+                layout
+                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
+                :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
+                :animate="{ opacity: 1, y: 0, scale: 1 }"
+                :whileTap="{ scale: 0.988 }"
+                :transition="
+                  prefersReducedMotion
+                    ? { duration: 0.12 }
+                    : {
+                        type: 'spring',
+                        stiffness: 460,
+                        damping: 32,
+                        mass: 0.75,
+                        delay: Math.min(index, 6) * 0.02,
+                      }
+                "
+              >
+                <div class="flex items-start gap-3">
+                  <input
+                    v-if="selectionMode"
+                    type="checkbox"
+                    class="mt-1"
+                    :checked="isArticleSelected(article)"
+                    @click.stop
+                    @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
+                    <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
+                    <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span class="min-w-0 flex items-center gap-2 truncate">
+                        <span class="article-account-avatar">
+                          <img
+                            v-if="article.round_head_img"
+                            :src="IMAGE_PROXY + article.round_head_img"
+                            alt=""
+                            class="size-full object-cover"
+                          />
+                          <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                        </span>
+                        <span class="truncate">{{ article.accountName }}</span>
+                      </span>
+                      <span class="inline-flex shrink-0 items-center gap-1.5">
+                        <span v-if="isArticleUnread(article)" class="unread-dot" />
+                        <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
+                        <UButton
+                          size="2xs"
+                          color="gray"
+                          variant="ghost"
+                          :icon="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                          class="icon-btn article-star-btn"
+                          :class="isArticleFavorite(article) ? 'is-active' : ''"
+                          @click.stop="toggleArticleFavorite(article)"
+                        />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </motion.li>
+            </ul>
+            <div v-else class="py-8">
               <EmptyStatePanel
-                icon="i-lucide-loader-circle"
-                title="内容加载中"
-                description="正在准备文章内容，请稍候。"
+                :icon="articleListEmptyState.icon"
+                :title="articleListEmptyState.title"
+                :description="articleListEmptyState.description"
               />
             </div>
-            <motion.div
-              v-else
-              ref="mobileArticleContentRef"
-              class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-              :style="{ x: mobileArticleSwipeX }"
-              drag="x"
-              :dragConstraints="{ left: 0, right: 0 }"
-              :dragElastic="mobileSwipeElastic"
-              :dragMomentum="false"
-              :dragDirectionLock="true"
-              :dragSnapToOrigin="false"
-              :dragTransition="mobileSwipeSnapTransition"
-              :onDragEnd="onArticleDragEnd"
-              @pointerdown="beginMobileDrag('article', $event)"
-              @scroll.passive="onMobileReaderScroll"
-            >
-              <IframeHtmlRenderer :html="selectedArticleHtml" />
-            </motion.div>
+
+            <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
+              <UButton
+                size="sm"
+                color="gray"
+                variant="soft"
+                block
+                :loading="articlePageLoading"
+                :disabled="!articlePageHasMore"
+                @click="loadMoreArticles"
+              >
+                {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+              </UButton>
+            </div>
           </motion.div>
-        </AnimatePresence>
+        </motion.div>
+
+        <motion.div
+          v-if="selectedArticle && mobileArticleUnderlayActive"
+          class="pointer-events-none absolute inset-0 z-[1] bg-slate-950/8 dark:bg-slate-950/18"
+          :style="{ opacity: mobileArticleUnderlayScrimOpacity }"
+        />
+
+        <motion.div
+          v-if="selectedArticle"
+          key="mobile-article"
+          class="absolute inset-0 z-10 flex h-full flex-col bg-slate-50 dark:bg-slate-950 shadow-[-22px_0_44px_rgba(15,23,42,0.16)]"
+          :style="{ x: mobileArticleSwipeX }"
+          :initial="prefersReducedMotion ? false : { opacity: 0, scale: 0.996 }"
+          :animate="{ opacity: 1, scale: 1 }"
+          :transition="mobilePageTransition"
+        >
+          <div v-if="contentLoading">
+            <EmptyStatePanel
+              icon="i-lucide-loader-circle"
+              title="内容加载中"
+              description="正在准备文章内容，请稍候。"
+            />
+          </div>
+          <motion.div
+            v-else
+            ref="mobileArticleContentRef"
+            class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            drag="x"
+            :dragConstraints="{ left: 0, right: 0 }"
+            :dragElastic="mobileSwipeElastic"
+            :dragMomentum="false"
+            :dragDirectionLock="true"
+            :dragSnapToOrigin="false"
+            :dragTransition="mobileSwipeSnapTransition"
+            :onDragEnd="onArticleDragEnd"
+            @pointerdown="beginMobileDrag('article', $event)"
+            @scroll.passive="onMobileReaderScroll"
+          >
+            <IframeHtmlRenderer :html="selectedArticleHtml" />
+          </motion.div>
+        </motion.div>
       </div>
 
       <AnimatePresence>
@@ -2923,7 +3017,7 @@ onUnmounted(() => {
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
 
-    <div class="hidden h-full md:flex overflow-hidden">
+    <div v-else class="flex h-full overflow-hidden">
     <aside class="w-[320px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
       <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
         <div class="flex items-center justify-between gap-2">
