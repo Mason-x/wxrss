@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
-import { AnimatePresence, motion, type PanInfo, useReducedMotion } from 'motion-v';
+import { AnimatePresence, animate, motion, type PanInfo, useMotionValue, useReducedMotion } from 'motion-v';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -95,6 +95,14 @@ interface MobileDragSession {
   interactive: boolean;
   startX: number;
   edge: MobileSwipeEdge;
+  width: number;
+}
+
+type MobileInteractiveSwipeContext = Extract<MobileSwipeContext, 'articles' | 'article'>;
+
+interface MobileSwipeResolvedAction {
+  kind: 'transition' | 'rebound' | 'noop';
+  execute: () => Promise<void>;
 }
 
 function normalizeReaderRuntimeState(input?: Partial<ReaderRuntimeState> | null): ReaderRuntimeState {
@@ -705,24 +713,61 @@ const mobileDragSession = reactive<MobileDragSession>({
   interactive: false,
   startX: 0,
   edge: 'none',
+  width: 0,
 });
 const prefersReducedMotion = useReducedMotion();
+const mobileArticlesSwipeX = useMotionValue(0);
+const mobileArticleSwipeX = useMotionValue(0);
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
 const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
 const MOBILE_SWIPE_VELOCITY_THRESHOLD = 280;
+const MOBILE_SWIPE_REENTRY_OFFSET_RATIO = 0.12;
+const MOBILE_SWIPE_REENTRY_MAX_OFFSET = 44;
 
 const mobilePanelSpring = computed(() =>
-  prefersReducedMotion.value ? { duration: 0.14 } : { type: 'spring' as const, stiffness: 420, damping: 34, mass: 0.78 }
+  prefersReducedMotion.value ? { duration: 0.12 } : { type: 'spring' as const, stiffness: 520, damping: 40, mass: 0.68 }
 );
 
 const mobilePageTransition = computed(() =>
-  prefersReducedMotion.value ? { duration: 0.12 } : { type: 'spring' as const, stiffness: 340, damping: 32, mass: 0.86 }
+  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const }
+);
+
+const mobileSwipeElastic = computed(() =>
+  prefersReducedMotion.value ? { left: 1, right: 1 } : { left: 0.98, right: 0.98 }
+);
+
+const mobileDrawerElastic = computed(() =>
+  prefersReducedMotion.value ? { left: 1, right: 0.04 } : { left: 0.98, right: 0.08 }
+);
+
+const mobileSwipeSnapTransition = computed(() =>
+  prefersReducedMotion.value
+    ? { bounceStiffness: 1200, bounceDamping: 96 }
+    : { bounceStiffness: 980, bounceDamping: 64 }
+);
+
+const mobileDrawerSnapTransition = computed(() =>
+  prefersReducedMotion.value
+    ? { bounceStiffness: 960, bounceDamping: 76 }
+    : { bounceStiffness: 760, bounceDamping: 46 }
+);
+
+const mobileSwipeCommitTransition = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
+);
+
+const mobileSwipeReboundTransition = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const }
+);
+
+const mobileSwipeReentryTransition = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.09 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const }
 );
 
 const mobileHeaderTitle = computed(() => {
   if (mobileView.value === 'article') {
-    return selectedArticle.value?.accountName || selectedAccountInfo.value?.nickname || '文章阅读';
+    return selectedArticleDisplayTitle.value || '文章阅读';
   }
   if (selectedAccount.value) {
     return selectedAccountInfo.value?.nickname || '文章列表';
@@ -732,7 +777,9 @@ const mobileHeaderTitle = computed(() => {
 
 const mobileHeaderMeta = computed(() => {
   if (mobileView.value === 'article' && selectedArticle.value) {
-    return formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time);
+    const author = selectedArticle.value.author_name || selectedArticle.value.accountName || '未知发布者';
+    const publishTime = formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time);
+    return `${author} · ${publishTime}`;
   }
   if (selectedAccount.value) {
     return activeAccountSyncStatus.value || `${articleTotalCount.value} 篇文章`;
@@ -1385,6 +1432,7 @@ function resetMobileDragSession() {
   mobileDragSession.interactive = false;
   mobileDragSession.startX = 0;
   mobileDragSession.edge = 'none';
+  mobileDragSession.width = 0;
 }
 
 function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEvent) {
@@ -1396,6 +1444,7 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   mobileDragSession.context = context;
   mobileDragSession.interactive = isMobileSwipeInteractiveTarget(event.target);
   mobileDragSession.startX = event.clientX;
+  mobileDragSession.width = width;
   mobileDragSession.edge =
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 }
@@ -1423,84 +1472,187 @@ async function openAdjacentArticle(step: number) {
   return true;
 }
 
-async function handleMobileSwipeGesture(context: MobileSwipeContext, deltaX: number, edge: MobileSwipeEdge) {
+function getMobileSwipeValue(context: MobileInteractiveSwipeContext) {
+  return context === 'articles' ? mobileArticlesSwipeX : mobileArticleSwipeX;
+}
+
+function getMobileSwipeCommitTarget(width: number, direction: number) {
+  const baseWidth = width || window.innerWidth || 360;
+  return direction >= 0 ? baseWidth : -baseWidth;
+}
+
+function getMobileSwipeReentryOffset(width: number, direction: number) {
+  const baseWidth = width || window.innerWidth || 360;
+  const reentry = Math.min(baseWidth * MOBILE_SWIPE_REENTRY_OFFSET_RATIO, MOBILE_SWIPE_REENTRY_MAX_OFFSET);
+  return direction >= 0 ? -reentry : reentry;
+}
+
+async function animateMobileSwipeValue(
+  context: MobileInteractiveSwipeContext,
+  target: number,
+  transition: Record<string, any>
+) {
+  const motionValue = getMobileSwipeValue(context);
+  if (prefersReducedMotion.value) {
+    motionValue.set(target);
+    return;
+  }
+  await animate(motionValue, target, transition);
+}
+
+function canNavigateMobileHistory(delta: number) {
+  const nextIndex = mobileHistoryIndex.value + delta;
+  return nextIndex >= 0 && nextIndex < mobileHistory.value.length;
+}
+
+function hasAdjacentArticle(step: number) {
+  const currentIndex = selectedArticleIndex.value;
+  if (currentIndex < 0) {
+    return false;
+  }
+  return Boolean(displayedArticles.value[currentIndex + step]);
+}
+
+function resolveMobileSwipeAction(
+  context: MobileInteractiveSwipeContext,
+  deltaX: number,
+  edge: MobileSwipeEdge
+): MobileSwipeResolvedAction {
   if (context === 'articles') {
     if (deltaX > 0) {
-      if (mobileAccountsPanelOpen.value) {
-        return;
-      }
       if (selectedAccount.value) {
-        await backFromMobileView();
-        return;
+        return { kind: 'transition', execute: () => backFromMobileView() };
       }
-      showMobileAccounts();
-      return;
+      if (!mobileAccountsPanelOpen.value) {
+        return {
+          kind: 'rebound',
+          execute: async () => {
+            showMobileAccounts();
+          },
+        };
+      }
+      return { kind: 'noop', execute: async () => {} };
     }
 
     if (mobileAccountsPanelOpen.value) {
-      mobileAccountsPanelOpen.value = false;
-      return;
+      return {
+        kind: 'rebound',
+        execute: async () => {
+          mobileAccountsPanelOpen.value = false;
+        },
+      };
     }
 
     if (selectedAccount.value) {
-      await backFromMobileView();
+      return { kind: 'transition', execute: () => backFromMobileView() };
     }
-    return;
-  }
 
-  if (context === 'drawer') {
-    if (deltaX < 0) {
-      mobileAccountsPanelOpen.value = false;
-    }
-    return;
+    return { kind: 'noop', execute: async () => {} };
   }
 
   if (deltaX > 0) {
     if (edge === 'left') {
-      if (!(await navigateMobileHistory(-1))) {
-        await backFromMobileView();
+      if (canNavigateMobileHistory(-1)) {
+        return { kind: 'transition', execute: async () => void (await navigateMobileHistory(-1)) };
       }
-      return;
+      return { kind: 'transition', execute: () => backFromMobileView() };
     }
-    await openAdjacentArticle(-1);
-    return;
+
+    if (hasAdjacentArticle(-1)) {
+      return { kind: 'transition', execute: async () => void (await openAdjacentArticle(-1)) };
+    }
+
+    return { kind: 'noop', execute: async () => {} };
   }
 
-  if (edge === 'right' && (await navigateMobileHistory(1))) {
-    return;
+  if (edge === 'right' && canNavigateMobileHistory(1)) {
+    return { kind: 'transition', execute: async () => void (await navigateMobileHistory(1)) };
   }
 
-  await openAdjacentArticle(1);
+  if (hasAdjacentArticle(1)) {
+    return { kind: 'transition', execute: async () => void (await openAdjacentArticle(1)) };
+  }
+
+  return { kind: 'noop', execute: async () => {} };
 }
 
 function shouldCommitSwipe(offsetX: number, velocityX: number) {
   return Math.abs(offsetX) >= MOBILE_SWIPE_TRIGGER_THRESHOLD || Math.abs(velocityX) >= MOBILE_SWIPE_VELOCITY_THRESHOLD;
 }
 
+async function performMobileInteractiveSwipe(
+  context: MobileInteractiveSwipeContext,
+  offsetX: number,
+  edge: MobileSwipeEdge,
+  interactive: boolean,
+  committed: boolean,
+  width: number
+) {
+  const motionValue = getMobileSwipeValue(context);
+  const currentOffset = motionValue.get();
+  const effectiveOffset = currentOffset || offsetX;
+
+  if (interactive || !committed) {
+    await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
+    return;
+  }
+
+  const action = resolveMobileSwipeAction(context, effectiveOffset, edge);
+  if (action.kind === 'noop') {
+    await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
+    return;
+  }
+
+  if (action.kind === 'rebound') {
+    await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
+    await action.execute();
+    return;
+  }
+
+  const direction = effectiveOffset >= 0 ? 1 : -1;
+  await animateMobileSwipeValue(context, getMobileSwipeCommitTarget(width, direction), mobileSwipeCommitTransition.value);
+  await action.execute();
+
+  const contextStillActive =
+    (context === 'articles' && mobileView.value === 'articles') || (context === 'article' && mobileView.value === 'article');
+
+  if (!contextStillActive) {
+    motionValue.set(0);
+    return;
+  }
+
+  motionValue.set(getMobileSwipeReentryOffset(width, direction));
+  await animateMobileSwipeValue(context, 0, mobileSwipeReentryTransition.value);
+}
+
 async function onArticlesDragEnd(_event: PointerEvent, info: PanInfo) {
   const context = mobileDragSession.context;
   const edge = mobileDragSession.edge;
   const interactive = mobileDragSession.interactive;
+  const width = mobileDragSession.width;
+  const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
   resetMobileDragSession();
 
-  if (interactive || context !== 'articles' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
+  if (context !== 'articles') {
     return;
   }
 
-  await handleMobileSwipeGesture('articles', info.offset.x || info.velocity.x, edge);
+  await performMobileInteractiveSwipe('articles', info.offset.x || info.velocity.x, edge, interactive, committed, width);
 }
 
 async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const context = mobileDragSession.context;
   const edge = mobileDragSession.edge;
   const interactive = mobileDragSession.interactive;
+  const width = mobileDragSession.width;
+  const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
   resetMobileDragSession();
 
-  if (interactive || context !== 'article' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
+  if (context !== 'article') {
     return;
   }
 
-  await handleMobileSwipeGesture('article', info.offset.x || info.velocity.x, edge);
+  await performMobileInteractiveSwipe('article', info.offset.x || info.velocity.x, edge, interactive, committed, width);
 }
 
 async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
@@ -1512,7 +1664,9 @@ async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
     return;
   }
 
-  await handleMobileSwipeGesture('drawer', info.offset.x || info.velocity.x, 'left');
+  if ((info.offset.x || info.velocity.x) < 0) {
+    mobileAccountsPanelOpen.value = false;
+  }
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
@@ -2376,7 +2530,13 @@ onUnmounted(() => {
                   @click="deleteCurrentAccount"
                 />
               </div>
-              <h1 v-else class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
+              <h1
+                v-else
+                class="text-base font-semibold"
+                :class="mobileView === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
+              >
+                {{ mobileHeaderTitle }}
+              </h1>
               <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
                 <template v-if="mobileView === 'articles' && selectedAccountInfo">
                   {{ articleTotalCount }} 篇文章
@@ -2456,14 +2616,14 @@ onUnmounted(() => {
               v-else
               ref="mobileArticlesListRef"
               class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+              :style="{ x: mobileArticlesSwipeX }"
               drag="x"
               :dragConstraints="{ left: 0, right: 0 }"
-              :dragElastic="{ left: 0.8, right: 0.8 }"
-              :dragMomentum="true"
-              :dragDirectionLock="false"
-              :dragSnapToOrigin="true"
-              :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
-              :transition="mobilePanelSpring"
+              :dragElastic="mobileSwipeElastic"
+              :dragMomentum="false"
+              :dragDirectionLock="true"
+              :dragSnapToOrigin="false"
+              :dragTransition="mobileSwipeSnapTransition"
               :onDragEnd="onArticlesDragEnd"
               @pointerdown="beginMobileDrag('articles', $event)"
               @scroll.passive="onMobileReaderScroll"
@@ -2574,29 +2734,19 @@ onUnmounted(() => {
             <motion.div
               v-else
               ref="mobileArticleContentRef"
-              class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4"
+              class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+              :style="{ x: mobileArticleSwipeX }"
               drag="x"
               :dragConstraints="{ left: 0, right: 0 }"
-              :dragElastic="{ left: 0.8, right: 0.8 }"
-              :dragMomentum="true"
-              :dragDirectionLock="false"
-              :dragSnapToOrigin="true"
-              :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
-              :transition="mobilePanelSpring"
+              :dragElastic="mobileSwipeElastic"
+              :dragMomentum="false"
+              :dragDirectionLock="true"
+              :dragSnapToOrigin="false"
+              :dragTransition="mobileSwipeSnapTransition"
               :onDragEnd="onArticleDragEnd"
               @pointerdown="beginMobileDrag('article', $event)"
               @scroll.passive="onMobileReaderScroll"
             >
-              <motion.div layout class="mb-5 border-b border-slate-200/80 pb-4 dark:border-slate-800/80">
-                <h2 class="text-[22px] font-bold leading-tight text-slate-900 dark:text-slate-50">
-                  {{ selectedArticleDisplayTitle }}
-                </h2>
-                <p class="mt-2 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-                  {{ selectedArticle?.author_name || selectedArticle?.accountName }}
-                  <span class="mx-1">·</span>
-                  {{ selectedArticle && formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}
-                </p>
-              </motion.div>
               <IframeHtmlRenderer :html="selectedArticleHtml" />
             </motion.div>
           </motion.div>
@@ -2621,11 +2771,11 @@ onUnmounted(() => {
             :exit="{ x: '-100%' }"
             drag="x"
             :dragConstraints="{ left: 0, right: 0 }"
-            :dragElastic="{ left: 0.8, right: 0 }"
-            :dragMomentum="true"
-            :dragDirectionLock="false"
+            :dragElastic="mobileDrawerElastic"
+            :dragMomentum="false"
+            :dragDirectionLock="true"
             :dragSnapToOrigin="true"
-            :dragTransition="{ bounceStiffness: 520, bounceDamping: 34 }"
+            :dragTransition="mobileDrawerSnapTransition"
             :transition="mobilePanelSpring"
             :onDragEnd="onDrawerDragEnd"
             @pointerdown="beginMobileDrag('drawer', $event)"
@@ -3120,7 +3270,18 @@ onUnmounted(() => {
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium line-clamp-2">{{ articleDisplayTitle(row.data) }}</p>
               <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
-                <span class="truncate">{{ row.data.accountName }}</span>
+                <span class="min-w-0 flex items-center gap-2 truncate">
+                  <span class="article-account-avatar">
+                    <img
+                      v-if="row.data.round_head_img"
+                      :src="IMAGE_PROXY + row.data.round_head_img"
+                      alt=""
+                      class="size-full object-cover"
+                    />
+                    <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                  </span>
+                  <span class="truncate">{{ row.data.accountName }}</span>
+                </span>
                 <span class="shrink-0 inline-flex items-center gap-1.5">
                   <span v-if="isArticleUnread(row.data)" class="unread-dot" />
                   <span>{{ formatTimeStamp(row.data.update_time || row.data.create_time) }}</span>
@@ -3490,9 +3651,11 @@ onUnmounted(() => {
 }
 
 .mobile-touch-surface {
-  touch-action: pan-y pinch-zoom;
-  overscroll-behavior-x: contain;
-  will-change: transform;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  will-change: transform, scroll-position;
+  transform: translateZ(0);
 }
 
 .mobile-menu-fade-enter-active,
