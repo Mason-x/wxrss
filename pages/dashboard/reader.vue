@@ -764,6 +764,7 @@ const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 116;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 72;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
+const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
 const MOBILE_UNDERLAY_WINDOW_BUFFER = 6;
@@ -1803,14 +1804,24 @@ function onArticleDrag(_event: PointerEvent, info: PanInfo) {
   mobileArticleFavoriteHovering.value = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
 }
 
-async function commitMobileArticleFavoriteFromSwipe() {
-  if (!selectedArticle.value || isArticleFavorite(selectedArticle.value)) {
+async function commitMobileArticleFavoriteFromSwipe(width: number) {
+  const article = selectedArticle.value;
+  if (!article || isArticleFavorite(article)) {
     return false;
   }
 
+  setMobileUnderlayActive('article', true);
+  await animateMobileSwipeValue('article', getMobileSwipeCommitTarget(width || getMobileViewportWidth(), 1), mobileSwipeCommitTransition.value);
+  await toggleArticleFavorite(article);
+
+  if (canNavigateMobileHistory(-1)) {
+    await navigateMobileHistory(-1);
+  } else {
+    await backFromMobileView();
+  }
+
   clearMobileUnderlay('article');
-  await animateMobileSwipeValue('article', 0, mobileSwipeReboundTransition.value);
-  await toggleArticleFavorite(selectedArticle.value);
+  mobileArticleSwipeX.set(0);
   return true;
 }
 
@@ -2007,7 +2018,7 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   }
 
   if (favoriteTriggered) {
-    await commitMobileArticleFavoriteFromSwipe();
+    await commitMobileArticleFavoriteFromSwipe(width);
     return;
   }
 
@@ -3176,7 +3187,7 @@ onUnmounted(() => {
           :dragConstraints="{ left: 0, right: 0 }"
           :dragElastic="mobileSwipeElastic"
           :dragMomentum="false"
-          :dragDirectionLock="true"
+          :dragDirectionLock="false"
           :dragSnapToOrigin="false"
           :dragTransition="mobileSwipeSnapTransition"
           :onDrag="onArticleDrag"
@@ -3186,6 +3197,8 @@ onUnmounted(() => {
           :animate="{ opacity: 1, scale: 1 }"
           :transition="mobilePageTransition"
         >
+          <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
+
           <motion.div
             class="pointer-events-none absolute bottom-0 right-0 z-20"
             :style="{ x: mobileArticleFavoriteCornerX, opacity: mobileArticleFavoriteCornerOpacity, scale: mobileArticleFavoriteCornerScale }"
@@ -4198,7 +4211,7 @@ onUnmounted(() => {
 
 .mobile-article-favorite-corner {
   @apply flex h-[116px] w-[116px] flex-col items-center justify-center gap-1.5 rounded-tl-[34px] text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
-  background-color: rgba(226, 232, 240, 0.92);
+  background-color: rgba(148, 163, 184, 0.96);
 }
 
 .mobile-article-favorite-corner span {
@@ -4207,24 +4220,29 @@ onUnmounted(() => {
 
 .mobile-article-favorite-corner.is-ready {
   @apply text-amber-600 dark:text-amber-300;
-  background-color: rgba(254, 243, 199, 0.96);
+  background-color: rgba(252, 211, 77, 0.94);
 }
 
 .mobile-article-favorite-corner.is-active {
   @apply text-amber-500 dark:text-amber-300;
-  background-color: rgba(255, 251, 235, 0.96);
+  background-color: rgba(251, 191, 36, 0.92);
 }
 
 :global(.dark) .mobile-article-favorite-corner {
-  background-color: rgba(30, 41, 59, 0.92);
+  background-color: rgba(15, 23, 42, 0.94);
 }
 
 :global(.dark) .mobile-article-favorite-corner.is-ready {
-  background-color: rgba(245, 158, 11, 0.18);
+  background-color: rgba(245, 158, 11, 0.34);
 }
 
 :global(.dark) .mobile-article-favorite-corner.is-active {
-  background-color: rgba(245, 158, 11, 0.14);
+  background-color: rgba(245, 158, 11, 0.28);
+}
+
+.mobile-article-edge-sensor {
+  width: 32px;
+  touch-action: none;
 }
 
 .mobile-menu-fade-enter-active,
