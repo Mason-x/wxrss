@@ -114,6 +114,8 @@ interface MobileDragSession {
   startX: number;
   edge: MobileSwipeEdge;
   width: number;
+  pointX: number;
+  pointY: number;
 }
 
 type MobileInteractiveSwipeContext = Extract<MobileSwipeContext, 'articles' | 'article'>;
@@ -736,12 +738,15 @@ const mobileDragSession = reactive<MobileDragSession>({
   startX: 0,
   edge: 'none',
   width: 0,
+  pointX: 0,
+  pointY: 0,
 });
 const mobileArticlesDragControls = useDragControls();
 const mobileArticleDragControls = useDragControls();
 const prefersReducedMotion = useReducedMotion();
 const mobileArticlesSwipeX = useMotionValue(0);
 const mobileArticleSwipeX = useMotionValue(0);
+const mobileArticleFavoriteHovering = ref(false);
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
 const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
@@ -756,6 +761,9 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
+const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 116;
+const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 72;
+const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
 const MOBILE_UNDERLAY_WINDOW_BUFFER = 6;
@@ -765,6 +773,17 @@ function getMobileViewportWidth() {
     return 390;
   }
   return Math.max(window.innerWidth || 390, 1);
+}
+
+function getMobileViewportHeight() {
+  if (typeof window === 'undefined') {
+    return 844;
+  }
+  return Math.max(window.innerHeight || 844, 1);
+}
+
+function getMobileArticleSwipeProgress() {
+  return Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
 }
 
 const mobileArticlesUnderlayX = transformValue(() => {
@@ -805,6 +824,21 @@ const mobileArticleUnderlayOpacity = transformValue(() => {
 const mobileArticleUnderlayScrimOpacity = transformValue(() => {
   const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
   return MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY * (1 - progress);
+});
+
+const mobileArticleFavoriteCornerX = transformValue(() => {
+  const progress = getMobileArticleSwipeProgress();
+  return -mobileArticleSwipeX.get() + (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
+});
+
+const mobileArticleFavoriteCornerOpacity = transformValue(() => {
+  const progress = getMobileArticleSwipeProgress();
+  return Math.max(0, Math.min(1, (progress - 0.03) / 0.18));
+});
+
+const mobileArticleFavoriteCornerScale = transformValue(() => {
+  const progress = getMobileArticleSwipeProgress();
+  return 0.94 + Math.max(0, Math.min(1, progress / 0.22)) * 0.06;
 });
 
 const mobilePanelSpring = computed(() =>
@@ -1669,6 +1703,9 @@ function resetMobileDragSession() {
   mobileDragSession.startX = 0;
   mobileDragSession.edge = 'none';
   mobileDragSession.width = 0;
+  mobileDragSession.pointX = 0;
+  mobileDragSession.pointY = 0;
+  mobileArticleFavoriteHovering.value = false;
 }
 
 function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEvent) {
@@ -1681,6 +1718,8 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   mobileDragSession.interactive = isMobileSwipeInteractiveTarget(event.target);
   mobileDragSession.startX = event.clientX;
   mobileDragSession.width = width;
+  mobileDragSession.pointX = event.clientX;
+  mobileDragSession.pointY = event.clientY;
   mobileDragSession.edge =
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 
@@ -1725,6 +1764,54 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
     }
     mobileArticleDragControls.start(event);
   }
+}
+
+function getMobileArticleFavoriteZoneRect() {
+  const width = getMobileViewportWidth();
+  const height = getMobileViewportHeight();
+  const progress = getMobileArticleSwipeProgress();
+  const revealOffset = (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
+
+  return {
+    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE + revealOffset,
+    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE,
+    right: width,
+    bottom: height,
+  };
+}
+
+function canTriggerMobileArticleFavorite(pointX: number, pointY: number) {
+  if (!selectedArticle.value || isArticleFavorite(selectedArticle.value)) {
+    return false;
+  }
+
+  if (mobileDragSession.edge !== 'left' || mobileDragSession.interactive) {
+    return false;
+  }
+
+  if (getMobileArticleSwipeProgress() < MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS) {
+    return false;
+  }
+
+  const zone = getMobileArticleFavoriteZoneRect();
+  return pointX >= zone.left && pointX <= zone.right && pointY >= zone.top && pointY <= zone.bottom;
+}
+
+function onArticleDrag(_event: PointerEvent, info: PanInfo) {
+  mobileDragSession.pointX = info.point.x;
+  mobileDragSession.pointY = info.point.y;
+  mobileArticleFavoriteHovering.value = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
+}
+
+async function commitMobileArticleFavoriteFromSwipe() {
+  if (!selectedArticle.value || isArticleFavorite(selectedArticle.value)) {
+    return false;
+  }
+
+  clearMobileUnderlay('article');
+  await animateMobileSwipeValue('article', 0, mobileSwipeReboundTransition.value);
+  await toggleArticleFavorite(selectedArticle.value);
+  return true;
 }
 
 function getMobileSwipeValue(context: MobileInteractiveSwipeContext) {
@@ -1912,9 +1999,15 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const interactive = mobileDragSession.interactive;
   const width = mobileDragSession.width;
   const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
+  const favoriteTriggered = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
   resetMobileDragSession();
 
   if (context !== 'article') {
+    return;
+  }
+
+  if (favoriteTriggered) {
+    await commitMobileArticleFavoriteFromSwipe();
     return;
   }
 
@@ -3076,7 +3169,7 @@ onUnmounted(() => {
         <motion.div
           v-if="selectedArticle"
           key="mobile-article"
-          class="absolute inset-0 z-10 flex h-full flex-col app-shell-bg shadow-[-22px_0_44px_rgba(15,23,42,0.16)]"
+          class="mobile-article-sheet absolute inset-0 z-10 flex h-full flex-col bg-white text-slate-900 shadow-[-22px_0_44px_rgba(15,23,42,0.16)] dark:bg-slate-950 dark:text-slate-100"
           drag="x"
           :dragControls="mobileArticleDragControls"
           :dragListener="false"
@@ -3086,12 +3179,32 @@ onUnmounted(() => {
           :dragDirectionLock="true"
           :dragSnapToOrigin="false"
           :dragTransition="mobileSwipeSnapTransition"
+          :onDrag="onArticleDrag"
           :onDragEnd="onArticleDragEnd"
           :style="{ x: mobileArticleSwipeX }"
           :initial="prefersReducedMotion ? false : { opacity: 0, scale: 0.996 }"
           :animate="{ opacity: 1, scale: 1 }"
           :transition="mobilePageTransition"
         >
+          <motion.div
+            class="pointer-events-none absolute bottom-0 right-0 z-20"
+            :style="{ x: mobileArticleFavoriteCornerX, opacity: mobileArticleFavoriteCornerOpacity, scale: mobileArticleFavoriteCornerScale }"
+          >
+            <div
+              class="mobile-article-favorite-corner"
+              :class="{
+                'is-ready': mobileArticleFavoriteHovering,
+                'is-active': selectedArticle && isArticleFavorite(selectedArticle),
+              }"
+            >
+              <UIcon
+                :name="selectedArticle && isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                class="size-5"
+              />
+              <span>{{ selectedArticle && isArticleFavorite(selectedArticle) ? '已收藏' : '收藏' }}</span>
+            </div>
+          </motion.div>
+
           <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
             <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('article', $event)">
               <div class="flex items-start justify-between gap-3">
@@ -4073,6 +4186,45 @@ onUnmounted(() => {
 .mobile-underlay-layer {
   contain: layout paint;
   transform: translateZ(0);
+}
+
+.mobile-article-sheet {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(255, 255, 255, 1) 12%, rgba(255, 255, 255, 1) 100%);
+}
+
+:global(.dark) .mobile-article-sheet {
+  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0.985) 0%, rgba(2, 6, 23, 1) 12%, rgba(2, 6, 23, 1) 100%);
+}
+
+.mobile-article-favorite-corner {
+  @apply flex h-[116px] w-[116px] flex-col items-center justify-center gap-1.5 rounded-tl-[34px] text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
+  background-color: rgba(226, 232, 240, 0.92);
+}
+
+.mobile-article-favorite-corner span {
+  @apply text-[11px] font-medium tracking-[0.08em];
+}
+
+.mobile-article-favorite-corner.is-ready {
+  @apply text-amber-600 dark:text-amber-300;
+  background-color: rgba(254, 243, 199, 0.96);
+}
+
+.mobile-article-favorite-corner.is-active {
+  @apply text-amber-500 dark:text-amber-300;
+  background-color: rgba(255, 251, 235, 0.96);
+}
+
+:global(.dark) .mobile-article-favorite-corner {
+  background-color: rgba(30, 41, 59, 0.92);
+}
+
+:global(.dark) .mobile-article-favorite-corner.is-ready {
+  background-color: rgba(245, 158, 11, 0.18);
+}
+
+:global(.dark) .mobile-article-favorite-corner.is-active {
+  background-color: rgba(245, 158, 11, 0.14);
 }
 
 .mobile-menu-fade-enter-active,
