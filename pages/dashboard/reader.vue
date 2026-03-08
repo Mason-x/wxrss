@@ -2809,149 +2809,36 @@ onUnmounted(() => {
 
 <template>
   <div class="app-shell-bg h-screen overflow-hidden text-slate-900 dark:text-slate-100">
-    <div v-if="!isDesktopViewport" class="flex h-full flex-col">
-      <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
-        <motion.div
-          v-if="mobileHeaderUnderlayState"
-          class="pointer-events-none absolute inset-0 z-0 px-4 pb-3 pt-3"
-          :style="mobileHeaderUnderlayStyle"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex flex-1 items-start gap-3">
-              <span class="mobile-header-underlay-glyph mt-0.5" />
-              <div class="min-w-0 flex-1">
-                <h1
-                  class="text-base font-semibold"
-                  :class="mobileHeaderUnderlayState.kind === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
-                >
-                  {{ mobileHeaderUnderlayState.title }}
-                </h1>
-                <p class="mt-1 truncate text-[11px] leading-4 text-slate-500/90 dark:text-slate-400/90">
-                  {{ mobileHeaderUnderlayState.meta }}
-                </p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 opacity-80">
-              <span class="mobile-header-underlay-icon" />
-              <span class="mobile-header-underlay-icon" />
-              <span v-if="mobileHeaderUnderlayState.kind !== 'article'" class="mobile-header-underlay-icon" />
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.header class="relative z-10 px-4 pb-3 pt-3" :style="{ x: mobileCurrentHeaderX }" @pointerdown="beginMobileDrag(mobileView, $event)">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0 flex flex-1 items-start gap-3">
-              <UButton
-                v-if="mobileCanGoBack"
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:chevron-left"
-                class="icon-btn mt-0.5"
-                @click="backFromMobileView"
-              />
-              <UButton
-                v-else
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:menu"
-                class="icon-btn mt-0.5"
-                @click="showMobileAccounts"
-              />
-              <div class="min-w-0 flex-1">
-                <div v-if="mobileView === 'articles' && selectedAccountInfo" class="flex items-center gap-2">
-                  <h1 class="truncate text-base font-semibold">{{ mobileCurrentHeaderState.title }}</h1>
-                  <UButton
-                    size="2xs"
-                    color="gray"
-                    variant="ghost"
-                    icon="i-lucide:pencil"
-                    :disabled="!selectedAccountInfo"
-                    class="icon-btn shrink-0"
-                    @click="editSelectedAccountCategory"
-                  />
-                  <UButton
-                    size="2xs"
-                    color="gray"
-                    variant="ghost"
-                    icon="i-lucide:minus"
-                    :disabled="!selectedAccount"
-                    :loading="isDeleting"
-                    class="icon-btn shrink-0"
-                    @click="deleteCurrentAccount"
-                  />
-                </div>
-                <h1
-                  v-else
-                  class="text-base font-semibold"
-                  :class="mobileCurrentHeaderState.kind === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
-                >
-                  {{ mobileCurrentHeaderState.title }}
-                </h1>
-                <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                  {{ mobileCurrentHeaderState.meta }}
-                </p>
-              </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <UTooltip v-if="mobileView !== 'article'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                  class="icon-btn mobile-favorite-toggle"
-                  :class="favoriteOnly ? 'is-active' : ''"
-                  @click="favoriteOnly = !favoriteOnly"
-                />
-              </UTooltip>
-              <UTooltip v-if="mobileView !== 'article'" :text="syncHeaderTooltip">
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-heroicons:arrow-path-rounded-square-20-solid"
-                  :disabled="!canSyncFromHeader"
-                  :loading="isSyncing"
-                  class="icon-btn"
-                  @click="onHeaderSyncClick"
-                />
-              </UTooltip>
-              <UTooltip v-else text="查看原文">
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:external-link"
-                  class="icon-btn"
-                  :disabled="!selectedArticle"
-                  @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
-                />
-              </UTooltip>
-              <UTooltip v-if="mobileView !== 'article'" text="系统菜单">
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:layout-grid"
-                  class="icon-btn"
-                  @click="openSystemMenu()"
-                />
-              </UTooltip>
-            </div>
-          </div>
-        </motion.header>
-      </div>
-
-      <div class="relative min-h-0 flex-1 overflow-hidden">
+    <div v-if="!isDesktopViewport" class="relative h-full overflow-hidden">
+      <div class="relative h-full overflow-hidden">
         <motion.div
           v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
-          class="absolute inset-0 flex h-full flex-col app-shell-bg"
+          class="absolute inset-0 z-0 flex h-full flex-col app-shell-bg"
           :style="{ x: mobileArticlesUnderlayX, scale: mobileArticlesUnderlayScale, opacity: mobileArticlesUnderlayOpacity }"
         >
+          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+            <div class="pointer-events-none px-4 pb-3 pt-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex flex-1 items-start gap-3">
+                  <span class="mobile-header-underlay-glyph mt-0.5" />
+                  <div class="min-w-0 flex-1">
+                    <h1 class="truncate text-base font-semibold">
+                      {{ mobileArticlesUnderlaySnapshot.title }}
+                    </h1>
+                    <p class="mt-1 truncate text-[11px] leading-4 text-slate-500/90 dark:text-slate-400/90">
+                      {{ mobileArticlesUnderlaySnapshot.meta }}
+                    </p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 opacity-80">
+                  <span class="mobile-header-underlay-icon" />
+                  <span class="mobile-header-underlay-icon" />
+                  <span class="mobile-header-underlay-icon" />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="mobile-underlay-layer pointer-events-none flex-1 overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3">
             <div
               v-if="mobileArticlesUnderlaySnapshot.articles.length > 0"
@@ -3025,6 +2912,99 @@ onUnmounted(() => {
               : { x: mobileArticlesSwipeX, scale: 1, opacity: 1 }
           "
         >
+          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+            <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('articles', $event)">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex flex-1 items-start gap-3">
+                  <UButton
+                    v-if="selectedAccount"
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:chevron-left"
+                    class="icon-btn mt-0.5"
+                    @click="backFromMobileView"
+                  />
+                  <UButton
+                    v-else
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:menu"
+                    class="icon-btn mt-0.5"
+                    @click="showMobileAccounts"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <div v-if="selectedAccountInfo" class="flex items-center gap-2">
+                      <h1 class="truncate text-base font-semibold">{{ mobileArticlesHeaderState.title }}</h1>
+                      <UButton
+                        size="2xs"
+                        color="gray"
+                        variant="ghost"
+                        icon="i-lucide:pencil"
+                        :disabled="!selectedAccountInfo"
+                        class="icon-btn shrink-0"
+                        @click="editSelectedAccountCategory"
+                      />
+                      <UButton
+                        size="2xs"
+                        color="gray"
+                        variant="ghost"
+                        icon="i-lucide:minus"
+                        :disabled="!selectedAccount"
+                        :loading="isDeleting"
+                        class="icon-btn shrink-0"
+                        @click="deleteCurrentAccount"
+                      />
+                    </div>
+                    <h1 v-else class="truncate text-base font-semibold">
+                      {{ mobileArticlesHeaderState.title }}
+                    </h1>
+                    <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                      {{ mobileArticlesHeaderState.meta }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <UTooltip :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      class="icon-btn mobile-favorite-toggle"
+                      :class="favoriteOnly ? 'is-active' : ''"
+                      @click="favoriteOnly = !favoriteOnly"
+                    />
+                  </UTooltip>
+                  <UTooltip :text="syncHeaderTooltip">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                      :disabled="!canSyncFromHeader"
+                      :loading="isSyncing"
+                      class="icon-btn"
+                      @click="onHeaderSyncClick"
+                    />
+                  </UTooltip>
+                  <UTooltip text="系统菜单">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:layout-grid"
+                      class="icon-btn"
+                      @click="openSystemMenu()"
+                    />
+                  </UTooltip>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="loading" class="px-3 py-3">
             <LoadingCards />
           </div>
@@ -3148,6 +3128,45 @@ onUnmounted(() => {
           :animate="{ opacity: 1, scale: 1 }"
           :transition="mobilePageTransition"
         >
+          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+            <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('article', $event)">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex flex-1 items-start gap-3">
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:chevron-left"
+                    class="icon-btn mt-0.5"
+                    @click="backFromMobileView"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <h1 class="line-clamp-2 text-base font-semibold leading-5">
+                      {{ mobileCurrentHeaderState.title }}
+                    </h1>
+                    <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                      {{ mobileCurrentHeaderState.meta }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <UTooltip text="查看原文">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:external-link"
+                      class="icon-btn"
+                      :disabled="!selectedArticle"
+                      @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
+                    />
+                  </UTooltip>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="contentLoading">
             <EmptyStatePanel
               icon="i-lucide-loader-circle"
