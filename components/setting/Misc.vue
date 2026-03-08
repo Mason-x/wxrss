@@ -1,12 +1,12 @@
 <template>
-  <UCard class="h-full">
+  <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">其他选项</h3>
       <p class="text-sm text-slate-500">同步节奏、缓存行为和列表显示规则。</p>
     </template>
 
     <div class="space-y-5">
-      <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="mb-4">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">内容与缓存</p>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">控制文章列表和内容抓取时的缓存策略。</p>
@@ -59,7 +59,7 @@
         </div>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="mb-4">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">同步节奏</p>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">控制单个公众号翻页同步时的请求间隔。</p>
@@ -109,14 +109,14 @@
         </div>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p class="text-sm font-medium text-slate-900 dark:text-slate-100">同步时间范围</p>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">限制同步公众号时向历史回溯的时间窗口。</p>
           </div>
           <span
-            class="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300"
+            class="inline-flex items-center rounded-full border border-sky-200/80 bg-white/80 px-3 py-1 text-xs font-medium text-sky-700 shadow-[0_10px_20px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
           >
             实际范围：{{ getActualDateRange() }}
           </span>
@@ -131,7 +131,7 @@
             option-attribute="label"
           />
           <UPopover v-if="preferences.syncDateRange === 'point'" :popper="{ placement: 'bottom-start' }">
-            <UButton color="gray" icon="i-heroicons-calendar-days-20-solid" :label="formatDate()" />
+            <UButton color="gray" class="rounded-full" icon="i-heroicons-calendar-days-20-solid" :label="formatDate()" />
 
             <template #panel="{ close }">
               <BaseDatePicker v-model="preferences.syncDatePoint" is-required @close="close" />
@@ -150,6 +150,12 @@ import type { Preferences } from '~/types/preferences';
 const { getActualDateRange, getSelectOptions } = useSyncDeadline();
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const cardUi = {
+  ring: '',
+  divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
+  header: { padding: 'px-5 pb-0 pt-5 sm:px-6 sm:pt-6' },
+  body: { padding: 'px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-5' },
+};
 
 const DURATION_OPTIONS = getSelectOptions();
 

@@ -1,12 +1,12 @@
 <template>
-  <UCard class="h-full">
+  <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">每日自动同步</h3>
       <p class="text-sm text-slate-500">由服务端定时执行同步任务，页面无需保持打开。</p>
     </template>
 
     <div class="space-y-4">
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+      <div class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div class="min-w-0">
             <UCheckbox
@@ -33,11 +33,11 @@
       </div>
 
       <div class="grid gap-3 sm:grid-cols-2">
-        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+        <div class="rounded-[22px] border border-white/75 bg-white/80 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
           <p class="text-xs text-slate-500 dark:text-slate-400">执行方式</p>
           <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">服务端定时任务</p>
         </div>
-        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950/30">
+        <div class="rounded-[22px] border border-white/75 bg-white/80 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
           <p class="text-xs text-slate-500 dark:text-slate-400">页面要求</p>
           <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">无需持续打开</p>
         </div>
@@ -50,6 +50,12 @@
 import type { Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const cardUi = {
+  ring: '',
+  divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
+  header: { padding: 'px-5 pb-0 pt-5 sm:px-6 sm:pt-6' },
+  body: { padding: 'px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-5' },
+};
 
 function normalizeDailySyncTime() {
   const raw = String(preferences.value.dailySyncTime || '').trim();

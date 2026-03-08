@@ -2790,9 +2790,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+  <div class="app-shell-bg h-screen overflow-hidden text-slate-900 dark:text-slate-100">
     <div v-if="!isDesktopViewport" class="flex h-full flex-col">
-      <div class="relative z-10 overflow-hidden border-b border-slate-200 bg-slate-50/92 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
+      <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
         <motion.div
           v-if="mobileHeaderUnderlayState"
           class="pointer-events-none absolute inset-0 z-0 px-4 pb-3 pt-3"
@@ -2931,7 +2931,7 @@ onUnmounted(() => {
       <div class="relative min-h-0 flex-1 overflow-hidden">
         <motion.div
           v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
-          class="absolute inset-0 flex h-full flex-col bg-slate-50 dark:bg-slate-950"
+          class="absolute inset-0 flex h-full flex-col app-shell-bg"
           :style="{ x: mobileArticlesUnderlayX, scale: mobileArticlesUnderlayScale, opacity: mobileArticlesUnderlayOpacity }"
         >
           <div class="mobile-underlay-layer pointer-events-none flex-1 overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3">
@@ -2943,7 +2943,7 @@ onUnmounted(() => {
               <div
                 v-for="article in mobileArticlesUnderlayWindow.items"
                 :key="`underlay-${articleKey(article)}`"
-                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-900"
+                class="rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_16px_34px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80"
               >
                 <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
                 <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
@@ -2981,13 +2981,13 @@ onUnmounted(() => {
 
         <motion.div
           v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
-          class="pointer-events-none absolute inset-0 z-[1] bg-slate-950/8 dark:bg-slate-950/18"
+          class="pointer-events-none absolute inset-0 z-[1] bg-slate-950/10 dark:bg-slate-950/20"
           :style="{ opacity: mobileArticlesUnderlayScrimOpacity }"
         />
 
         <motion.div
           key="mobile-articles"
-          class="absolute inset-0 z-[2] flex h-full flex-col bg-slate-50 dark:bg-slate-950"
+          class="absolute inset-0 z-[2] flex h-full flex-col app-shell-bg"
           :class="mobileArticlesUnderlayActive ? 'shadow-[-18px_0_40px_rgba(15,23,42,0.12)]' : ''"
           :style="
             selectedArticle
@@ -3021,7 +3021,7 @@ onUnmounted(() => {
                 v-for="(article, index) in displayedArticles"
                 :key="articleKey(article)"
                 layout
-                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.06)] transition-colors dark:border-slate-800 dark:bg-slate-900"
+                class="rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.07)] transition-colors dark:border-white/10 dark:bg-slate-900/80"
                 :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
                 :animate="{ opacity: 1, y: 0, scale: 1 }"
                 :whileTap="{ scale: 0.988 }"
@@ -3105,14 +3105,14 @@ onUnmounted(() => {
 
         <motion.div
           v-if="selectedArticle && mobileArticleUnderlayActive"
-          class="pointer-events-none absolute inset-0 z-[3] bg-slate-950/8 dark:bg-slate-950/18"
+          class="pointer-events-none absolute inset-0 z-[3] bg-slate-950/10 dark:bg-slate-950/20"
           :style="{ opacity: mobileArticleUnderlayScrimOpacity }"
         />
 
         <motion.div
           v-if="selectedArticle"
           key="mobile-article"
-          class="absolute inset-0 z-10 flex h-full flex-col bg-slate-50 dark:bg-slate-950 shadow-[-22px_0_44px_rgba(15,23,42,0.16)]"
+          class="absolute inset-0 z-10 flex h-full flex-col app-shell-bg shadow-[-22px_0_44px_rgba(15,23,42,0.16)]"
           :style="{ x: mobileArticleSwipeX }"
           :initial="prefersReducedMotion ? false : { opacity: 0, scale: 0.996 }"
           :animate="{ opacity: 1, scale: 1 }"
@@ -3149,7 +3149,7 @@ onUnmounted(() => {
         <motion.div
           v-if="mobileAccountsPanelOpen"
           key="mobile-drawer-overlay"
-          class="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"
+          class="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-[10px]"
           :initial="prefersReducedMotion ? false : { opacity: 0 }"
           :animate="{ opacity: 1 }"
           :exit="{ opacity: 0 }"
@@ -3157,7 +3157,7 @@ onUnmounted(() => {
           @click.self="mobileAccountsPanelOpen = false"
         >
           <motion.aside
-            class="mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200 bg-slate-50 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800 dark:bg-slate-950"
+            class="app-shell-panel mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
             :initial="prefersReducedMotion ? false : { x: '-100%' }"
             :animate="{ x: 0 }"
             :exit="{ x: '-100%' }"
@@ -3172,7 +3172,7 @@ onUnmounted(() => {
             :onDragEnd="onDrawerDragEnd"
             @pointerdown="beginMobileDrag('drawer', $event)"
           >
-              <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+              <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
                   <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
                     <div class="size-10 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -3239,11 +3239,11 @@ onUnmounted(() => {
                     v-for="category in categories"
                     :key="category.id"
                     type="button"
-                    class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+                    class="rounded-full border px-2.5 py-1 text-xs transition-all duration-200"
                     :class="
                       selectedCategory === category.id
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                        : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
                     "
                     @click="onClickCategory(category.id)"
                   >
@@ -3257,11 +3257,11 @@ onUnmounted(() => {
                   <li
                     v-for="account in accountsInCategory"
                     :key="account.fakeid"
-                    class="rounded-[22px] border px-4 py-3 transition-colors"
+                    class="rounded-[24px] border px-4 py-3 transition-all duration-200"
                     :class="
                       selectedAccount === account.fakeid
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_16px_36px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:bg-slate-900'
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                        : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
                     "
                   >
                     <div class="flex items-start gap-3">
@@ -3315,9 +3315,9 @@ onUnmounted(() => {
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
 
-    <div v-else class="flex h-full overflow-hidden">
-    <aside class="w-[320px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
-      <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+    <div v-else class="flex h-full gap-3 overflow-hidden p-3">
+    <aside class="app-shell-panel w-[320px] flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
+      <header class="app-shell-glass space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <UTooltip text="系统菜单">
@@ -3431,11 +3431,11 @@ onUnmounted(() => {
             v-for="category in categories"
             :key="category.id"
             type="button"
-            class="px-2.5 py-1 rounded-full text-xs border transition-colors"
+            class="px-2.5 py-1 rounded-full text-xs border transition-all duration-200"
             :class="
               selectedCategory === category.id
-                ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                : 'border-slate-300 text-slate-600 hover:border-slate-500 dark:border-slate-700 dark:text-slate-300'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
             "
             @click="onClickCategory(category.id)"
           >
@@ -3445,15 +3445,15 @@ onUnmounted(() => {
 
       </header>
 
-      <ul class="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+      <ul class="app-shell-scrollbar flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
         <li
           v-for="account in accountsInCategory"
           :key="account.fakeid"
-          class="px-3 py-2.5 transition-colors cursor-pointer"
+          class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
           :class="
             selectedAccount === account.fakeid
-              ? 'bg-slate-100 dark:bg-slate-800'
-              : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/70'
+              ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
+              : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
           "
           @click="onClickAccount(account)"
         >
@@ -3501,8 +3501,8 @@ onUnmounted(() => {
       </ul>
     </aside>
 
-    <section class="w-[430px] flex-shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col">
-      <header class="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
+    <section class="app-shell-panel w-[430px] flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
+      <header class="app-shell-glass space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
             <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
@@ -3591,7 +3591,7 @@ onUnmounted(() => {
           </div>
 
           <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <div class="rounded-full border border-slate-200/80 bg-slate-50 px-3 py-1.5 dark:border-slate-800 dark:bg-slate-900/70">
+            <div class="rounded-full border border-white/80 bg-white/80 px-3 py-1.5 shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
               <UCheckbox v-model="favoriteOnly" name="desktop-favorite-only" label="只看收藏" />
             </div>
             <UTooltip text="导出文章">
@@ -3637,16 +3637,16 @@ onUnmounted(() => {
         />
       </div>
 
-      <div v-else v-bind="articleContainerProps" class="flex-1 h-0 overflow-y-auto">
-      <ul v-bind="articleWrapperProps" class="divide-y divide-slate-100 dark:divide-slate-800">
+      <div v-else v-bind="articleContainerProps" class="app-shell-scrollbar flex-1 h-0 overflow-y-auto px-2 py-2">
+      <ul v-bind="articleWrapperProps" class="space-y-2">
         <li
           v-for="row in virtualDisplayedArticles"
           :key="articleKey(row.data)"
-          class="px-3 py-2.5 transition-colors cursor-pointer"
+          class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
           :class="
             selectedArticle && articleKey(selectedArticle) === articleKey(row.data)
-              ? 'bg-slate-100 dark:bg-slate-800'
-              : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/70'
+              ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
+              : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
           "
           @click="openArticle(row.data)"
         >
@@ -3695,7 +3695,7 @@ onUnmounted(() => {
         </li>
       </ul>
       </div>
-      <div v-if="!loading && (articlePageHasMore || articlePageLoading)" class="px-3 py-2 border-t border-slate-200 dark:border-slate-800">
+      <div v-if="!loading && (articlePageHasMore || articlePageLoading)" class="border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70">
         <UButton
           size="2xs"
           color="gray"
@@ -3710,8 +3710,8 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <main class="flex-1 overflow-hidden flex flex-col">
-      <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+    <main class="app-shell-panel flex-1 overflow-hidden rounded-[30px] flex flex-col">
+      <div class="app-shell-glass border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
         <template v-if="selectedArticle">
           <h1 class="text-[30px] leading-tight font-bold">{{ selectedArticleDisplayTitle }}</h1>
           <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
@@ -3741,7 +3741,7 @@ onUnmounted(() => {
           description="正在准备文章内容，请稍候。"
         />
       </div>
-      <div v-else class="flex-1 overflow-y-auto p-4">
+      <div v-else class="app-shell-scrollbar flex-1 overflow-y-auto p-4">
         <IframeHtmlRenderer :html="selectedArticleHtml" />
       </div>
     </main>
@@ -3861,15 +3861,15 @@ onUnmounted(() => {
     <Transition name="mobile-menu-fade">
       <div
         v-if="systemMenuOpen && !isDesktopViewport"
-        class="fixed inset-0 z-50 bg-slate-950/42 backdrop-blur-[10px] md:hidden"
+        class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[14px] md:hidden"
         @click.self="systemMenuOpen = false"
       >
         <Transition name="mobile-menu-drop">
           <section
             v-if="systemMenuOpen && !isDesktopViewport"
-            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] dark:border-slate-800 dark:bg-slate-950"
+            class="app-shell-panel fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/60 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
           >
-            <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-4 pb-4 pt-4 dark:border-slate-800">
+            <div class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70">
               <div class="min-w-0">
                 <p class="text-base font-semibold">系统菜单</p>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">抓取及下载文章及更多高级选项请到桌面网页端。</p>
@@ -3885,11 +3885,11 @@ onUnmounted(() => {
                       v-for="item in systemMenuItems"
                       :key="item.id"
                       type="button"
-                      class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors"
+                      class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-200"
                       :class="
                         systemMenuActive === item.id
-                          ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                          : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                          : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
                       "
                       @click="openSystemMenu(item.id)"
                     >
@@ -3899,10 +3899,10 @@ onUnmounted(() => {
                   </div>
                 </section>
 
-                <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                <section class="overflow-hidden rounded-[26px] border border-white/80 bg-white/80 shadow-[0_18px_36px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900/80">
                   <div id="title" class="hidden" />
                   <KeepAlive>
-                    <component :is="activeSystemMenuComponent" class="min-h-full bg-white dark:bg-slate-950" />
+                    <component :is="activeSystemMenuComponent" class="min-h-full bg-transparent" />
                   </KeepAlive>
                 </section>
               </div>
@@ -3913,7 +3913,7 @@ onUnmounted(() => {
     </Transition>
 
     <UModal v-if="isDesktopViewport" v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1120px]' }">
-      <UCard :ui="{ body: { padding: 'p-0 sm:p-0' } }">
+      <UCard class="app-shell-panel overflow-hidden rounded-[30px]" :ui="{ ring: '', body: { padding: 'p-0 sm:p-0' } }">
         <template #header>
           <div class="flex items-center justify-between">
             <h3 class="text-base font-semibold">系统菜单</h3>
@@ -3922,16 +3922,16 @@ onUnmounted(() => {
         </template>
 
         <div class="h-[72vh] min-h-[520px] flex">
-          <aside class="w-48 border-r border-slate-200 dark:border-slate-800 p-2 bg-slate-50/70 dark:bg-slate-900/70">
+          <aside class="app-shell-glass w-48 border-r border-slate-200/60 p-2 dark:border-slate-800/70">
             <button
               v-for="item in systemMenuItems"
               :key="item.id"
               type="button"
-              class="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left"
+              class="w-full flex items-center gap-2 rounded-[18px] px-3 py-2 text-left text-sm transition-all duration-200"
               :class="
                 systemMenuActive === item.id
-                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  ? 'bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:bg-slate-100 dark:text-slate-900'
+                  : 'text-slate-600 hover:bg-white/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
               "
               @click="openSystemMenu(item.id)"
             >
@@ -3940,7 +3940,7 @@ onUnmounted(() => {
             </button>
           </aside>
 
-          <section class="flex-1 bg-white dark:bg-slate-950">
+          <section class="flex-1 bg-transparent">
             <div id="title" class="hidden" />
             <KeepAlive>
               <component :is="activeSystemMenuComponent" class="h-full" />
@@ -3954,10 +3954,11 @@ onUnmounted(() => {
 
 <style scoped>
 .icon-btn {
-  @apply !inline-flex size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200 dark:border-slate-700
+  @apply !inline-flex size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-white/80 dark:border-white/10
     bg-white/80 dark:bg-slate-900/80 text-slate-600 dark:text-slate-300
-    hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900
-    hover:border-slate-300 dark:hover:border-slate-500 transition-colors;
+    hover:-translate-y-px hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900
+    transition-all duration-200;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .icon-btn :deep(.iconify),
@@ -3975,8 +3976,9 @@ onUnmounted(() => {
 }
 
 .avatar-btn {
-  @apply size-8 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700
-    bg-white dark:bg-slate-900 flex items-center justify-center hover:ring-2 hover:ring-blue-400/40 transition;
+  @apply size-8 rounded-full overflow-hidden border border-white/80 dark:border-white/10
+    bg-white/80 dark:bg-slate-900/80 flex items-center justify-center hover:-translate-y-px transition-all duration-200;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .cookie-inline-text {
@@ -4005,11 +4007,11 @@ onUnmounted(() => {
 
 .mobile-header-underlay-glyph,
 .mobile-header-underlay-icon {
-  @apply block size-7 shrink-0 rounded-full border border-slate-200/70 bg-white/70 dark:border-slate-700/60 dark:bg-slate-900/70;
+  @apply block size-7 shrink-0 rounded-full border border-white/80 bg-white/80 dark:border-white/10 dark:bg-slate-900/80;
 }
 
 .article-star-underlay {
-  @apply inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-400 dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-500;
+  @apply inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-slate-400 dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-500;
 }
 
 .article-star-underlay.is-active {
@@ -4017,7 +4019,7 @@ onUnmounted(() => {
 }
 
 .article-account-avatar {
-  @apply inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800;
+  @apply inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/70 bg-slate-200 dark:border-white/10 dark:bg-slate-800;
 }
 
 .account-new-dot {

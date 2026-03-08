@@ -100,18 +100,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <footer class="flex flex-col space-y-2 pt-3 border-t dark:border-slate-600">
-    <div v-if="loginAccount" class="space-y-3">
-      <div class="flex items-center space-x-2">
+  <footer class="space-y-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/80">
+    <div v-if="loginAccount" class="app-shell-muted space-y-3 rounded-[24px] p-3">
+      <div class="flex items-center gap-3">
         <img
           v-if="loginAccount.avatar"
           :src="IMAGE_PROXY + loginAccount.avatar"
           alt=""
-          class="rounded-full size-10 ring-1 ring-gray-300"
+          class="size-10 rounded-full ring-1 ring-white/80 dark:ring-slate-700"
         />
         <UTooltip
           v-if="loginAccount.nickname"
-          class="flex-1 overflow-hidden"
+          class="min-w-0 flex-1 overflow-hidden"
           :popper="{ placement: 'top-start', offsetDistance: 16 }"
         >
           <template #text>
@@ -123,19 +123,30 @@ onUnmounted(() => {
         <UButton
           icon="i-heroicons-arrow-left-start-on-rectangle-16-solid"
           :loading="logoutBtnLoading"
-          class="bg-slate-10 hover:bg-rose-500 disabled:bg-rose-500"
+          color="gray"
+          variant="ghost"
+          class="rounded-full border border-white/70 bg-white/80 hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:hover:bg-slate-900"
           @click="logout"
           >退出
         </UButton>
       </div>
-      <div class="text-sm">
+      <div class="flex items-center justify-between gap-3 text-sm">
         <span>登录信息过期时间还剩: </span>
         <span class="font-mono" :class="warning ? 'text-rose-500' : 'text-green-500'">{{ distance }}</span>
       </div>
     </div>
-    <div v-else>
+    <div v-else class="login-card app-shell-muted rounded-[24px] p-3">
       <UButton color="gray" variant="solid" @click="login">登录公众号</UButton>
     </div>
-    <StorageUsage />
+    <div class="app-shell-muted rounded-[24px] p-3">
+      <StorageUsage />
+    </div>
   </footer>
 </template>
+
+<style scoped>
+.login-card :deep(button) {
+  width: 100%;
+  border-radius: 9999px;
+}
+</style>

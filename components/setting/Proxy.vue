@@ -1,5 +1,5 @@
 <template>
-  <UCard class="h-full">
+  <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">代理节点</h3>
       <p class="mt-2 text-sm">
@@ -10,14 +10,14 @@
     <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
       <textarea
         v-model="textareaValue"
-        class="h-72 w-full resize-none rounded-2xl border border-slate-200 p-3 font-mono text-sm dark:border-slate-700 dark:bg-slate-950"
+        class="h-72 w-full resize-none rounded-[26px] border border-white/75 bg-white/80 p-4 font-mono text-sm shadow-[0_18px_32px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80"
         spellcheck="false"
         placeholder="每行一个代理地址，例如：https://proxy-01.example.com"
       />
 
       <div class="w-full space-y-4 lg:max-w-md">
         <div
-          class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 dark:border-slate-800 dark:bg-slate-950/60"
+          class="app-shell-muted rounded-[26px] p-4 text-sm leading-7 sm:p-5"
         >
           <p class="font-medium">使用要求</p>
           <ol class="mt-2 list-decimal space-y-2 pl-5 text-slate-600 dark:text-slate-300">
@@ -32,10 +32,10 @@
         </div>
 
         <div class="flex gap-3">
-          <UButton type="button" color="black" class="flex-1 justify-center sm:w-24" @click="save">
+          <UButton type="button" color="black" class="flex-1 justify-center rounded-full sm:w-24" @click="save">
             {{ saveBtnText }}
           </UButton>
-          <UButton type="button" color="gray" variant="soft" class="justify-center sm:w-24" @click="clear">
+          <UButton type="button" color="gray" variant="soft" class="justify-center rounded-full sm:w-24" @click="clear">
             清空
           </UButton>
         </div>
@@ -53,6 +53,12 @@ import type { Preferences } from '~/types/preferences';
 
 const toast = toastFactory();
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const cardUi = {
+  ring: '',
+  divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
+  header: { padding: 'px-5 pb-0 pt-5 sm:px-6 sm:pt-6' },
+  body: { padding: 'px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-5' },
+};
 
 const textareaValue = ref('');
 const saveBtnText = ref('保存');

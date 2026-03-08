@@ -1,16 +1,16 @@
 <template>
-  <UCard class="h-full">
+  <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">导出选项</h3>
       <p class="text-sm text-slate-500">配置文章导出时的目录规则和内容包含策略。</p>
     </template>
 
     <div class="space-y-5">
-      <div>
+      <div class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <p class="mb-2 flex items-center gap-2">
           <span class="text-sm font-medium">导出目录名</span>
           <UPopover mode="hover" :popper="{ placement: 'bottom-start' }">
-            <UButton color="white" size="sm" trailing-icon="i-heroicons:variable-16-solid" />
+            <UButton color="white" size="sm" class="rounded-full" trailing-icon="i-heroicons:variable-16-solid" />
 
             <template #panel>
               <div class="w-[min(42rem,88vw)] overflow-x-auto p-4">
@@ -44,7 +44,7 @@
         />
       </div>
 
-      <div class="space-y-2">
+      <div class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <p class="text-sm font-medium">目录名最大长度</p>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
           <UInput
@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <div class="space-y-3">
+      <div class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <UCheckbox
           v-model="preferences.exportConfig.exportExcelIncludeContent"
           name="exportExcelIncludeContent"
@@ -91,6 +91,12 @@
 import type { Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const cardUi = {
+  ring: '',
+  divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
+  header: { padding: 'px-5 pb-0 pt-5 sm:px-6 sm:pt-6' },
+  body: { padding: 'px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-5' },
+};
 
 const _variables = [
   { name: 'account', description: '公众号名称' },
@@ -112,12 +118,12 @@ const variables = Array.from({ length: Math.ceil(_variables.length / 2) }, (_, i
 
 <style scoped>
 table th {
-  padding: 0.5rem 0.25rem;
+  padding: 0.55rem 0.4rem;
 }
 
 table td {
-  border: 1px solid #00002d17;
-  padding: 0.25rem 0.5rem;
+  border: 1px solid rgb(226 232 240 / 0.72);
+  padding: 0.45rem 0.6rem;
 }
 
 td:first-child,
@@ -131,15 +137,33 @@ th:last-child {
 }
 
 th {
-  border: 1px solid #00002d17;
+  border: 1px solid rgb(226 232 240 / 0.72);
   border-top: none;
+  background: rgb(255 255 255 / 0.78);
 }
 
 tr:nth-child(even) {
-  background-color: #00005506;
+  background-color: rgb(248 250 252 / 0.72);
 }
 
 tr:hover {
-  background-color: #00005506;
+  background-color: rgb(241 245 249 / 0.88);
+}
+
+:global(html.dark) table td,
+:global(html.dark) table th {
+  border-color: rgb(51 65 85 / 0.7);
+}
+
+:global(html.dark) table th {
+  background: rgb(15 23 42 / 0.72);
+}
+
+:global(html.dark) tr:nth-child(even) {
+  background-color: rgb(15 23 42 / 0.24);
+}
+
+:global(html.dark) tr:hover {
+  background-color: rgb(30 41 59 / 0.42);
 }
 </style>
