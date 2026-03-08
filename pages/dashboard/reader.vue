@@ -677,14 +677,6 @@ const selectedArticleDisplayTitle = computed(() => {
   return articleDisplayTitle(selectedArticle.value);
 });
 
-const selectedArticleIndex = computed(() => {
-  if (!selectedArticle.value) {
-    return -1;
-  }
-  const currentKey = articleKey(selectedArticle.value);
-  return displayedArticles.value.findIndex(article => articleKey(article) === currentKey);
-});
-
 const selectedArticleUrls = computed(() => {
   if (selectedArticleKeys.value.size === 0) {
     return [] as string[];
@@ -1728,23 +1720,11 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 
   if (context === 'article') {
+    if (mobileDragSession.edge !== 'left') {
+      return;
+    }
     mobileArticleDragControls.start(event);
   }
-}
-
-async function openAdjacentArticle(step: number) {
-  const currentIndex = selectedArticleIndex.value;
-  if (currentIndex < 0) {
-    return false;
-  }
-
-  const target = displayedArticles.value[currentIndex + step];
-  if (!target) {
-    return false;
-  }
-
-  await openArticle(target);
-  return true;
 }
 
 function getMobileSwipeValue(context: MobileInteractiveSwipeContext) {
@@ -1778,14 +1758,6 @@ async function animateMobileSwipeValue(
 function canNavigateMobileHistory(delta: number) {
   const nextIndex = mobileHistoryIndex.value + delta;
   return nextIndex >= 0 && nextIndex < mobileHistory.value.length;
-}
-
-function hasAdjacentArticle(step: number) {
-  const currentIndex = selectedArticleIndex.value;
-  if (currentIndex < 0) {
-    return false;
-  }
-  return Boolean(displayedArticles.value[currentIndex + step]);
 }
 
 function resolveMobileSwipeAction(
@@ -1848,19 +1820,11 @@ function resolveMobileSwipeAction(
       };
     }
 
-    if (hasAdjacentArticle(-1)) {
-      return { kind: 'transition', execute: async () => void (await openAdjacentArticle(-1)) };
-    }
-
     return { kind: 'noop', execute: async () => {} };
   }
 
   if (edge === 'right' && canNavigateMobileHistory(1)) {
     return { kind: 'transition', execute: async () => void (await navigateMobileHistory(1)) };
-  }
-
-  if (hasAdjacentArticle(1)) {
-    return { kind: 'transition', execute: async () => void (await openAdjacentArticle(1)) };
   }
 
   return { kind: 'noop', execute: async () => {} };
