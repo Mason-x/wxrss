@@ -761,10 +761,9 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
-const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 88;
+const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 96;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 56;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
-const MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN = 14;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -1775,10 +1774,10 @@ function getMobileArticleFavoriteZoneRect() {
   const revealOffset = (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
 
   return {
-    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE + revealOffset,
-    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE,
-    right: width - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN + revealOffset,
-    bottom: height - MOBILE_ARTICLE_FAVORITE_CORNER_MARGIN,
+    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2 + revealOffset,
+    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2,
+    right: width + MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2 + revealOffset,
+    bottom: height + MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2,
   };
 }
 
@@ -3205,12 +3204,17 @@ onUnmounted(() => {
 
           <motion.div
             v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
-            class="pointer-events-none absolute bottom-[14px] right-[14px] z-20"
-            :style="{ x: mobileArticleFavoriteCornerX, opacity: mobileArticleFavoriteCornerOpacity, scale: mobileArticleFavoriteCornerScale }"
+            class="pointer-events-none absolute z-20"
+            :style="{
+              right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+              bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+              x: mobileArticleFavoriteCornerX,
+              opacity: mobileArticleFavoriteCornerOpacity,
+              scale: mobileArticleFavoriteCornerScale,
+            }"
           >
             <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
-              <UIcon name="i-heroicons:star" class="size-5" />
-              <span>收藏</span>
+              <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
             </div>
           </motion.div>
 
@@ -4206,12 +4210,12 @@ onUnmounted(() => {
 }
 
 .mobile-article-favorite-corner {
-  @apply flex h-[88px] w-[88px] flex-col items-center justify-center gap-1 rounded-full text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
+  @apply relative h-[96px] w-[96px] rounded-full text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
   background-color: rgba(148, 163, 184, 0.96);
 }
 
-.mobile-article-favorite-corner span {
-  @apply text-[10px] font-medium tracking-[0.08em];
+.mobile-article-favorite-corner-icon {
+  @apply absolute left-[18px] top-[18px] size-5;
 }
 
 .mobile-article-favorite-corner.is-ready {
