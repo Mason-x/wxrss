@@ -761,8 +761,8 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
-const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 96;
-const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 56;
+const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 144;
+const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 76;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.15;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
@@ -4210,12 +4210,12 @@ onUnmounted(() => {
 }
 
 .mobile-article-favorite-corner {
-  @apply relative h-[96px] w-[96px] rounded-full text-slate-500 shadow-[-12px_-12px_28px_rgba(15,23,42,0.12)] dark:text-slate-300;
+  @apply relative h-[144px] w-[144px] rounded-full text-slate-500 shadow-[-16px_-16px_34px_rgba(15,23,42,0.14)] dark:text-slate-300;
   background-color: rgba(148, 163, 184, 0.96);
 }
 
 .mobile-article-favorite-corner-icon {
-  @apply absolute left-[18px] top-[18px] size-5;
+  @apply absolute left-[28px] top-[28px] size-7;
 }
 
 .mobile-article-favorite-corner.is-ready {
