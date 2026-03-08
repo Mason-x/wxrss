@@ -12,7 +12,6 @@ import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import LoadingCards from '~/components/mobile/LoadingCards.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
-import LoginModal from '~/components/modal/Login.vue';
 import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
@@ -203,6 +202,8 @@ type SchedulerArticleMap = Record<string, SchedulerArticleEntry>;
 const toast = toastFactory();
 const modal = useModal();
 const { checkLogin } = useLoginCheck();
+const route = useRoute();
+const { navigateToLogin } = useMpAuth();
 const loginAccount = useLoginAccount();
 const preferences = usePreferences();
 const { getSyncTimestamp } = useSyncDeadline();
@@ -1514,7 +1515,7 @@ async function refreshData() {
   } catch (error: any) {
     const statusCode = Number(error?.statusCode || error?.response?.status || 0);
     if (statusCode === 401) {
-      modal.open(LoginModal);
+      void navigateToLogin(route.fullPath);
     }
     const message = normalizeRuntimeErrorMessage(String(error?.message || '未知错误'));
     toast.error('加载数据失败', message);
@@ -2289,7 +2290,7 @@ function openSystemMenu(menu?: SystemMenuId) {
 }
 
 function openLogin() {
-  modal.open(LoginModal);
+  void navigateToLogin(route.fullPath);
 }
 
 async function logoutMp() {
@@ -2574,7 +2575,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true) {
       isSyncing.value = false;
       upsertSyncProgress(account.fakeid, { running: false });
       if (e.message === 'session expired') {
-        modal.open(LoginModal);
+        void navigateToLogin(route.fullPath);
       }
       reject(e);
     });

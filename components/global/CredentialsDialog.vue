@@ -140,7 +140,6 @@
 <script setup lang="ts">
 import dayjs from 'dayjs';
 import { getArticleList, getArticleListWithCredential } from '~/apis';
-import LoginModal from '~/components/modal/Login.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { CREDENTIAL_API_HOST, CREDENTIAL_LIVE_MINUTES, isDev } from '~/config';
@@ -184,7 +183,8 @@ for (const item of credentials.value) {
 const validCredentialCount = computed(() => credentials.value.filter(c => c.valid).length);
 const pendingCredentialCount = computed(() => credentials.value.filter(c => c.valid && !c.added).length);
 const toast = toastFactory();
-const modal = useModal();
+const route = useRoute();
+const { navigateToLogin } = useMpAuth();
 
 const addingBiz = ref<string | null>(null);
 
@@ -499,7 +499,7 @@ async function addAccount(credential: ParsedCredential) {
     accountEventBus.emit('account-added', { fakeid: credential.biz });
   } catch (error: any) {
     if (error?.message === 'session expired') {
-      modal.open(LoginModal);
+      void navigateToLogin(route.fullPath);
     } else {
       toast.error('添加公众号失败', error?.message || '未知错误');
     }

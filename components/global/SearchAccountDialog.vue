@@ -79,12 +79,12 @@
 <script setup lang="ts">
 import { Loader } from 'lucide-vue-next';
 import { getAccountList } from '~/apis';
-import LoginModal from '~/components/modal/Login.vue';
 import { ACCOUNT_LIST_PAGE_SIZE, ACCOUNT_TYPE } from '~/config';
 import type { AccountInfo } from '~/types/types';
 
 const toast = useToast();
-const modal = useModal();
+const route = useRoute();
+const { navigateToLogin } = useMpAuth();
 
 const isOpen = ref(false);
 
@@ -121,7 +121,7 @@ async function loadData() {
     noMoreData.value = completed;
   } catch (e: any) {
     if (e.message === 'session expired') {
-      modal.open(LoginModal);
+      void navigateToLogin(route.fullPath);
     } else {
       console.error(e);
       toast.add({

@@ -21,7 +21,6 @@ import GridLoadProgress from '~/components/grid/LoadProgress.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
-import LoginModal from '~/components/modal/Login.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { IMAGE_PROXY, websiteName } from '~/config';
@@ -46,6 +45,8 @@ interface PromiseInstance {
 const toast = toastFactory();
 const modal = useModal();
 const { checkLogin } = useLoginCheck();
+const route = useRoute();
+const { navigateToLogin } = useMpAuth();
 
 const { getSyncTimestamp } = useSyncDeadline();
 
@@ -170,7 +171,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true) {
       isSyncing.value = false;
 
       if (e.message === 'session expired') {
-        modal.open(LoginModal);
+        void navigateToLogin(route.fullPath);
       }
       reject(e);
     });
@@ -405,7 +406,7 @@ async function refresh() {
   } catch (error: any) {
     const statusCode = Number(error?.statusCode || error?.response?.status || 0);
     if (statusCode === 401) {
-      modal.open(LoginModal);
+      void navigateToLogin(route.fullPath);
     }
     const rawMessage = String(error?.message || '未知错误');
     const message = rawMessage.includes('Worker terminated due to reaching memory limit')

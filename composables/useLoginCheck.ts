@@ -1,15 +1,14 @@
-import LoginModal from '~/components/modal/Login.vue';
-
 export default () => {
-  const modal = useModal();
-  const loginAccount = useLoginAccount();
+  const route = useRoute();
+  const { loginAccount, isLoginExpired, navigateToLogin } = useMpAuth();
 
-  // 检查是否有登录信息
   function checkLogin() {
-    if (loginAccount.value === null) {
-      modal.open(LoginModal);
+    if (!loginAccount.value || isLoginExpired(loginAccount.value)) {
+      loginAccount.value = null;
+      void navigateToLogin(route.fullPath);
       return false;
     }
+
     return true;
   }
 

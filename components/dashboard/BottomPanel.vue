@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { formatDistance } from 'date-fns';
 import { request } from '#shared/utils/request';
-import LoginModal from '~/components/modal/Login.vue';
 import StorageUsage from '~/components/StorageUsage.vue';
 import { IMAGE_PROXY } from '~/config';
 import type { LogoutResponse } from '~/types/types';
 
 const loginAccount = useLoginAccount();
-const modal = useModal();
+const route = useRoute();
+const { navigateToLogin } = useMpAuth();
 
 const now = ref(new Date());
 const distance = computed(() => {
@@ -72,7 +72,7 @@ const warning = computed(() => {
 });
 
 function login() {
-  modal.open(LoginModal);
+  void navigateToLogin(route.fullPath);
 }
 
 const logoutBtnLoading = ref(false);
