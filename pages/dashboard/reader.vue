@@ -87,6 +87,24 @@ interface MobileHistoryState {
   articleKey: string | null;
 }
 
+interface MobileArticlesLayerSnapshot {
+  categoryId: string;
+  accountId: string | null;
+  favoriteOnly: boolean;
+  title: string;
+  meta: string;
+  articles: ReaderArticle[];
+  totalCount: number;
+  pageOffset: number;
+  pageHasMore: boolean;
+  emptyState: {
+    icon: string;
+    title: string;
+    description: string;
+  };
+  scrollTop: number;
+}
+
 type MobileSwipeContext = 'articles' | 'article' | 'drawer';
 type MobileSwipeEdge = 'left' | 'right' | 'none';
 
@@ -104,6 +122,13 @@ interface MobileSwipeResolvedAction {
   kind: 'transition' | 'rebound' | 'noop';
   revealPreviousLayer?: boolean;
   execute: () => Promise<void>;
+}
+
+interface MobileHeaderLayerState {
+  kind: 'articles' | 'article';
+  title: string;
+  meta: string;
+  accountId: string | null;
 }
 
 function normalizeReaderRuntimeState(input?: Partial<ReaderRuntimeState> | null): ReaderRuntimeState {
@@ -709,6 +734,9 @@ const isDesktopViewport = ref(false);
 const mobileHistory = ref<MobileHistoryState[]>([]);
 const mobileHistoryIndex = ref(-1);
 const mobileHistoryApplying = ref(false);
+const mobileArticlesUnderlayActive = ref(false);
+const mobileArticlesUnderlaySnapshot = ref<MobileArticlesLayerSnapshot | null>(null);
+const mobilePendingArticlesRestore = ref<MobileArticlesLayerSnapshot | null>(null);
 const mobileArticleUnderlayActive = ref(false);
 const mobileDragSession = reactive<MobileDragSession>({
   context: null,
@@ -726,10 +754,17 @@ const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
 const MOBILE_SWIPE_VELOCITY_THRESHOLD = 280;
 const MOBILE_SWIPE_REENTRY_OFFSET_RATIO = 0.12;
 const MOBILE_SWIPE_REENTRY_MAX_OFFSET = 44;
+const MOBILE_ARTICLES_UNDERLAY_BASE_X = -16;
+const MOBILE_ARTICLES_UNDERLAY_BASE_SCALE = 0.988;
+const MOBILE_ARTICLES_UNDERLAY_BASE_OPACITY = 0.94;
+const MOBILE_ARTICLES_UNDERLAY_SCRIM_OPACITY = 0.08;
 const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
+const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
+const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
+const MOBILE_UNDERLAY_WINDOW_BUFFER = 6;
 
 function getMobileViewportWidth() {
   if (typeof window === 'undefined') {
@@ -737,6 +772,26 @@ function getMobileViewportWidth() {
   }
   return Math.max(window.innerWidth || 390, 1);
 }
+
+const mobileArticlesUnderlayX = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticlesSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLES_UNDERLAY_BASE_X + progress * Math.abs(MOBILE_ARTICLES_UNDERLAY_BASE_X);
+});
+
+const mobileArticlesUnderlayScale = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticlesSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLES_UNDERLAY_BASE_SCALE + progress * (1 - MOBILE_ARTICLES_UNDERLAY_BASE_SCALE);
+});
+
+const mobileArticlesUnderlayOpacity = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticlesSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLES_UNDERLAY_BASE_OPACITY + progress * (1 - MOBILE_ARTICLES_UNDERLAY_BASE_OPACITY);
+});
+
+const mobileArticlesUnderlayScrimOpacity = transformValue(() => {
+  const progress = Math.max(0, Math.min(1, mobileArticlesSwipeX.get() / getMobileViewportWidth()));
+  return MOBILE_ARTICLES_UNDERLAY_SCRIM_OPACITY * (1 - progress);
+});
 
 const mobileArticleUnderlayX = transformValue(() => {
   const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
@@ -767,7 +822,7 @@ const mobilePageTransition = computed(() =>
 );
 
 const mobileSwipeElastic = computed(() =>
-  prefersReducedMotion.value ? { left: 1, right: 1 } : { left: 0.96, right: 0.96 }
+  prefersReducedMotion.value ? { left: 1, right: 1 } : { left: 0.92, right: 0.92 }
 );
 
 const mobileDrawerElastic = computed(() =>
@@ -787,40 +842,91 @@ const mobileDrawerSnapTransition = computed(() =>
 );
 
 const mobileSwipeCommitTransition = computed(() =>
-  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.18, ease: [0.22, 1, 0.36, 1] as const }
+  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const }
 );
 
 const mobileSwipeReboundTransition = computed(() =>
-  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const }
+  prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.12, ease: [0.22, 1, 0.36, 1] as const }
 );
 
 const mobileSwipeReentryTransition = computed(() =>
   prefersReducedMotion.value ? { duration: 0.09 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const }
 );
 
-const mobileHeaderTitle = computed(() => {
-  if (mobileView.value === 'article') {
-    return selectedArticleDisplayTitle.value || '文章阅读';
-  }
-  if (selectedAccount.value) {
-    return selectedAccountInfo.value?.nickname || '文章列表';
-  }
-  return '全部文章';
+const mobileArticlesHeaderState = computed<MobileHeaderLayerState>(() => {
+  const baseMeta = selectedAccount.value
+    ? `${articleTotalCount.value} 篇文章`
+    : `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个公众号`;
+  const dynamicMeta = selectedAccount.value ? activeAccountSyncStatus.value : headerBatchSyncProgressText.value;
+
+  return {
+    kind: 'articles',
+    title: articleListTitle.value,
+    meta: dynamicMeta ? `${baseMeta} · ${dynamicMeta}` : baseMeta,
+    accountId: selectedAccount.value,
+  };
 });
 
-const mobileHeaderMeta = computed(() => {
+const mobileCurrentHeaderState = computed<MobileHeaderLayerState>(() => {
   if (mobileView.value === 'article' && selectedArticle.value) {
     const author = selectedArticle.value.author_name || selectedArticle.value.accountName || '未知发布者';
     const publishTime = formatTimeStamp(selectedArticle.value.update_time || selectedArticle.value.create_time);
-    return `${author} · ${publishTime}`;
+    return {
+      kind: 'article',
+      title: selectedArticleDisplayTitle.value || '文章阅读',
+      meta: `${author} · ${publishTime}`,
+      accountId: null,
+    };
   }
-  if (selectedAccount.value) {
-    return activeAccountSyncStatus.value || `${articleTotalCount.value} 篇文章`;
+  return mobileArticlesHeaderState.value;
+});
+
+const mobileHeaderUnderlayState = computed<MobileHeaderLayerState | null>(() => {
+  if (mobileView.value === 'article' && mobileArticleUnderlayActive.value) {
+    return mobileArticlesHeaderState.value;
   }
-  if (headerBatchSyncProgressText.value) {
-    return headerBatchSyncProgressText.value;
+
+  if (mobileView.value === 'articles' && mobileArticlesUnderlayActive.value && mobileArticlesUnderlaySnapshot.value) {
+    return {
+      kind: 'articles',
+      title: mobileArticlesUnderlaySnapshot.value.title,
+      meta: mobileArticlesUnderlaySnapshot.value.meta,
+      accountId: mobileArticlesUnderlaySnapshot.value.accountId,
+    };
   }
-  return `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个公众号`;
+
+  return null;
+});
+
+const mobileCurrentHeaderX = transformValue(() =>
+  mobileView.value === 'article' ? mobileArticleSwipeX.get() : mobileArticlesSwipeX.get()
+);
+
+const mobileHeaderUnderlayStyle = computed(() =>
+  mobileView.value === 'article'
+    ? { x: mobileArticleUnderlayX, scale: mobileArticleUnderlayScale, opacity: mobileArticleUnderlayOpacity }
+    : { x: mobileArticlesUnderlayX, scale: mobileArticlesUnderlayScale, opacity: mobileArticlesUnderlayOpacity }
+);
+
+const mobileArticlesUnderlayWindow = computed(() => {
+  const snapshot = mobileArticlesUnderlaySnapshot.value;
+  if (!snapshot) {
+    return {
+      items: [] as ReaderArticle[],
+      translateY: 0,
+    };
+  }
+
+  const start = Math.max(
+    0,
+    Math.floor(snapshot.scrollTop / MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT) - MOBILE_UNDERLAY_WINDOW_BUFFER
+  );
+  const end = Math.min(snapshot.articles.length, start + MOBILE_UNDERLAY_WINDOW_SIZE);
+
+  return {
+    items: snapshot.articles.slice(start, end),
+    translateY: start * MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT - snapshot.scrollTop,
+  };
 });
 
 watch(mobileView, () => {
@@ -831,8 +937,85 @@ watch(mobileView, () => {
   }
   if (mobileView.value !== 'articles') {
     mobileArticlesSwipeX.set(0);
+    mobileArticlesUnderlayActive.value = false;
   }
 });
+
+function buildMobileArticlesLayerSnapshot(): MobileArticlesLayerSnapshot {
+  return {
+    categoryId: selectedCategory.value,
+    accountId: selectedAccount.value,
+    favoriteOnly: Boolean(favoriteOnly.value),
+    title: mobileArticlesHeaderState.value.title,
+    meta: mobileArticlesHeaderState.value.meta,
+    articles: displayedArticles.value.slice(),
+    totalCount: articleTotalCount.value,
+    pageOffset: articlePageOffset.value,
+    pageHasMore: articlePageHasMore.value,
+    emptyState: { ...articleListEmptyState.value },
+    scrollTop: resolveScrollableElement(mobileArticlesListRef.value)?.scrollTop || 0,
+  };
+}
+
+function rememberMobileArticlesUnderlaySnapshot() {
+  if (isDesktopViewport.value || mobileView.value !== 'articles') {
+    return;
+  }
+
+  mobileArticlesUnderlaySnapshot.value = buildMobileArticlesLayerSnapshot();
+}
+
+function matchesMobileArticlesSnapshot(
+  snapshot: MobileArticlesLayerSnapshot | null,
+  state: Pick<MobileHistoryState, 'categoryId' | 'accountId'>
+) {
+  if (!snapshot) {
+    return false;
+  }
+
+  return (
+    snapshot.categoryId === state.categoryId &&
+    snapshot.accountId === state.accountId &&
+    snapshot.favoriteOnly === Boolean(favoriteOnly.value)
+  );
+}
+
+function restoreMobileArticlesLayerSnapshot(snapshot: MobileArticlesLayerSnapshot) {
+  articleRows.value = snapshot.articles.slice();
+  articleTotalCount.value = snapshot.totalCount;
+  articlePageOffset.value = snapshot.pageOffset;
+  articlePageHasMore.value = snapshot.pageHasMore;
+}
+
+function restoreMobileArticlesScrollTop(scrollTop: number) {
+  requestAnimationFrame(() => {
+    const container = resolveScrollableElement(mobileArticlesListRef.value);
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = scrollTop;
+    onMobileReaderScroll();
+  });
+}
+
+function setMobileUnderlayActive(context: MobileInteractiveSwipeContext, active: boolean) {
+  if (context === 'article') {
+    mobileArticleUnderlayActive.value = active;
+    return;
+  }
+
+  mobileArticlesUnderlayActive.value = active && Boolean(mobileArticlesUnderlaySnapshot.value);
+}
+
+function clearMobileUnderlay(context?: MobileInteractiveSwipeContext) {
+  if (!context || context === 'article') {
+    mobileArticleUnderlayActive.value = false;
+  }
+  if (!context || context === 'articles') {
+    mobileArticlesUnderlayActive.value = false;
+  }
+}
 
 const cookieRemainText = computed(() => {
   if (!loginAccount.value?.expires) {
@@ -1236,6 +1419,18 @@ watch(accountsInSelectedCategory, list => {
 watch(
   () => [selectedCategory.value, selectedAccount.value, Boolean(favoriteOnly.value)],
   async () => {
+    if (
+      matchesMobileArticlesSnapshot(mobilePendingArticlesRestore.value, {
+        categoryId: selectedCategory.value,
+        accountId: selectedAccount.value,
+      })
+    ) {
+      mobilePendingArticlesRestore.value = null;
+      clearSelectionOutOfScope();
+      return;
+    }
+
+    mobilePendingArticlesRestore.value = null;
     await loadArticlePage(true);
     clearSelectionOutOfScope();
   }
@@ -1416,9 +1611,16 @@ async function applyMobileHistoryState(state: MobileHistoryState) {
       selectedArticleHtml.value = '';
       selectedArticleKeys.value.clear();
       selectionMode.value = false;
+      const snapshot = mobileArticlesUnderlaySnapshot.value;
+      if (matchesMobileArticlesSnapshot(snapshot, state) && snapshot) {
+        mobilePendingArticlesRestore.value = snapshot;
+        restoreMobileArticlesLayerSnapshot(snapshot);
+        restoreMobileArticlesScrollTop(snapshot.scrollTop);
+      }
       return true;
     }
 
+    mobilePendingArticlesRestore.value = null;
     let target = findDisplayedArticleByKey(state.articleKey);
     if (!target) {
       await loadArticlePage(true);
@@ -1489,7 +1691,18 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 
   if (context === 'article') {
-    mobileArticleUnderlayActive.value = !mobileDragSession.interactive && mobileDragSession.edge === 'left';
+    setMobileUnderlayActive(context, !mobileDragSession.interactive && mobileDragSession.edge === 'left');
+    return;
+  }
+
+  if (context === 'articles') {
+    setMobileUnderlayActive(
+      context,
+      !mobileDragSession.interactive &&
+        mobileDragSession.edge === 'left' &&
+        Boolean(selectedAccount.value) &&
+        Boolean(mobileArticlesUnderlaySnapshot.value)
+    );
   }
 }
 
@@ -1564,10 +1777,21 @@ function resolveMobileSwipeAction(
 ): MobileSwipeResolvedAction {
   if (context === 'articles') {
     if (deltaX > 0) {
-      if (selectedAccount.value) {
-        return { kind: 'transition', execute: () => backFromMobileView() };
+      if (selectedAccount.value && edge === 'left') {
+        if (canNavigateMobileHistory(-1)) {
+          return {
+            kind: 'transition',
+            revealPreviousLayer: true,
+            execute: async () => void (await navigateMobileHistory(-1)),
+          };
+        }
+        return {
+          kind: 'transition',
+          revealPreviousLayer: true,
+          execute: () => backFromMobileView(),
+        };
       }
-      if (!mobileAccountsPanelOpen.value) {
+      if (edge === 'left' && !mobileAccountsPanelOpen.value) {
         return {
           kind: 'rebound',
           execute: async () => {
@@ -1585,10 +1809,6 @@ function resolveMobileSwipeAction(
           mobileAccountsPanelOpen.value = false;
         },
       };
-    }
-
-    if (selectedAccount.value) {
-      return { kind: 'transition', execute: () => backFromMobileView() };
     }
 
     return { kind: 'noop', execute: async () => {} };
@@ -1646,51 +1866,45 @@ async function performMobileInteractiveSwipe(
 
   if (interactive || !committed) {
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
-    if (context === 'article') {
-      mobileArticleUnderlayActive.value = false;
-    }
+    clearMobileUnderlay(context);
     return;
   }
 
   const action = resolveMobileSwipeAction(context, effectiveOffset, edge);
   if (action.kind === 'noop') {
-    if (context === 'article') {
-      mobileArticleUnderlayActive.value = false;
-    }
+    clearMobileUnderlay(context);
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
     return;
   }
 
   if (action.kind === 'rebound') {
-    if (context === 'article') {
-      mobileArticleUnderlayActive.value = false;
-    }
+    clearMobileUnderlay(context);
     await animateMobileSwipeValue(context, 0, mobileSwipeReboundTransition.value);
     await action.execute();
     return;
   }
 
-  if (context === 'article') {
-    mobileArticleUnderlayActive.value = Boolean(action.revealPreviousLayer);
-  }
+  setMobileUnderlayActive(context, Boolean(action.revealPreviousLayer));
   const direction = effectiveOffset >= 0 ? 1 : -1;
   await animateMobileSwipeValue(context, getMobileSwipeCommitTarget(width, direction), mobileSwipeCommitTransition.value);
   await action.execute();
+
+  if (context === 'articles' && action.revealPreviousLayer) {
+    clearMobileUnderlay(context);
+    motionValue.set(0);
+    return;
+  }
 
   const contextStillActive =
     (context === 'articles' && mobileView.value === 'articles') || (context === 'article' && mobileView.value === 'article');
 
   if (!contextStillActive) {
-    if (context === 'article') {
-      mobileArticleUnderlayActive.value = false;
-    }
+    clearMobileUnderlay(context);
     motionValue.set(0);
     return;
   }
 
-  if (context === 'article') {
-    mobileArticleUnderlayActive.value = false;
-  }
+  clearMobileUnderlay(context);
   motionValue.set(getMobileSwipeReentryOffset(width, direction));
   await animateMobileSwipeValue(context, 0, mobileSwipeReentryTransition.value);
 }
@@ -1740,8 +1954,9 @@ async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
-  mobileArticleUnderlayActive.value = false;
+  clearMobileUnderlay();
   mobileArticleSwipeX.set(0);
+  mobileArticlesSwipeX.set(0);
   if (options.trackHistory !== false) {
     pushMobileHistoryState(buildMobileHistoryState({ articleKey: articleKey(article) }));
   }
@@ -1888,6 +2103,7 @@ function onClickCategory(categoryId: string) {
 }
 
 function onClickAccount(account: MpAccount) {
+  rememberMobileArticlesUnderlaySnapshot();
   clearAccountNewArticles(account.fakeid);
   selectedAccount.value = account.fakeid;
   selectedArticle.value = null;
@@ -2023,6 +2239,7 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
       false
     );
     await refreshData();
+    rememberMobileArticlesUnderlaySnapshot();
     selectedAccount.value = account.fakeid;
     toast.success('公众号添加成功', `已成功添加公众号【${account.nickname}】并完成首页同步`);
     accountEventBus.emit('account-added', { fakeid: account.fakeid });
@@ -2575,122 +2792,203 @@ onUnmounted(() => {
 <template>
   <div class="h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
     <div v-if="!isDesktopViewport" class="flex h-full flex-col">
-      <header class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/92 px-4 pb-3 pt-3 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0 flex flex-1 items-start gap-3">
-            <UButton
-              v-if="mobileCanGoBack"
-              size="2xs"
-              color="gray"
-              variant="ghost"
-              icon="i-lucide:chevron-left"
-              class="icon-btn mt-0.5"
-              @click="backFromMobileView"
-            />
-            <UButton
-              v-else
-              size="2xs"
-              color="gray"
-              variant="ghost"
-              icon="i-lucide:menu"
-              class="icon-btn mt-0.5"
-              @click="showMobileAccounts"
-            />
-            <div class="min-w-0 flex-1">
-              <div v-if="mobileView === 'articles' && selectedAccountInfo" class="flex items-center gap-2">
-                <h1 class="truncate text-base font-semibold">{{ mobileHeaderTitle }}</h1>
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:pencil"
-                  :disabled="!selectedAccountInfo"
-                  class="icon-btn shrink-0"
-                  @click="editSelectedAccountCategory"
-                />
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:minus"
-                  :disabled="!selectedAccount"
-                  :loading="isDeleting"
-                  class="icon-btn shrink-0"
-                  @click="deleteCurrentAccount"
-                />
+      <div class="relative z-10 overflow-hidden border-b border-slate-200 bg-slate-50/92 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/92">
+        <motion.div
+          v-if="mobileHeaderUnderlayState"
+          class="pointer-events-none absolute inset-0 z-0 px-4 pb-3 pt-3"
+          :style="mobileHeaderUnderlayStyle"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex flex-1 items-start gap-3">
+              <span class="mobile-header-underlay-glyph mt-0.5" />
+              <div class="min-w-0 flex-1">
+                <h1
+                  class="text-base font-semibold"
+                  :class="mobileHeaderUnderlayState.kind === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
+                >
+                  {{ mobileHeaderUnderlayState.title }}
+                </h1>
+                <p class="mt-1 truncate text-[11px] leading-4 text-slate-500/90 dark:text-slate-400/90">
+                  {{ mobileHeaderUnderlayState.meta }}
+                </p>
               </div>
-              <h1
-                v-else
-                class="text-base font-semibold"
-                :class="mobileView === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
-              >
-                {{ mobileHeaderTitle }}
-              </h1>
-              <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                <template v-if="mobileView === 'articles' && selectedAccountInfo">
-                  {{ articleTotalCount }} 篇文章
-                  <span v-if="activeAccountSyncStatus"> · {{ activeAccountSyncStatus }}</span>
-                </template>
-                <template v-else>
-                  {{ mobileHeaderMeta }}
-                </template>
-              </p>
+            </div>
+            <div class="flex items-center gap-2 opacity-80">
+              <span class="mobile-header-underlay-icon" />
+              <span class="mobile-header-underlay-icon" />
+              <span v-if="mobileHeaderUnderlayState.kind !== 'article'" class="mobile-header-underlay-icon" />
             </div>
           </div>
+        </motion.div>
 
-          <div class="flex items-center gap-2">
-            <UTooltip v-if="mobileView !== 'article'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+        <motion.header class="relative z-10 px-4 pb-3 pt-3" :style="{ x: mobileCurrentHeaderX }">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex flex-1 items-start gap-3">
               <UButton
+                v-if="mobileCanGoBack"
                 size="2xs"
                 color="gray"
                 variant="ghost"
-                :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                class="icon-btn mobile-favorite-toggle"
-                :class="favoriteOnly ? 'is-active' : ''"
-                @click="favoriteOnly = !favoriteOnly"
+                icon="i-lucide:chevron-left"
+                class="icon-btn mt-0.5"
+                @click="backFromMobileView"
               />
-            </UTooltip>
-            <UTooltip v-if="mobileView !== 'article'" :text="syncHeaderTooltip">
               <UButton
+                v-else
                 size="2xs"
                 color="gray"
                 variant="ghost"
-                icon="i-heroicons:arrow-path-rounded-square-20-solid"
-                :disabled="!canSyncFromHeader"
-                :loading="isSyncing"
-                class="icon-btn"
-                @click="onHeaderSyncClick"
+                icon="i-lucide:menu"
+                class="icon-btn mt-0.5"
+                @click="showMobileAccounts"
               />
-            </UTooltip>
-            <UTooltip v-else text="查看原文">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:external-link"
-                class="icon-btn"
-                :disabled="!selectedArticle"
-                @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
-              />
-            </UTooltip>
-            <UTooltip v-if="mobileView !== 'article'" text="系统菜单">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:layout-grid"
-                class="icon-btn"
-                @click="openSystemMenu()"
-              />
-            </UTooltip>
+              <div class="min-w-0 flex-1">
+                <div v-if="mobileView === 'articles' && selectedAccountInfo" class="flex items-center gap-2">
+                  <h1 class="truncate text-base font-semibold">{{ mobileCurrentHeaderState.title }}</h1>
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:pencil"
+                    :disabled="!selectedAccountInfo"
+                    class="icon-btn shrink-0"
+                    @click="editSelectedAccountCategory"
+                  />
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:minus"
+                    :disabled="!selectedAccount"
+                    :loading="isDeleting"
+                    class="icon-btn shrink-0"
+                    @click="deleteCurrentAccount"
+                  />
+                </div>
+                <h1
+                  v-else
+                  class="text-base font-semibold"
+                  :class="mobileCurrentHeaderState.kind === 'article' ? 'line-clamp-2 leading-5' : 'truncate'"
+                >
+                  {{ mobileCurrentHeaderState.title }}
+                </h1>
+                <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                  {{ mobileCurrentHeaderState.meta }}
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <UTooltip v-if="mobileView !== 'article'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                  class="icon-btn mobile-favorite-toggle"
+                  :class="favoriteOnly ? 'is-active' : ''"
+                  @click="favoriteOnly = !favoriteOnly"
+                />
+              </UTooltip>
+              <UTooltip v-if="mobileView !== 'article'" :text="syncHeaderTooltip">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                  :disabled="!canSyncFromHeader"
+                  :loading="isSyncing"
+                  class="icon-btn"
+                  @click="onHeaderSyncClick"
+                />
+              </UTooltip>
+              <UTooltip v-else text="查看原文">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:external-link"
+                  class="icon-btn"
+                  :disabled="!selectedArticle"
+                  @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
+                />
+              </UTooltip>
+              <UTooltip v-if="mobileView !== 'article'" text="系统菜单">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:layout-grid"
+                  class="icon-btn"
+                  @click="openSystemMenu()"
+                />
+              </UTooltip>
+            </div>
           </div>
-        </div>
-      </header>
+        </motion.header>
+      </div>
 
       <div class="relative min-h-0 flex-1 overflow-hidden">
         <motion.div
-          key="mobile-articles"
+          v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
           class="absolute inset-0 flex h-full flex-col bg-slate-50 dark:bg-slate-950"
+          :style="{ x: mobileArticlesUnderlayX, scale: mobileArticlesUnderlayScale, opacity: mobileArticlesUnderlayOpacity }"
+        >
+          <div class="mobile-underlay-layer pointer-events-none flex-1 overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3">
+            <div
+              v-if="mobileArticlesUnderlaySnapshot.articles.length > 0"
+              class="space-y-3 will-change-transform"
+              :style="{ transform: `translate3d(0, ${mobileArticlesUnderlayWindow.translateY}px, 0)` }"
+            >
+              <div
+                v-for="article in mobileArticlesUnderlayWindow.items"
+                :key="`underlay-${articleKey(article)}`"
+                class="rounded-[24px] border border-slate-200 bg-white px-4 py-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-900"
+              >
+                <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
+                <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span class="min-w-0 flex items-center gap-2 truncate">
+                    <span class="article-account-avatar">
+                      <img
+                        v-if="article.round_head_img"
+                        :src="IMAGE_PROXY + article.round_head_img"
+                        alt=""
+                        class="size-full object-cover"
+                      />
+                      <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                    </span>
+                    <span class="truncate">{{ article.accountName }}</span>
+                  </span>
+                  <span class="inline-flex shrink-0 items-center gap-1.5">
+                    <span v-if="isArticleUnread(article)" class="unread-dot" />
+                    <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
+                    <span class="article-star-underlay" :class="isArticleFavorite(article) ? 'is-active' : ''">
+                      <UIcon :name="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'" class="size-3.5" />
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="flex min-h-full items-center justify-center py-8">
+              <EmptyStatePanel
+                :icon="mobileArticlesUnderlaySnapshot.emptyState.icon"
+                :title="mobileArticlesUnderlaySnapshot.emptyState.title"
+                :description="mobileArticlesUnderlaySnapshot.emptyState.description"
+              />
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
+          class="pointer-events-none absolute inset-0 z-[1] bg-slate-950/8 dark:bg-slate-950/18"
+          :style="{ opacity: mobileArticlesUnderlayScrimOpacity }"
+        />
+
+        <motion.div
+          key="mobile-articles"
+          class="absolute inset-0 z-[2] flex h-full flex-col bg-slate-50 dark:bg-slate-950"
+          :class="mobileArticlesUnderlayActive ? 'shadow-[-18px_0_40px_rgba(15,23,42,0.12)]' : ''"
           :style="
             selectedArticle
               ? mobileArticleUnderlayActive
@@ -2807,7 +3105,7 @@ onUnmounted(() => {
 
         <motion.div
           v-if="selectedArticle && mobileArticleUnderlayActive"
-          class="pointer-events-none absolute inset-0 z-[1] bg-slate-950/8 dark:bg-slate-950/18"
+          class="pointer-events-none absolute inset-0 z-[3] bg-slate-950/8 dark:bg-slate-950/18"
           :style="{ opacity: mobileArticleUnderlayScrimOpacity }"
         />
 
@@ -3705,6 +4003,19 @@ onUnmounted(() => {
   @apply text-amber-500 hover:text-amber-500 border-amber-300 dark:border-amber-500/60 bg-amber-50 dark:bg-amber-500/10;
 }
 
+.mobile-header-underlay-glyph,
+.mobile-header-underlay-icon {
+  @apply block size-7 shrink-0 rounded-full border border-slate-200/70 bg-white/70 dark:border-slate-700/60 dark:bg-slate-900/70;
+}
+
+.article-star-underlay {
+  @apply inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-400 dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-500;
+}
+
+.article-star-underlay.is-active {
+  @apply border-amber-300 bg-amber-50 text-amber-500 dark:border-amber-500/60 dark:bg-amber-500/10;
+}
+
 .article-account-avatar {
   @apply inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800;
 }
@@ -3749,6 +4060,11 @@ onUnmounted(() => {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   will-change: transform, scroll-position;
+  transform: translateZ(0);
+}
+
+.mobile-underlay-layer {
+  contain: layout paint;
   transform: translateZ(0);
 }
 
