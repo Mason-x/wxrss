@@ -56,6 +56,13 @@ function nowSeconds(): number {
   return Math.round(Date.now() / 1000);
 }
 
+function resolveLatestArticleTime(articles: Array<Record<string, any>>): number {
+  return articles.reduce((latest, article) => {
+    const candidate = Number(article?.update_time || article?.create_time || 0);
+    return candidate > latest ? candidate : latest;
+  }, 0);
+}
+
 function hashString(value: string): string {
   let hash = 0;
   for (let i = 0; i < value.length; i++) {
@@ -297,7 +304,7 @@ async function applyAccountDelta(
     create_time: Number(current.create_time) || now,
     update_time: now,
     last_update_time: Number.isFinite(payload.last_update_time)
-      ? Number(payload.last_update_time)
+      ? Math.max(Number(payload.last_update_time) || 0, Number(current.last_update_time) || 0)
       : Number(current.last_update_time) || 0,
   };
 
@@ -431,7 +438,13 @@ export async function listAccounts(
     SELECT *
     FROM reader_accounts
     WHERE ${whereSql}
-    ORDER BY update_time DESC, nickname COLLATE NOCASE ASC
+    ORDER BY
+      CASE
+        WHEN last_update_time > 0 THEN last_update_time
+        WHEN create_time > 0 THEN create_time
+        ELSE 0
+      END DESC,
+      nickname COLLATE NOCASE ASC
     LIMIT ? OFFSET ?
     `,
     ...params,
@@ -752,6 +765,7 @@ export async function upsertArticles(
   const totalCount = Number.isFinite(payload.totalCount)
     ? Number(payload.totalCount)
     : Number(payload.account.total_count) || 0;
+  const latestArticleTime = resolveLatestArticleTime(articles);
 
   await applyAccountDelta(
     authKey,
@@ -760,6 +774,7 @@ export async function upsertArticles(
       fakeid,
       completed: Boolean(payload.completed),
       total_count: totalCount,
+      last_update_time: latestArticleTime || Number(payload.account.last_update_time) || 0,
     },
     messageDelta,
     inserted

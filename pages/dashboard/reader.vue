@@ -106,6 +106,13 @@ interface MobileDragSession {
   pointY: number;
 }
 
+interface MobileDrawerEdgeSwipeState {
+  active: boolean;
+  pointerId: number | null;
+  startX: number;
+  startY: number;
+}
+
 type MobileInteractiveSwipeContext = Extract<MobileSwipeContext, 'articles' | 'article'>;
 
 interface MobileSwipeResolvedAction {
@@ -264,9 +271,11 @@ const categoryEditorAdding = ref(false);
 const categoryDeleting = ref<string | null>(null);
 const systemMenuOpen = ref(false);
 const desktopAvatarMenuOpen = ref(false);
+const mobileAvatarMenuOpen = ref(false);
 
 const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
 const desktopAvatarMenuRef = ref<HTMLElement | null>(null);
+const mobileAvatarMenuRef = ref<HTMLElement | null>(null);
 
 const { accountEventBus } = useAccountEventBus();
 accountEventBus.on(event => {
@@ -569,8 +578,8 @@ const accountsInSelectedCategory = computed(() => {
   }
 
   return [...targets].sort((a, b) => {
-    const aTime = Number(a.last_update_time || a.update_time || a.create_time || 0);
-    const bTime = Number(b.last_update_time || b.update_time || b.create_time || 0);
+    const aTime = Number(a.last_update_time || a.create_time || 0);
+    const bTime = Number(b.last_update_time || b.create_time || 0);
     if (aTime !== bTime) {
       return bTime - aTime;
     }
@@ -721,6 +730,12 @@ const mobileArticlesUnderlayActive = ref(false);
 const mobileArticlesUnderlaySnapshot = ref<MobileArticlesLayerSnapshot | null>(null);
 const mobilePendingArticlesRestore = ref<MobileArticlesLayerSnapshot | null>(null);
 const mobileArticleUnderlayActive = ref(false);
+const mobileDrawerEdgeSwipe = reactive<MobileDrawerEdgeSwipeState>({
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+});
 const mobileDragSession = reactive<MobileDragSession>({
   context: null,
   interactive: false,
@@ -1723,14 +1738,45 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   }
 
   if (context === 'articles') {
-    setMobileUnderlayActive(
-      context,
-      !mobileDragSession.interactive &&
-        mobileDragSession.edge === 'left' &&
-        Boolean(selectedAccount.value) &&
-        Boolean(mobileArticlesUnderlaySnapshot.value)
-    );
+    setMobileUnderlayActive(context, false);
   }
+}
+
+function resetMobileDrawerEdgeSwipe() {
+  mobileDrawerEdgeSwipe.active = false;
+  mobileDrawerEdgeSwipe.pointerId = null;
+  mobileDrawerEdgeSwipe.startX = 0;
+  mobileDrawerEdgeSwipe.startY = 0;
+}
+
+function startMobileDrawerEdgeSwipe(event: PointerEvent) {
+  mobileDrawerEdgeSwipe.active = true;
+  mobileDrawerEdgeSwipe.pointerId = event.pointerId;
+  mobileDrawerEdgeSwipe.startX = event.clientX;
+  mobileDrawerEdgeSwipe.startY = event.clientY;
+}
+
+function onMobileDrawerEdgeSwipeMove(event: PointerEvent) {
+  if (!mobileDrawerEdgeSwipe.active || mobileDrawerEdgeSwipe.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - mobileDrawerEdgeSwipe.startX;
+  const deltaY = event.clientY - mobileDrawerEdgeSwipe.startY;
+  if (deltaX < 18 || Math.abs(deltaX) <= Math.abs(deltaY) + 8) {
+    return;
+  }
+
+  resetMobileDrawerEdgeSwipe();
+  showMobileAccounts();
+}
+
+function onMobileDrawerEdgeSwipeEnd(event: PointerEvent) {
+  if (!mobileDrawerEdgeSwipe.active || mobileDrawerEdgeSwipe.pointerId !== event.pointerId) {
+    return;
+  }
+
+  resetMobileDrawerEdgeSwipe();
 }
 
 function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
@@ -1748,7 +1794,7 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
     if (mobileDragSession.edge !== 'left' || mobileAccountsPanelOpen.value) {
       return;
     }
-    mobileArticlesDragControls.start(event);
+    startMobileDrawerEdgeSwipe(event);
     return;
   }
 
@@ -2056,7 +2102,7 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
       if (htmlCache) {
         const rawHtml = await htmlCache.file.text();
         selectedArticleHtml.value = preferCachedHtml
-          ? stripWechatHeader(rawHtml)
+          ? stripWechatHeader(normalizeCachedRssHtml(rawHtml))
           : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
         selectedArticleHtml.value =
@@ -2127,6 +2173,54 @@ function stripWechatHeader(html: string) {
       doc.querySelectorAll(selector).forEach(node => node.remove());
     });
 
+    return '<!doctype html>\n' + doc.documentElement.outerHTML;
+  } catch {
+    return html;
+  }
+}
+
+function decodeHtmlEntitiesDeep(value: string, maxDepth = 4) {
+  if (typeof window === 'undefined') {
+    return value;
+  }
+
+  let current = String(value || '');
+  const textarea = window.document.createElement('textarea');
+  for (let depth = 0; depth < maxDepth; depth += 1) {
+    textarea.innerHTML = current;
+    const next = textarea.value;
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function normalizeCachedRssHtml(html: string) {
+  try {
+    if (typeof window === 'undefined') {
+      return html;
+    }
+
+    const parser = new window.DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const container = doc.querySelector('article') || doc.body;
+    if (!container) {
+      return html;
+    }
+
+    const currentMarkup = String(container.innerHTML || '').trim();
+    if (container.children.length > 0 || !/&lt;[a-z!/]/i.test(currentMarkup)) {
+      return html;
+    }
+
+    const decodedMarkup = decodeHtmlEntitiesDeep(currentMarkup).trim();
+    if (!/<[a-z!/][\s\S]*>/i.test(decodedMarkup)) {
+      return html;
+    }
+
+    container.innerHTML = decodedMarkup;
     return '<!doctype html>\n' + doc.documentElement.outerHTML;
   } catch {
     return html;
@@ -2275,11 +2369,13 @@ function editSelectedAccountCategory() {
 
 function openSystemMenu() {
   desktopAvatarMenuOpen.value = false;
+  mobileAvatarMenuOpen.value = false;
   systemMenuOpen.value = true;
 }
 
 function openLogin() {
   desktopAvatarMenuOpen.value = false;
+  mobileAvatarMenuOpen.value = false;
   void navigateToLogin(route.fullPath);
 }
 
@@ -2302,8 +2398,17 @@ function toggleDesktopAvatarMenu() {
   desktopAvatarMenuOpen.value = !desktopAvatarMenuOpen.value;
 }
 
+function toggleMobileAvatarMenu() {
+  mobileAvatarMenuOpen.value = !mobileAvatarMenuOpen.value;
+}
+
 function openSettingsFromAvatarMenu() {
   desktopAvatarMenuOpen.value = false;
+  openSystemMenu();
+}
+
+function openSettingsFromMobileAvatarMenu() {
+  mobileAvatarMenuOpen.value = false;
   openSystemMenu();
 }
 
@@ -2312,18 +2417,35 @@ async function logoutFromAvatarMenu() {
   await logoutMp();
 }
 
-function onDesktopAvatarMenuPointerDown(event: PointerEvent) {
-  if (!desktopAvatarMenuOpen.value) return;
-  const root = desktopAvatarMenuRef.value;
-  if (!root) return;
-  if (event.target instanceof Node && !root.contains(event.target)) {
-    desktopAvatarMenuOpen.value = false;
+async function logoutFromMobileAvatarMenu() {
+  mobileAvatarMenuOpen.value = false;
+  await logoutMp();
+}
+
+function onAvatarMenuPointerDown(event: PointerEvent) {
+  if (!(event.target instanceof Node)) {
+    return;
+  }
+
+  if (desktopAvatarMenuOpen.value) {
+    const root = desktopAvatarMenuRef.value;
+    if (root && !root.contains(event.target)) {
+      desktopAvatarMenuOpen.value = false;
+    }
+  }
+
+  if (mobileAvatarMenuOpen.value) {
+    const root = mobileAvatarMenuRef.value;
+    if (root && !root.contains(event.target)) {
+      mobileAvatarMenuOpen.value = false;
+    }
   }
 }
 
-function onDesktopAvatarMenuKeydown(event: KeyboardEvent) {
+function onAvatarMenuKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     desktopAvatarMenuOpen.value = false;
+    mobileAvatarMenuOpen.value = false;
   }
 }
 
@@ -2916,8 +3038,13 @@ watch(isDesktopViewport, desktop => {
   if (!desktop) {
     resetMobileHistory();
   }
-  if (!desktop) {
-    desktopAvatarMenuOpen.value = false;
+  desktopAvatarMenuOpen.value = false;
+  mobileAvatarMenuOpen.value = false;
+});
+
+watch(mobileAccountsPanelOpen, open => {
+  if (!open) {
+    mobileAvatarMenuOpen.value = false;
   }
 });
 
@@ -2931,8 +3058,11 @@ onMounted(async () => {
   cookieTimer = window.setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
-  document.addEventListener('pointerdown', onDesktopAvatarMenuPointerDown);
-  document.addEventListener('keydown', onDesktopAvatarMenuKeydown);
+  document.addEventListener('pointerdown', onAvatarMenuPointerDown);
+  document.addEventListener('keydown', onAvatarMenuKeydown);
+  window.addEventListener('pointermove', onMobileDrawerEdgeSwipeMove);
+  window.addEventListener('pointerup', onMobileDrawerEdgeSwipeEnd);
+  window.addEventListener('pointercancel', onMobileDrawerEdgeSwipeEnd);
   window.addEventListener('resize', updateDesktopViewport);
   window.visualViewport?.addEventListener('resize', updateDesktopViewport);
   screen.orientation?.addEventListener?.('change', updateDesktopViewport);
@@ -2947,8 +3077,12 @@ onUnmounted(() => {
     window.clearTimeout(schedulerSyncTimer.value);
     schedulerSyncTimer.value = null;
   }
-  document.removeEventListener('pointerdown', onDesktopAvatarMenuPointerDown);
-  document.removeEventListener('keydown', onDesktopAvatarMenuKeydown);
+  document.removeEventListener('pointerdown', onAvatarMenuPointerDown);
+  document.removeEventListener('keydown', onAvatarMenuKeydown);
+  resetMobileDrawerEdgeSwipe();
+  window.removeEventListener('pointermove', onMobileDrawerEdgeSwipeMove);
+  window.removeEventListener('pointerup', onMobileDrawerEdgeSwipeEnd);
+  window.removeEventListener('pointercancel', onMobileDrawerEdgeSwipeEnd);
   window.removeEventListener('resize', updateDesktopViewport);
   window.visualViewport?.removeEventListener('resize', updateDesktopViewport);
   screen.orientation?.removeEventListener?.('change', updateDesktopViewport);
@@ -3136,16 +3270,6 @@ onUnmounted(() => {
                       :loading="isSyncing"
                       class="icon-btn"
                       @click="onHeaderSyncClick"
-                    />
-                  </UTooltip>
-                  <UTooltip text="设置">
-                    <UButton
-                      size="2xs"
-                      color="gray"
-                      variant="ghost"
-                      icon="i-lucide:layout-grid"
-                      class="icon-btn"
-                      @click="openSystemMenu()"
                     />
                   </UTooltip>
                 </div>
@@ -3386,32 +3510,49 @@ onUnmounted(() => {
               <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
                   <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
-                    <div class="size-10 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                      <img
-                        v-if="loginAccount.avatar"
-                        :src="IMAGE_PROXY + loginAccount.avatar"
-                        alt=""
-                        class="size-full object-cover"
-                      />
-                      <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+                    <div ref="mobileAvatarMenuRef" class="relative shrink-0">
+                      <button
+                        type="button"
+                        class="avatar-btn flex size-10 items-center justify-center"
+                        aria-label="登录账号菜单"
+                        :aria-expanded="mobileAvatarMenuOpen ? 'true' : 'false'"
+                        @click="toggleMobileAvatarMenu"
+                      >
+                        <img
+                          v-if="loginAccount.avatar"
+                          :src="IMAGE_PROXY + loginAccount.avatar"
+                          alt=""
+                          class="size-full object-cover"
+                        />
+                        <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+                      </button>
+
+                      <Transition name="desktop-avatar-menu-fade">
+                        <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
+                          <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
+                            <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
+                            <span>设置</span>
+                          </button>
+                          <button
+                            type="button"
+                            class="desktop-avatar-menu-item is-danger"
+                            :disabled="logoutBtnLoading"
+                            @click="logoutFromMobileAvatarMenu"
+                          >
+                            <UIcon
+                              :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
+                              class="size-4 shrink-0"
+                              :class="logoutBtnLoading ? 'animate-spin' : ''"
+                            />
+                            <span>退出登录</span>
+                          </button>
+                        </div>
+                      </Transition>
                     </div>
                     <div class="min-w-0 flex-1">
-                      <div class="flex items-center gap-2">
-                        <p class="min-w-0 flex-1 truncate text-sm font-semibold">
-                          {{ loginAccount.nickname || '已登录账号' }}
-                        </p>
-                        <UButton
-                          size="2xs"
-                          color="rose"
-                          variant="soft"
-                          icon="i-lucide:log-out"
-                          :loading="logoutBtnLoading"
-                          class="shrink-0"
-                          @click="logoutMp"
-                        >
-                          登出
-                        </UButton>
-                      </div>
+                      <p class="min-w-0 truncate text-sm font-semibold">
+                        {{ loginAccount.nickname || '已登录账号' }}
+                      </p>
                       <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
                     </div>
                   </div>
@@ -4123,6 +4264,11 @@ onUnmounted(() => {
 .desktop-avatar-menu {
   @apply absolute left-0 top-[calc(100%+0.55rem)] z-30 w-[220px] overflow-hidden rounded-[26px] border border-white/80
     bg-white/95 shadow-[0_22px_48px_rgba(15,23,42,0.16)] backdrop-blur dark:border-white/10 dark:bg-slate-950/95;
+}
+
+.mobile-avatar-menu {
+  @apply absolute left-0 top-[calc(100%+0.55rem)] z-30 w-[188px] overflow-hidden rounded-[24px] border border-white/80
+    bg-white/95 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-slate-950/95;
 }
 
 .desktop-avatar-menu-header {

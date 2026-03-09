@@ -259,10 +259,22 @@ function decodeHtmlEntities(value: string): string {
     .replace(/&amp;/gi, '&');
 }
 
+function decodeHtmlEntitiesDeep(value: string, maxDepth = 4): string {
+  let current = String(value || '');
+  for (let depth = 0; depth < maxDepth; depth += 1) {
+    const next = decodeHtmlEntities(current);
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+  return current;
+}
+
 function buildParagraphHtml(text: string): string {
   const lines = String(text || '')
     .split(/\n{2,}/)
-    .map(line => normalizeWhitespace(decodeHtmlEntities(line)))
+    .map(line => normalizeWhitespace(decodeHtmlEntitiesDeep(line)))
     .filter(Boolean);
 
   if (lines.length === 0) {
@@ -346,7 +358,7 @@ function normalizeBodyHtml(rawHtml: string, fallbackText: string): string {
     return buildParagraphHtml(fallbackText);
   }
 
-  const decoded = decodeHtmlEntities(trimmed).trim();
+  const decoded = decodeHtmlEntitiesDeep(trimmed).trim();
   const markup = looksLikeHtml(trimmed) ? trimmed : looksLikeHtml(decoded) ? decoded : '';
 
   if (markup) {
@@ -518,7 +530,10 @@ export async function syncRssFeed(authKey: string, input: SyncRssFeedInput): Pro
   const feed = await fetchAndParseRssFeed(sourceUrl);
   const fakeid = currentAccount?.fakeid || buildRssFakeid(sourceUrl);
   const totalCount = feed.items.length;
-  const lastUpdateTime = nowSeconds();
+  const lastUpdateTime = feed.items.reduce((latest, item) => {
+    const candidate = Number(item?.article?.update_time || item?.article?.create_time || 0);
+    return candidate > latest ? candidate : latest;
+  }, 0);
   const accountPayload: Partial<ReaderAccount> & { fakeid: string } = {
     fakeid,
     nickname: feed.title || currentAccount?.nickname || sourceUrl,

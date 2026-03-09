@@ -1,12 +1,5 @@
 <template>
   <div class="flex h-full flex-col overflow-hidden text-slate-900 dark:text-slate-100">
-    <Teleport defer to="#title">
-      <div class="min-w-0">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">Workspace</p>
-        <h1 class="mt-1 truncate text-[26px] font-semibold leading-[32px] text-slate-900 dark:text-slate-100">设置</h1>
-      </div>
-    </Teleport>
-
     <div class="min-h-0 flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
       <div class="grid h-full min-h-0 gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:gap-5">
         <aside class="hidden min-h-0 md:block">
@@ -39,21 +32,6 @@
             class="app-shell-scrollbar h-full min-h-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6"
             @scroll.passive="syncActiveSectionFromScroll"
           >
-            <div class="sticky top-0 z-20 -mx-4 mb-4 border-b border-slate-200/70 bg-[rgba(249,249,247,0.96)] px-4 py-3 backdrop-blur md:hidden dark:border-slate-800/80 dark:bg-[rgba(2,6,23,0.92)]">
-              <div class="app-shell-scrollbar flex gap-2 overflow-x-auto pb-1">
-                <button
-                  v-for="section in sections"
-                  :key="`mobile-${section.id}`"
-                  type="button"
-                  class="settings-mobile-anchor"
-                  :class="{ 'is-active': activeSection === section.id }"
-                  @click="scrollToSection(section.id)"
-                >
-                  {{ section.label }}
-                </button>
-              </div>
-            </div>
-
             <div class="mx-auto max-w-5xl space-y-5 md:space-y-6">
               <section
                 v-for="section in sections"
@@ -141,7 +119,7 @@ function setSectionRef(id: SettingsSectionId, el: Element | ComponentPublicInsta
 }
 
 function getScrollOffset() {
-  return window.innerWidth >= 768 ? 24 : 84;
+  return window.innerWidth >= 768 ? 24 : 16;
 }
 
 function scrollToSection(id: SettingsSectionId) {
@@ -150,14 +128,17 @@ function scrollToSection(id: SettingsSectionId) {
   if (!container || !target) return;
 
   activeSection.value = id;
-  const top = Math.max(0, target.offsetTop - getScrollOffset());
   container.scrollTo({
-    top,
+    top: Math.max(0, target.offsetTop - getScrollOffset()),
     behavior: 'smooth',
   });
 }
 
 function syncActiveSectionFromScroll() {
+  if (window.innerWidth < 768) {
+    return;
+  }
+
   const container = scrollContainerRef.value;
   if (!container) return;
 
@@ -210,16 +191,6 @@ onMounted(async () => {
   @apply text-slate-500 dark:text-slate-400;
 }
 
-.settings-mobile-anchor {
-  @apply inline-flex shrink-0 items-center rounded-full border border-slate-200/80 bg-white px-3 py-2 text-sm text-slate-600 transition-all duration-200
-    dark:border-slate-800/80 dark:bg-slate-950 dark:text-slate-300;
-}
-
-.settings-mobile-anchor.is-active {
-  @apply border-slate-300 bg-slate-900 text-white shadow-[0_14px_28px_rgba(15,23,42,0.12)]
-    dark:border-slate-700 dark:bg-slate-100 dark:text-slate-900;
-}
-
 .settings-section {
   scroll-margin-top: 1.5rem;
 }
@@ -230,7 +201,7 @@ onMounted(async () => {
   }
 
   .settings-section {
-    scroll-margin-top: 5.75rem;
+    scroll-margin-top: 1rem;
   }
 }
 

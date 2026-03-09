@@ -365,6 +365,13 @@ function countMessagesFromArticles(articles: Record<string, any>[]): number {
   return countByItemidx || countByAppmsg || (articles.length > 0 ? 1 : 0);
 }
 
+function resolveLatestArticleTime(articles: Array<Record<string, any>>): number {
+  return articles.reduce((latest, article) => {
+    const candidate = Number(article?.update_time || article?.create_time || 0);
+    return candidate > latest ? candidate : latest;
+  }, 0);
+}
+
 function isMeaningfulNickname(value?: string): boolean {
   const text = String(value || '').trim();
   if (!text) {
@@ -413,7 +420,11 @@ async function getAccountByFakeid(db: Database, authKey: string, fakeid: string)
   return row ? mapAccountRow(row) : null;
 }
 
-async function updateLastUpdateTime(db: Database, authKey: string, fakeid: string): Promise<void> {
+async function updateLastUpdateTime(db: Database, authKey: string, fakeid: string, timestamp: number): Promise<void> {
+  const latest = Number(timestamp) || 0;
+  if (latest <= 0) {
+    return;
+  }
   const now = nowSeconds();
   await db.run(
     `
@@ -421,7 +432,7 @@ async function updateLastUpdateTime(db: Database, authKey: string, fakeid: strin
     SET last_update_time = ?, update_time = ?
     WHERE auth_key = ? AND fakeid = ?
     `,
-    now,
+    latest,
     now,
     authKey,
     fakeid
@@ -502,7 +513,7 @@ async function applyAccountDelta(
     create_time: Number(current.create_time) || now,
     update_time: now,
     last_update_time: Number.isFinite(payload.last_update_time)
-      ? Number(payload.last_update_time)
+      ? Math.max(Number(payload.last_update_time) || 0, Number(current.last_update_time) || 0)
       : Number(current.last_update_time) || 0,
   };
 
@@ -642,6 +653,7 @@ async function upsertArticles(
   const totalCount = Number.isFinite(payload.totalCount)
     ? Number(payload.totalCount)
     : Number(payload.account.total_count) || 0;
+  const latestArticleTime = resolveLatestArticleTime(articles);
 
   await applyAccountDelta(
     db,
@@ -651,6 +663,7 @@ async function upsertArticles(
       fakeid,
       completed: Boolean(payload.completed),
       total_count: totalCount,
+      last_update_time: latestArticleTime || Number(payload.account.last_update_time) || 0,
     },
     messageDelta,
     inserted
@@ -938,7 +951,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     totalInserted += Number(upsertResult.inserted) || 0;
 
     if (begin === 0 && Number(upsertResult.inserted) > 0) {
-      await updateLastUpdateTime(db, payload.authKey, fakeid);
+      await updateLastUpdateTime(db, payload.authKey, fakeid, resolveLatestArticleTime(articles));
     }
 
     const latestAccount = await getAccountByFakeid(db, payload.authKey, fakeid);
