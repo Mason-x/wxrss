@@ -34,6 +34,34 @@ export interface RssSyncResult {
   sourceUrl: string;
 }
 
+export interface RsshubDiscoverParamOption {
+  label: string;
+  value: string;
+}
+
+export interface RsshubDiscoverParam {
+  key: string;
+  description: string;
+  required: boolean;
+  defaultValue: string;
+  options: RsshubDiscoverParamOption[];
+}
+
+export interface RsshubDiscoverItem {
+  id: string;
+  namespace: string;
+  namespaceName: string;
+  routeName: string;
+  routePath: string;
+  rsshubUrl: string;
+  siteUrl: string;
+  summary: string;
+  categories: string[];
+  maintainers: string[];
+  params: RsshubDiscoverParam[];
+  requiresConfig: boolean;
+}
+
 const FIRST_PAGE_PROBE_SIZE = 1;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 const MAX_OOM_RETRY_TIMES = 3;
@@ -221,6 +249,16 @@ export async function syncRssFeed(payload: { fakeid?: string; url?: string }): P
     },
   });
   return resp.data;
+}
+
+export async function searchRsshubRoutes(keyword: string, limit = 20): Promise<RsshubDiscoverItem[]> {
+  const resp = await request<{ data: RsshubDiscoverItem[] }>('/api/web/reader/rss-discover', {
+    query: {
+      keyword,
+      limit,
+    },
+  });
+  return Array.isArray(resp.data) ? resp.data : [];
 }
 
 /**
