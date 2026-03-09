@@ -110,6 +110,27 @@
       </section>
 
       <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
+        <div class="mb-4">
+          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">RSSHub</p>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            用于 `rsshub://...` 订阅和 RSSHub 搜索结果添加，建议填写你自己的 RSSHub 服务地址。
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          <UInput
+            v-model="preferences.rsshubBaseUrl"
+            type="url"
+            placeholder="https://rsshub.example.com"
+            class="font-mono"
+          />
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            留空时仍可直接添加普通 RSS 地址，但 `rsshub://...` 路由不会再使用默认公共实例。
+          </p>
+        </div>
+      </section>
+
+      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p class="text-sm font-medium text-slate-900 dark:text-slate-100">同步时间范围</p>

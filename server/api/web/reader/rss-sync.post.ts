@@ -25,7 +25,14 @@ export default defineEventHandler(async event => {
     });
   }
 
-  return {
-    data: await syncRssFeed(authKey, { fakeid, url }),
-  };
+  try {
+    return {
+      data: await syncRssFeed(authKey, { fakeid, url }),
+    };
+  } catch (error: any) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: String(error?.message || 'RSS sync failed'),
+    });
+  }
 });

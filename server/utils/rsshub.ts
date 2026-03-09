@@ -209,6 +209,14 @@ function calculateSearchScore(item: RsshubDiscoverItem, terms: string[]): number
   return score;
 }
 
+function buildRsshubRouteUri(namespace: string, routePath: string): string {
+  const normalizedPath = String(routePath || '').trim();
+  if (!normalizedPath || normalizedPath === '/') {
+    return `rsshub://${namespace}`;
+  }
+  return `rsshub://${namespace}${normalizedPath}`.replace(/\/+$/, '');
+}
+
 function flattenRsshubRoutes(document: RsshubRoutesDocument): RsshubDiscoverItem[] {
   const items: RsshubDiscoverItem[] = [];
 
@@ -225,7 +233,7 @@ function flattenRsshubRoutes(document: RsshubRoutesDocument): RsshubDiscoverItem
       }
 
       const routeName = normalizeWhitespace(String(route?.name || routePath));
-      const rsshubUrl = `rsshub://${namespace}${routePath}`;
+      const rsshubUrl = buildRsshubRouteUri(namespace, routePath);
       const categories = uniqueTextList([...(route?.categories || []), ...namespaceCategories]);
       const params = extractRouteParams(routePath, route?.parameters);
       const summary = truncateSummary(route?.description || route?.name || routePath);

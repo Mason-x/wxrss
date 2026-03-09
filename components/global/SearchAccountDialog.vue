@@ -81,7 +81,7 @@
               :loading="rssPrimaryLoading"
               :disabled="rssPrimaryLoading || !rssQuery.trim()"
             >
-              {{ looksLikeDirectRssInput ? '添加订阅' : '搜索 RSSHub' }}
+              {{ looksLikeDirectRssInput ? '添加订阅' : '搜索添加' }}
             </UButton>
             <span class="text-[11px] text-slate-500 dark:text-slate-400">
               关键词会搜索 RSSHub 路由；地址会直接尝试订阅。
@@ -204,7 +204,7 @@
                 <UButton
                   color="gray"
                   :loading="rssLoading"
-                  :disabled="rssLoading"
+                  :disabled="rssLoading || (selectedRsshubRoutePreview.startsWith('rsshub://') && !hasRsshubBaseUrl)"
                   @click="submitSelectedRsshubRoute"
                 >
                   添加这个 RSSHub 订阅
@@ -213,6 +213,12 @@
                   会自动生成 `rsshub://...` 地址后添加。
                 </span>
               </div>
+              <p
+                v-if="selectedRsshubRoutePreview.startsWith('rsshub://') && !hasRsshubBaseUrl"
+                class="mt-3 text-[11px] text-amber-600 dark:text-amber-300"
+              >
+                请先在设置里的 RSSHub 一栏填写可用的服务地址，再添加 RSSHub 路由。
+              </p>
             </div>
 
             <div v-if="rssDiscoverLoading" class="flex items-center justify-center rounded-3xl border border-slate-200 bg-white px-4 py-10 dark:border-slate-800 dark:bg-slate-900">
@@ -271,7 +277,7 @@
                       size="2xs"
                       color="gray"
                       :loading="rssLoading && pendingRssUrl === item.rsshubUrl"
-                      :disabled="rssLoading"
+                      :disabled="rssLoading || (item.rsshubUrl.startsWith('rsshub://') && !hasRsshubBaseUrl)"
                       @click="submitRssValue(item.rsshubUrl)"
                     >
                       一键添加
@@ -296,6 +302,13 @@
             >
               没找到匹配的 RSSHub 路由，换个关键词试试，或者直接粘贴 RSS 地址。
             </div>
+
+            <div
+              v-if="rssDiscoverResults.length > 0 && !hasRsshubBaseUrl"
+              class="rounded-3xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-[11px] text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              当前还没有配置 RSSHub 服务地址。搜索结果可以查看，但添加前需要先到设置里填写可用的 RSSHub 地址。
+            </div>
           </div>
         </template>
       </div>
@@ -308,11 +321,13 @@ import { Loader } from 'lucide-vue-next';
 import { getAccountList, searchRsshubRoutes, subscribeRssFeed, type RsshubDiscoverItem } from '~/apis';
 import { ACCOUNT_LIST_PAGE_SIZE, ACCOUNT_TYPE } from '~/config';
 import type { MpAccount } from '~/store/v2/info';
+import type { Preferences } from '~/types/preferences';
 import type { AccountInfo } from '~/types/types';
 
 const toast = useToast();
 const route = useRoute();
 const { navigateToLogin } = useMpAuth();
+const preferences = usePreferences() as unknown as Ref<Preferences>;
 
 const isOpen = ref(false);
 const mode = ref<'mp' | 'rss'>('mp');
@@ -326,6 +341,7 @@ const pendingRssUrl = ref('');
 const rssRouteValues = reactive<Record<string, string>>({});
 
 const looksLikeDirectRssInput = computed(() => /^(https?:\/\/|rsshub:\/\/)/i.test(rssQuery.value.trim()));
+const hasRsshubBaseUrl = computed(() => /^https?:\/\//i.test(String(preferences.value.rsshubBaseUrl || '').trim()));
 const rssPrimaryLoading = computed(() => rssLoading.value || rssDiscoverLoading.value);
 const selectedRsshubRoute = computed(
   () => rssDiscoverResults.value.find(item => item.id === selectedRsshubRouteId.value) || null
@@ -347,6 +363,10 @@ function normalizeRouteValue(value: string): string {
     .trim()
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
+}
+
+function describeRequestError(error: any): string {
+  return String(error?.data?.statusMessage || error?.statusMessage || error?.data?.message || error?.message || '未知错误');
 }
 
 function buildRsshubRouteUrl(item: RsshubDiscoverItem, values: Record<string, string>): string {
@@ -436,7 +456,7 @@ async function loadData() {
       toast.add({
         color: 'rose',
         title: '错误',
-        description: e.message,
+        description: describeRequestError(e),
         icon: 'i-octicon:bell-24',
       });
     }
@@ -468,7 +488,7 @@ async function submitRssValue(value: string) {
       toast.add({
         color: 'rose',
         title: '添加失败',
-        description: String(e?.message || '未知错误'),
+        description: describeRequestError(e),
         icon: 'i-octicon:bell-24',
       });
     }
@@ -494,7 +514,7 @@ async function discoverRsshubRoutes() {
     toast.add({
       color: 'rose',
       title: '搜索失败',
-      description: String(e?.message || '未知错误'),
+      description: describeRequestError(e),
       icon: 'i-octicon:bell-24',
     });
   } finally {

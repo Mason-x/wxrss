@@ -23,7 +23,14 @@ export default defineEventHandler(async event => {
     });
   }
 
-  return {
-    data: await syncRssFeed(authKey, { url }),
-  };
+  try {
+    return {
+      data: await syncRssFeed(authKey, { url }),
+    };
+  } catch (error: any) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: String(error?.message || 'RSS subscribe failed'),
+    });
+  }
 });

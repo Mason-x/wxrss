@@ -18,6 +18,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   hideDeleted: true,
   privateProxyList: [],
   privateProxyAuthorization: '',
+  rsshubBaseUrl: '',
   exportConfig: {
     dirname: '${title}',
     maxlength: 0,
@@ -72,6 +73,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     hideDeleted: source.hideDeleted ?? DEFAULT_PREFERENCES.hideDeleted,
     privateProxyList: normalizeProxyList(source.privateProxyList),
     privateProxyAuthorization: String(source.privateProxyAuthorization || '').trim(),
+    rsshubBaseUrl: String(source.rsshubBaseUrl || '').trim(),
     exportConfig: {
       dirname: String(source.exportConfig?.dirname || DEFAULT_PREFERENCES.exportConfig.dirname),
       maxlength: Math.max(0, Math.floor(Number(source.exportConfig?.maxlength) || 0)),

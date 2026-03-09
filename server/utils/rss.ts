@@ -1,10 +1,11 @@
 import * as cheerio from 'cheerio';
 import { getAccountByFakeid, type ReaderAccount, upsertArticles } from '~/server/repositories/reader';
 import { upsertHtmlCache } from '~/server/repositories/cache';
+import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 
-const DEFAULT_RSSHUB_BASE_URL = 'https://rsshub.app';
 const MAX_RSS_ITEMS = 200;
 const HTML_TAG_PATTERN = /<([a-z][\w:-]*)(\s[^>]*)?>/i;
+const PUBLIC_RSSHUB_HOSTS = new Set(['rsshub.app']);
 
 interface SyncRssFeedInput {
   fakeid?: string;
@@ -82,7 +83,10 @@ function ensureHttpUrl(value: string): string {
 }
 
 function getRsshubBaseUrl(): string {
-  const configured = String(process.env.RSSHUB_BASE_URL || DEFAULT_RSSHUB_BASE_URL).trim();
+  const configured = String(process.env.RSSHUB_BASE_URL || '').trim();
+  if (!configured) {
+    throw new Error('当前未配置 RSSHub 地址，请先在设置中填写可用的 RSSHub 服务地址');
+  }
   return ensureHttpUrl(configured);
 }
 
@@ -103,6 +107,67 @@ export function normalizeRssSourceUrl(input: string): string {
   }
 
   return ensureHttpUrl(trimmed);
+}
+
+function getHostname(value: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isBlockedPublicRsshubResponse(sourceUrl: string, status: number, body: string): boolean {
+  if (status !== 403) {
+    return false;
+  }
+
+  const hostname = getHostname(sourceUrl);
+  if (PUBLIC_RSSHUB_HOSTS.has(hostname)) {
+    return true;
+  }
+
+  return /restrict access to rsshub\.app/i.test(body);
+}
+
+async function resolveConfiguredRsshubBaseUrl(authKey?: string): Promise<string> {
+  const candidates = [String(process.env.RSSHUB_BASE_URL || '').trim()];
+
+  if (authKey) {
+    try {
+      const stored = await getStoredPreferencesByAuthKey(authKey);
+      candidates.unshift(String(stored.preferences.rsshubBaseUrl || '').trim());
+    } catch {
+      // Ignore preference lookup failures and fall back to env config.
+    }
+  }
+
+  const configured = candidates.find(Boolean);
+  if (!configured) {
+    throw new Error('当前未配置 RSSHub 地址，请先在设置中填写可用的 RSSHub 服务地址');
+  }
+
+  return ensureHttpUrl(configured);
+}
+
+async function resolveRssSourceUrl(input: string, authKey?: string): Promise<string> {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) {
+    throw new Error('RSS 地址不能为空');
+  }
+
+  if (!trimmed.startsWith('rsshub://')) {
+    return ensureHttpUrl(trimmed);
+  }
+
+  const route = trimmed.slice('rsshub://'.length).trim();
+  if (!route) {
+    throw new Error('RSSHub 路由不能为空');
+  }
+
+  const baseUrl = new URL(await resolveConfiguredRsshubBaseUrl(authKey));
+  const pathname = route.startsWith('/') ? route : `/${route}`;
+  return new URL(pathname, baseUrl).toString();
 }
 
 function buildRssFakeid(sourceUrl: string): string {
@@ -364,11 +429,13 @@ async function fetchAndParseRssFeed(sourceUrl: string): Promise<ParsedRssFeed> {
     },
   });
 
+  const xml = await response.text();
   if (!response.ok) {
+    if (isBlockedPublicRsshubResponse(sourceUrl, response.status, xml)) {
+      throw new Error('当前默认 RSSHub 公共服务拒绝访问，请改用你自己的 RSSHub 地址');
+    }
     throw new Error(`RSS 拉取失败(${response.status})`);
   }
-
-  const xml = await response.text();
   const $ = cheerio.load(xml, {
     xmlMode: true,
     decodeEntities: false,
@@ -432,7 +499,7 @@ export async function syncRssFeed(authKey: string, input: SyncRssFeedInput): Pro
     }
   }
 
-  const sourceUrl = normalizeRssSourceUrl(String(input.url || currentAccount?.source_url || ''));
+  const sourceUrl = await resolveRssSourceUrl(String(input.url || currentAccount?.source_url || ''), authKey);
   const feed = await fetchAndParseRssFeed(sourceUrl);
   const fakeid = currentAccount?.fakeid || buildRssFakeid(sourceUrl);
   const totalCount = feed.items.length;

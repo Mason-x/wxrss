@@ -9,6 +9,9 @@ export interface Preferences {
   // 私有代理认证密钥
   privateProxyAuthorization: string;
 
+  // RSSHub 服务地址
+  rsshubBaseUrl: string;
+
   // 导出配置
   exportConfig: ExportConfig;
 
