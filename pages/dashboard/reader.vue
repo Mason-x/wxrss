@@ -859,7 +859,7 @@ const mobileArticleUnderlayScrimOpacity = transformValue(() => {
 
 const mobileArticleFavoriteCornerX = transformValue(() => {
   const progress = getMobileArticleSwipeProgress();
-  return -mobileArticleSwipeX.get() + (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
+  return (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
 });
 
 const mobileArticleFavoriteCornerOpacity = transformValue(() => {
@@ -3591,26 +3591,27 @@ onUnmounted(() => {
             />
           </motion.div>
 
-          <div
-            v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
-            class="pointer-events-none absolute inset-0 z-40 overflow-hidden"
-          >
-            <motion.div
-              class="absolute"
-              :style="{
-                right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-                bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-                x: mobileArticleFavoriteCornerX,
-                opacity: mobileArticleFavoriteCornerOpacity,
-                scale: mobileArticleFavoriteCornerScale,
-              }"
-            >
-              <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
-                <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
-              </div>
-            </motion.div>
-          </div>
         </motion.div>
+
+        <div
+          v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
+          class="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+        >
+          <motion.div
+            class="absolute"
+            :style="{
+              right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+              bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+              x: mobileArticleFavoriteCornerX,
+              opacity: mobileArticleFavoriteCornerOpacity,
+              scale: mobileArticleFavoriteCornerScale,
+            }"
+          >
+            <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
+              <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
+            </div>
+          </motion.div>
+        </div>
       </div>
 
       <AnimatePresence>
