@@ -33,8 +33,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   accountSyncMinSeconds: 3,
   accountSyncMaxSeconds: 5,
-  dailySyncEnabled: false,
-  dailySyncTime: '06:00',
+  dailySyncEnabled: true,
+  dailySyncTime: '03:00',
   syncDateRange: '1y',
   syncDatePoint: MP_ORIGIN_TIMESTAMP,
 };

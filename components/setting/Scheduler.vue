@@ -9,18 +9,14 @@
       <div class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div class="min-w-0">
-            <UCheckbox
-              v-model="preferences.dailySyncEnabled"
-              name="dailySyncEnabled"
-              label="启用每日自动同步全部公众号"
-            />
+            <UCheckbox v-model="preferences.dailySyncEnabled" name="dailySyncEnabled" label="启用每日自动同步全部订阅源" />
             <p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              开启后，系统会按设定时间自动执行一次“全部公众号同步”。
+              开启后，系统会按设定时间自动执行一次全部订阅源同步，无需保持页面打开。
             </p>
           </div>
 
           <div class="w-full md:w-[180px]">
-            <p class="mb-1 text-sm font-medium">执行时间</p>
+            <p class="mb-1 text-sm font-medium">执行时间（北京时间）</p>
             <UInput
               v-model="preferences.dailySyncTime"
               type="time"
@@ -60,6 +56,6 @@ const cardUi = {
 function normalizeDailySyncTime() {
   const raw = String(preferences.value.dailySyncTime || '').trim();
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(raw);
-  preferences.value.dailySyncTime = match ? `${match[1]}:${match[2]}` : '06:00';
+  preferences.value.dailySyncTime = match ? `${match[1]}:${match[2]}` : '03:00';
 }
 </script>

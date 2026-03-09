@@ -47,8 +47,8 @@ export interface SchedulerArticleCache {
 const SCHEDULER_INDEX_KEY = 'scheduler:index';
 
 const DEFAULT_CONFIG: SchedulerConfig = {
-  dailySyncEnabled: false,
-  dailySyncTime: '06:00',
+  dailySyncEnabled: true,
+  dailySyncTime: '03:00',
   accountSyncMinSeconds: 3,
   accountSyncMaxSeconds: 5,
   syncDateRange: 'all',

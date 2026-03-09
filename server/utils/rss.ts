@@ -247,10 +247,22 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function decodeHtmlEntities(value: string): string {
+  return String(value || '')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(Number.parseInt(num, 10)))
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&(apos|#39);/gi, "'")
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&');
+}
+
 function buildParagraphHtml(text: string): string {
   const lines = String(text || '')
     .split(/\n{2,}/)
-    .map(line => normalizeWhitespace(line))
+    .map(line => normalizeWhitespace(decodeHtmlEntities(line)))
     .filter(Boolean);
 
   if (lines.length === 0) {
@@ -334,18 +346,21 @@ function normalizeBodyHtml(rawHtml: string, fallbackText: string): string {
     return buildParagraphHtml(fallbackText);
   }
 
-  if (looksLikeHtml(trimmed)) {
-    if (/<html[\s>]/i.test(trimmed)) {
-      const $ = cheerio.load(trimmed);
+  const decoded = decodeHtmlEntities(trimmed).trim();
+  const markup = looksLikeHtml(trimmed) ? trimmed : looksLikeHtml(decoded) ? decoded : '';
+
+  if (markup) {
+    if (/<html[\s>]/i.test(markup)) {
+      const $ = cheerio.load(markup);
       const bodyHtml = String($('body').html() || '').trim();
       if (bodyHtml) {
         return bodyHtml;
       }
     }
-    return trimmed;
+    return markup;
   }
 
-  return buildParagraphHtml(trimmed);
+  return buildParagraphHtml(decoded || trimmed);
 }
 
 function buildRssHtmlDocument(contentHtml: string, baseUrl: string): string {

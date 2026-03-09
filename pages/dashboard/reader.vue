@@ -15,8 +15,7 @@ import ConfirmModal from '~/components/modal/Confirm.vue';
 import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
-import { IMAGE_PROXY, websiteName } from '~/config';
-import ApiPage from '~/pages/dashboard/api.vue';
+import { IMAGE_PROXY } from '~/config';
 import SettingsPage from '~/pages/dashboard/settings.vue';
 import { deleteAccountData } from '~/store/v2';
 import {
@@ -31,20 +30,17 @@ import { getHtmlCache } from '~/store/v2/html';
 import {
   getAllInfo,
   getInfoCache,
-  importMpAccounts,
   isRssAccount,
   type MpAccount,
   updateAccountCategory,
   updateAccountFocused,
 } from '~/store/v2/info';
 import { migrateLegacyIndexedDbToServer, migrateLegacyLargeCacheToServer } from '~/store/v2/legacy-migration';
-import type { AccountManifest } from '~/types/account';
 import type { Preferences } from '~/types/preferences';
 import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
-import { exportAccountJsonFile } from '~/utils/exporter';
 
 useHead({
-  title: `聚合阅读 | ${websiteName}`,
+  title: '聚合阅读',
 });
 
 interface ReaderCategory {
@@ -65,14 +61,6 @@ interface ReaderArticle extends AppMsgExWithFakeID {
 interface PromiseInstance {
   resolve: (value: unknown) => void;
   reject: (reason?: any) => void;
-}
-
-type SystemMenuId = 'api' | 'settings';
-
-interface SystemMenuItem {
-  id: SystemMenuId;
-  label: string;
-  icon: string;
 }
 
 interface ReaderRuntimeState {
@@ -214,8 +202,6 @@ const FOCUS_CATEGORY_LABEL = '重点关注';
 const loading = ref(false);
 const contentLoading = ref(false);
 const addBtnLoading = ref(false);
-const importBtnLoading = ref(false);
-const exportBtnLoading = ref(false);
 const isDeleting = ref(false);
 const isSyncing = ref(false);
 const isCanceled = ref(false);
@@ -277,15 +263,10 @@ const categoryEditorSaving = ref(false);
 const categoryEditorAdding = ref(false);
 const categoryDeleting = ref<string | null>(null);
 const systemMenuOpen = ref(false);
-const systemMenuActive = ref<SystemMenuId>('settings');
+const desktopAvatarMenuOpen = ref(false);
 
-const fileRef = ref<HTMLInputElement | null>(null);
 const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
-
-const systemMenuItems: SystemMenuItem[] = [
-  { id: 'api', label: 'API 说明', icon: 'i-lucide:file-code-2' },
-  { id: 'settings', label: '设置', icon: 'i-lucide:settings-2' },
-];
+const desktopAvatarMenuRef = ref<HTMLElement | null>(null);
 
 const { accountEventBus } = useAccountEventBus();
 accountEventBus.on(event => {
@@ -550,14 +531,6 @@ const editableCategoryNames = computed(() =>
   categories.value.filter(item => item.id !== '__all__' && item.id !== FOCUS_CATEGORY_ID).map(item => item.label)
 );
 
-const activeSystemMenuItem = computed(
-  () => systemMenuItems.find(item => item.id === systemMenuActive.value) || systemMenuItems[0]
-);
-const activeSystemMenuComponent = computed(() => {
-  if (systemMenuActive.value === 'api') return ApiPage;
-  return SettingsPage;
-});
-
 const selectedAccountInfo = computed(() => findAccount(selectedAccount.value));
 const activeAccountSyncProgress = computed(() => {
   const fakeid = selectedAccount.value;
@@ -595,7 +568,21 @@ const accountsInSelectedCategory = computed(() => {
     targets = accounts.value.filter(account => normalizeCategory(account) === selectedCategory.value);
   }
 
-  return targets.sort((a, b) => (b.articles || 0) - (a.articles || 0));
+  return [...targets].sort((a, b) => {
+    const aTime = Number(a.last_update_time || a.update_time || a.create_time || 0);
+    const bTime = Number(b.last_update_time || b.update_time || b.create_time || 0);
+    if (aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    const aArticles = Number(a.articles || 0);
+    const bArticles = Number(b.articles || 0);
+    if (aArticles !== bArticles) {
+      return bArticles - aArticles;
+    }
+
+    return String(a.nickname || a.fakeid).localeCompare(String(b.nickname || b.fakeid), 'zh-Hans-CN');
+  });
 });
 
 const accountsInCategory = computed(() => {
@@ -647,8 +634,8 @@ const articleListEmptyState = computed(() => {
   if (!selectedAccount.value && accounts.value.length === 0) {
     return {
       icon: 'i-lucide:book-marked',
-      title: '还没有公众号',
-      description: '先添加公众号或 RSS 订阅，再同步文章列表。',
+      title: '还没有文章',
+      description: '先添加订阅源，再同步文章列表。',
     };
   }
 
@@ -1758,7 +1745,7 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 
   if (context === 'articles') {
-    if (mobileDragSession.edge !== 'left' || !canNavigateMobileHistory(-1)) {
+    if (mobileDragSession.edge !== 'left' || mobileAccountsPanelOpen.value) {
       return;
     }
     mobileArticlesDragControls.start(event);
@@ -1874,20 +1861,6 @@ function resolveMobileSwipeAction(
 ): MobileSwipeResolvedAction {
   if (context === 'articles') {
     if (deltaX > 0) {
-      if (selectedAccount.value && edge === 'left') {
-        if (canNavigateMobileHistory(-1)) {
-          return {
-            kind: 'transition',
-            revealPreviousLayer: true,
-            execute: async () => void (await navigateMobileHistory(-1)),
-          };
-        }
-        return {
-          kind: 'transition',
-          revealPreviousLayer: true,
-          execute: () => backFromMobileView(),
-        };
-      }
       if (edge === 'left' && !mobileAccountsPanelOpen.value) {
         return {
           kind: 'rebound',
@@ -2300,14 +2273,13 @@ function editSelectedAccountCategory() {
   editAccountCategory(selectedAccountInfo.value);
 }
 
-function openSystemMenu(menu?: SystemMenuId) {
-  if (menu) {
-    systemMenuActive.value = menu;
-  }
+function openSystemMenu() {
+  desktopAvatarMenuOpen.value = false;
   systemMenuOpen.value = true;
 }
 
 function openLogin() {
+  desktopAvatarMenuOpen.value = false;
   void navigateToLogin(route.fullPath);
 }
 
@@ -2323,6 +2295,35 @@ async function logoutMp() {
     toast.error('退出失败', (error as Error).message);
   } finally {
     logoutBtnLoading.value = false;
+  }
+}
+
+function toggleDesktopAvatarMenu() {
+  desktopAvatarMenuOpen.value = !desktopAvatarMenuOpen.value;
+}
+
+function openSettingsFromAvatarMenu() {
+  desktopAvatarMenuOpen.value = false;
+  openSystemMenu();
+}
+
+async function logoutFromAvatarMenu() {
+  desktopAvatarMenuOpen.value = false;
+  await logoutMp();
+}
+
+function onDesktopAvatarMenuPointerDown(event: PointerEvent) {
+  if (!desktopAvatarMenuOpen.value) return;
+  const root = desktopAvatarMenuRef.value;
+  if (!root) return;
+  if (event.target instanceof Node && !root.contains(event.target)) {
+    desktopAvatarMenuOpen.value = false;
+  }
+}
+
+function onDesktopAvatarMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    desktopAvatarMenuOpen.value = false;
   }
 }
 
@@ -2885,61 +2886,6 @@ async function onHeaderSyncClick() {
   }
 }
 
-function importAccount() {
-  fileRef.value?.click();
-}
-
-async function handleFileChange(evt: Event) {
-  const files = (evt.target as HTMLInputElement).files;
-  if (!files || files.length === 0) return;
-
-  const file = files[0];
-  try {
-    importBtnLoading.value = true;
-    const jsonData = JSON.parse(await file.text());
-    if (jsonData.usefor !== 'wechat-article-exporter') {
-      toast.error('导入公众号失败', '导入文件格式不正确，请选择本站导出的文件。');
-      return;
-    }
-
-    const infos = jsonData.accounts;
-    if (!infos || infos.length <= 0) {
-      toast.error('导入公众号失败', '导入文件格式不正确，请选择本站导出的文件。');
-      return;
-    }
-
-    await importMpAccounts(infos);
-    await refreshData();
-    toast.success('批量导入成功', `已导入 ${infos.length} 个订阅源`);
-  } catch (error) {
-    toast.error('导入公众号失败', (error as Error).message);
-  } finally {
-    importBtnLoading.value = false;
-    (evt.target as HTMLInputElement).value = '';
-  }
-}
-
-function exportAccount() {
-  const rows = [...accountsInCategory.value];
-  if (rows.length === 0) {
-    toast.warning('提示', '当前没有可导出的公众号');
-    return;
-  }
-
-  exportBtnLoading.value = true;
-  try {
-    const data: AccountManifest = {
-      version: '1.0',
-      usefor: 'wechat-article-exporter',
-      accounts: rows,
-    };
-    exportAccountJsonFile(data, '公众号');
-    toast.success('批量导出成功', `已导出 ${rows.length} 个订阅源`);
-  } finally {
-    exportBtnLoading.value = false;
-  }
-}
-
 function downloadArticles(type: 'html' | 'metadata' | 'comment') {
   download(type, effectiveArticleUrls.value);
 }
@@ -2970,6 +2916,9 @@ watch(isDesktopViewport, desktop => {
   if (!desktop) {
     resetMobileHistory();
   }
+  if (!desktop) {
+    desktopAvatarMenuOpen.value = false;
+  }
 });
 
 onMounted(async () => {
@@ -2982,6 +2931,8 @@ onMounted(async () => {
   cookieTimer = window.setInterval(() => {
     nowTick.value = Date.now();
   }, 1000);
+  document.addEventListener('pointerdown', onDesktopAvatarMenuPointerDown);
+  document.addEventListener('keydown', onDesktopAvatarMenuKeydown);
   window.addEventListener('resize', updateDesktopViewport);
   window.visualViewport?.addEventListener('resize', updateDesktopViewport);
   screen.orientation?.addEventListener?.('change', updateDesktopViewport);
@@ -2996,6 +2947,8 @@ onUnmounted(() => {
     window.clearTimeout(schedulerSyncTimer.value);
     schedulerSyncTimer.value = null;
   }
+  document.removeEventListener('pointerdown', onDesktopAvatarMenuPointerDown);
+  document.removeEventListener('keydown', onDesktopAvatarMenuKeydown);
   window.removeEventListener('resize', updateDesktopViewport);
   window.visualViewport?.removeEventListener('resize', updateDesktopViewport);
   screen.orientation?.removeEventListener?.('change', updateDesktopViewport);
@@ -3185,7 +3138,7 @@ onUnmounted(() => {
                       @click="onHeaderSyncClick"
                     />
                   </UTooltip>
-                  <UTooltip text="系统菜单">
+                  <UTooltip text="设置">
                     <UButton
                       size="2xs"
                       color="gray"
@@ -3395,7 +3348,10 @@ onUnmounted(() => {
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <IframeHtmlRenderer :html="selectedArticleHtml" />
+            <IframeHtmlRenderer
+              :html="selectedArticleHtml"
+              :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+            />
           </motion.div>
         </motion.div>
       </div>
@@ -3483,7 +3439,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="mt-3 flex items-center gap-2">
-                  <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索公众号名称" />
+                  <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索订阅源" />
                   <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
                     添加
                   </UButton>
@@ -3573,24 +3529,16 @@ onUnmounted(() => {
     <div v-else class="flex h-full gap-3 overflow-hidden p-3">
     <aside class="app-shell-panel w-[320px] flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
       <header class="app-shell-glass space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <UTooltip text="系统菜单">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:layout-grid"
-                class="icon-btn"
-                @click="openSystemMenu()"
-              />
-            </UTooltip>
-          </div>
-
-          <div class="flex items-center justify-end gap-2">
-            <UPopover v-if="loginAccount" :popper="{ placement: 'bottom-end' }">
-              <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
-              <button type="button" class="avatar-btn">
+        <div class="flex items-center justify-start gap-2">
+          <template v-if="loginAccount">
+            <div ref="desktopAvatarMenuRef" class="relative flex items-center gap-2">
+              <button
+                type="button"
+                class="avatar-btn"
+                aria-label="登录账号菜单"
+                :aria-expanded="desktopAvatarMenuOpen ? 'true' : 'false'"
+                @click="toggleDesktopAvatarMenu"
+              >
                 <img
                   v-if="loginAccount.avatar"
                   :src="IMAGE_PROXY + loginAccount.avatar"
@@ -3599,86 +3547,47 @@ onUnmounted(() => {
                 />
                 <UIcon v-else name="i-lucide:user-round" class="size-4 text-slate-500" />
               </button>
-              <template #panel>
-                <div class="p-3 w-[240px] space-y-2">
-                  <p class="text-sm font-semibold truncate">{{ loginAccount.nickname || '已登录账号' }}</p>
-                  <p class="text-xs text-slate-500">Cookie 剩余：{{ cookieRemainText }}</p>
-                  <p class="text-xs text-slate-500">到期时间：{{ cookieExpireAt }}</p>
-                  <UButton
-                    size="xs"
-                    color="rose"
-                    variant="soft"
-                    icon="i-lucide:log-out"
-                    :loading="logoutBtnLoading"
-                    @click="logoutMp"
-                  >
-                    退出登录
-                  </UButton>
+              <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
+
+              <Transition name="desktop-avatar-menu-fade">
+                <div v-if="desktopAvatarMenuOpen" class="desktop-avatar-menu">
+                  <div class="desktop-avatar-menu-header">
+                    <p class="truncate text-sm font-semibold">{{ loginAccount.nickname || '已登录账号' }}</p>
+                    <p class="mt-1 text-xs text-slate-500">剩余时间 {{ cookieRemainText }}</p>
+                  </div>
+                  <div class="py-2">
+                    <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromAvatarMenu">
+                      <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
+                      <span>设置</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="desktop-avatar-menu-item is-danger"
+                      :disabled="logoutBtnLoading"
+                      @click="logoutFromAvatarMenu"
+                    >
+                      <UIcon
+                        :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
+                        class="size-4 shrink-0"
+                        :class="logoutBtnLoading ? 'animate-spin' : ''"
+                      />
+                      <span>退出登录</span>
+                    </button>
+                  </div>
                 </div>
-              </template>
-            </UPopover>
+              </Transition>
+            </div>
+          </template>
             <UTooltip v-else text="登录公众号">
               <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:log-in" class="icon-btn" @click="openLogin" />
             </UTooltip>
-          </div>
         </div>
 
-        <UInput v-model="accountKeyword" size="sm" icon="i-lucide:search" placeholder="仅搜索公众号名称" />
-
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <UTooltip text="添加订阅源">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:plus"
-                :loading="addBtnLoading"
-                class="icon-btn"
-                @click="addAccount"
-              />
-            </UTooltip>
-
-            <UTooltip text="删除当前公众号">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:minus"
-                :disabled="!selectedAccount"
-                :loading="isDeleting"
-                class="icon-btn"
-                @click="deleteCurrentAccount"
-              />
-            </UTooltip>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <UTooltip text="批量导入公众号">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:arrow-down-to-line"
-                :loading="importBtnLoading"
-                class="icon-btn"
-                @click="importAccount"
-              >
-                <input ref="fileRef" type="file" accept=".json" class="hidden" @change="handleFileChange" />
-              </UButton>
-            </UTooltip>
-            <UTooltip text="批量导出订阅源">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:arrow-up-from-line"
-                :loading="exportBtnLoading"
-                class="icon-btn"
-                @click="exportAccount"
-              />
-            </UTooltip>
-          </div>
+        <div class="flex items-center gap-2">
+          <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索订阅源" />
+          <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
+            添加
+          </UButton>
         </div>
 
         <div class="flex flex-wrap gap-1 max-h-[108px] overflow-y-auto">
@@ -3774,6 +3683,18 @@ onUnmounted(() => {
                 :disabled="!selectedAccountInfo"
                 class="icon-btn"
                 @click="editSelectedAccountCategory"
+              />
+            </UTooltip>
+            <UTooltip text="删除当前订阅源">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:minus"
+                :disabled="!selectedAccount"
+                :loading="isDeleting"
+                class="icon-btn"
+                @click="deleteCurrentAccount"
               />
             </UTooltip>
           </div>
@@ -3997,7 +3918,10 @@ onUnmounted(() => {
         />
       </div>
       <div v-else class="app-shell-scrollbar flex-1 overflow-y-auto p-4">
-        <IframeHtmlRenderer :html="selectedArticleHtml" />
+        <IframeHtmlRenderer
+          :html="selectedArticleHtml"
+          :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+        />
       </div>
     </main>
     </div>
@@ -4126,79 +4050,39 @@ onUnmounted(() => {
           >
             <div class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70">
               <div class="min-w-0">
-                <p class="text-base font-semibold">系统菜单</p>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">抓取及下载文章及更多高级选项请到桌面网页端。</p>
+                <p class="text-base font-semibold">设置</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">同步、代理、导出与其他选项。</p>
               </div>
               <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
             </div>
 
-            <div class="max-h-[calc(100vh-176px)] overflow-y-auto px-4 py-4">
-              <div class="space-y-5">
-                <section class="space-y-3">
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      v-for="item in systemMenuItems"
-                      :key="item.id"
-                      type="button"
-                      class="inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-all duration-200"
-                      :class="
-                        systemMenuActive === item.id
-                          ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                          : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
-                      "
-                      @click="openSystemMenu(item.id)"
-                    >
-                      <UIcon :name="item.icon" class="size-4 shrink-0" />
-                      <span>{{ item.label }}</span>
-                    </button>
-                  </div>
-                </section>
-
-                <section class="overflow-hidden rounded-[26px] border border-white/80 bg-white/80 shadow-[0_18px_36px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900/80">
-                  <div id="title" class="hidden" />
-                  <KeepAlive>
-                    <component :is="activeSystemMenuComponent" class="min-h-full bg-transparent" />
-                  </KeepAlive>
-                </section>
-              </div>
+            <div class="max-h-[calc(100vh-176px)] overflow-hidden px-4 py-4">
+              <section class="settings-dialog-content h-full">
+                <div id="title" class="hidden" />
+                <KeepAlive>
+                  <SettingsPage class="h-full min-h-full bg-transparent" />
+                </KeepAlive>
+              </section>
             </div>
           </section>
         </Transition>
       </div>
     </Transition>
 
-    <UModal v-if="isDesktopViewport" v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1120px]' }">
-      <UCard class="app-shell-panel overflow-hidden rounded-[30px]" :ui="{ ring: '', body: { padding: 'p-0 sm:p-0' } }">
+    <UModal v-if="isDesktopViewport" v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1180px]' }">
+      <UCard class="settings-dialog-shell overflow-hidden rounded-[32px]" :ui="{ ring: '', body: { padding: 'p-0 sm:p-0' } }">
         <template #header>
           <div class="flex items-center justify-between">
-            <h3 class="text-base font-semibold">系统菜单</h3>
+            <h3 class="text-base font-semibold">设置</h3>
             <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
           </div>
         </template>
 
-        <div class="h-[72vh] min-h-[520px] flex">
-          <aside class="app-shell-glass w-48 border-r border-slate-200/60 p-2 dark:border-slate-800/70">
-            <button
-              v-for="item in systemMenuItems"
-              :key="item.id"
-              type="button"
-              class="w-full flex items-center gap-2 rounded-[18px] px-3 py-2 text-left text-sm transition-all duration-200"
-              :class="
-                systemMenuActive === item.id
-                  ? 'bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:bg-slate-100 dark:text-slate-900'
-                  : 'text-slate-600 hover:bg-white/80 dark:text-slate-300 dark:hover:bg-slate-900/70'
-              "
-              @click="openSystemMenu(item.id)"
-            >
-              <UIcon :name="item.icon" class="size-4 shrink-0" />
-              <span class="truncate">{{ item.label }}</span>
-            </button>
-          </aside>
-
-          <section class="flex-1 bg-transparent">
+        <div class="h-[72vh] min-h-[520px]">
+          <section class="h-full bg-transparent">
             <div id="title" class="hidden" />
             <KeepAlive>
-              <component :is="activeSystemMenuComponent" class="h-full" />
+              <SettingsPage class="h-full" />
             </KeepAlive>
           </section>
         </div>
@@ -4236,6 +4120,50 @@ onUnmounted(() => {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
+.desktop-avatar-menu {
+  @apply absolute left-0 top-[calc(100%+0.55rem)] z-30 w-[220px] overflow-hidden rounded-[26px] border border-white/80
+    bg-white/95 shadow-[0_22px_48px_rgba(15,23,42,0.16)] backdrop-blur dark:border-white/10 dark:bg-slate-950/95;
+}
+
+.desktop-avatar-menu-header {
+  @apply border-b border-slate-200/70 px-4 py-3 dark:border-slate-800/70;
+}
+
+.desktop-avatar-menu-item {
+  @apply flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 transition-colors duration-150
+    hover:bg-slate-100/80 dark:text-slate-200 dark:hover:bg-slate-900/80;
+}
+
+.desktop-avatar-menu-item.is-danger {
+  @apply text-rose-600 dark:text-rose-300;
+}
+
+.desktop-avatar-menu-item:disabled {
+  @apply cursor-not-allowed opacity-70;
+}
+
+.desktop-avatar-menu-fade-enter-active,
+.desktop-avatar-menu-fade-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.desktop-avatar-menu-fade-enter-from,
+.desktop-avatar-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+}
+
+.settings-dialog-shell {
+  @apply border border-slate-200/80 dark:border-slate-800/80;
+  background: rgba(246, 246, 244, 0.98);
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.18);
+}
+
+.settings-dialog-content {
+  @apply h-full overflow-hidden rounded-[28px] border border-slate-200/80 dark:border-slate-800/80;
+  background: rgba(248, 248, 246, 0.94);
+}
+
 .cookie-inline-text {
   @apply inline-flex h-8 items-center text-[11px] text-slate-500 whitespace-nowrap;
 }
@@ -4250,6 +4178,14 @@ onUnmounted(() => {
 
 .article-star-btn {
   @apply size-6 shrink-0;
+}
+
+:global(html.dark) .settings-dialog-shell {
+  background: rgba(2, 6, 23, 0.96);
+}
+
+:global(html.dark) .settings-dialog-content {
+  background: rgba(2, 6, 23, 0.94);
 }
 
 .article-star-btn.is-active {

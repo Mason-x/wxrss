@@ -23,6 +23,7 @@ import type { Preferences } from '~/types/preferences';
 
 interface Props {
   html: string;
+  contentKind?: 'default' | 'rss';
 }
 
 interface MpVideoInfoResponse {
@@ -78,6 +79,7 @@ function buildSrcdoc(html: string): string {
   });
 
   const hasHead = /<head[\s>]/i.test(sanitized);
+  const hasBody = /<body[\s>]/i.test(sanitized);
   const baseMarkup = '<base target="_blank" />';
   const styleMarkup = `
     <style>
@@ -94,6 +96,9 @@ function buildSrcdoc(html: string): string {
         max-width: 100%;
         -webkit-text-size-adjust: 100%;
         overflow-wrap: break-word;
+      }
+      body[data-renderer-kind="rss"] {
+        padding: 0 clamp(16px, 3.4vw, 28px) 1.75rem;
       }
       img, video, iframe {
         max-width: 100%;
@@ -135,10 +140,16 @@ function buildSrcdoc(html: string): string {
   `;
 
   if (hasHead) {
-    return sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}${styleMarkup}`);
+    const withHead = sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}${styleMarkup}`);
+    if (props.contentKind !== 'rss' || !hasBody) {
+      return withHead;
+    }
+
+    return withHead.replace(/<body([^>]*)>/i, '<body$1 data-renderer-kind="rss">');
   }
 
-  return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body>${sanitized}</body></html>`;
+  const bodyAttr = props.contentKind === 'rss' ? ' data-renderer-kind="rss"' : '';
+  return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttr}>${sanitized}</body></html>`;
 }
 
 function getActivePrivateProxy() {
