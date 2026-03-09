@@ -2082,7 +2082,9 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
       const htmlCache = await getHtmlCache(article.link);
       if (htmlCache) {
         const rawHtml = await htmlCache.file.text();
-        selectedArticleHtml.value = stripWechatHeader(normalizeHtml(rawHtml, 'html'));
+        selectedArticleHtml.value = preferCachedHtml
+          ? stripWechatHeader(rawHtml)
+          : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
         selectedArticleHtml.value =
           preferCachedHtml
