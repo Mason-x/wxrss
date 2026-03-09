@@ -66,16 +66,34 @@
         <SearchAccountForm v-if="mode === 'mp'" v-model="accountQuery" @search="searchAccount" />
 
         <form v-else class="space-y-3" @submit.prevent="handleRssPrimaryAction">
+          <div class="flex items-center gap-2">
           <UInput
             v-model="rssQuery"
             icon="i-lucide:rss"
             color="white"
             size="md"
+            class="dialog-search-input flex-1"
             :trailing="false"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
             placeholder="输入 RSS 地址、rsshub:// 路由或关键词"
           />
+          <UButton
+            type="submit"
+            color="gray"
+            variant="soft"
+            icon="i-lucide:search"
+            class="search-submit-btn"
+            :loading="rssPrimaryLoading"
+            :disabled="rssPrimaryLoading || !rssQuery.trim()"
+            aria-label="搜索或添加 RSS"
+          />
+          </div>
           <div class="flex flex-wrap items-center gap-2">
             <UButton
+              class="hidden"
               type="submit"
               color="gray"
               :loading="rssPrimaryLoading"
@@ -568,5 +586,19 @@ defineExpose({
   @apply !inline-flex size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200
     bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900
     dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white;
+}
+
+.dialog-search-input :deep(input) {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+  .dialog-search-input :deep(input) {
+    font-size: 14px;
+  }
+}
+
+.search-submit-btn {
+  @apply !inline-flex h-10 w-10 shrink-0 items-center justify-center !p-0;
 }
 </style>
