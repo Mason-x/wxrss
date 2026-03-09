@@ -773,7 +773,6 @@ const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
-const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 1200;
 const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 1200;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
@@ -814,7 +813,7 @@ function shouldShowMobileArticleFavoriteAffordance() {
       mobileDragSession.context === 'article' &&
       mobileDragSession.edge === 'left' &&
       !mobileDragSession.interactive &&
-      Math.abs(mobileDragSession.velocityX) < MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY
+      getMobileArticleSwipeProgress() > 0.02
   );
 }
 
@@ -868,7 +867,7 @@ const mobileArticleFavoriteCornerOpacity = transformValue(() => {
     return 0;
   }
   const progress = getMobileArticleSwipeProgress();
-  return Math.max(0, Math.min(1, (progress - 0.01) / 0.08));
+  return Math.max(0, Math.min(1, (progress - 0.015) / 0.05));
 });
 
 const mobileArticleFavoriteCornerScale = transformValue(() => {
@@ -876,7 +875,7 @@ const mobileArticleFavoriteCornerScale = transformValue(() => {
     return 0.92;
   }
   const progress = getMobileArticleSwipeProgress();
-  return 0.94 + Math.max(0, Math.min(1, progress / 0.22)) * 0.06;
+  return 0.92 + Math.max(0, Math.min(1, progress / 0.16)) * 0.08;
 });
 
 const mobilePanelSpring = computed(() =>
@@ -3533,22 +3532,6 @@ onUnmounted(() => {
         >
           <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
 
-          <motion.div
-            v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
-            class="pointer-events-none absolute z-20"
-            :style="{
-              right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-              bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-              x: mobileArticleFavoriteCornerX,
-              opacity: mobileArticleFavoriteCornerOpacity,
-              scale: mobileArticleFavoriteCornerScale,
-            }"
-          >
-            <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
-              <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
-            </div>
-          </motion.div>
-
           <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
             <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('article', $event)">
               <div class="flex items-start justify-between gap-3">
@@ -3607,6 +3590,26 @@ onUnmounted(() => {
               :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
             />
           </motion.div>
+
+          <div
+            v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
+            class="pointer-events-none absolute inset-0 z-40 overflow-hidden"
+          >
+            <motion.div
+              class="absolute"
+              :style="{
+                right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+                bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
+                x: mobileArticleFavoriteCornerX,
+                opacity: mobileArticleFavoriteCornerOpacity,
+                scale: mobileArticleFavoriteCornerScale,
+              }"
+            >
+              <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
+                <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
+              </div>
+            </motion.div>
+          </div>
         </motion.div>
       </div>
 
