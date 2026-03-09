@@ -104,6 +104,7 @@ interface MobileDragSession {
   width: number;
   pointX: number;
   pointY: number;
+  velocityX: number;
 }
 
 interface MobileDrawerEdgeSwipeState {
@@ -744,6 +745,7 @@ const mobileDragSession = reactive<MobileDragSession>({
   width: 0,
   pointX: 0,
   pointY: 0,
+  velocityX: 0,
 });
 const mobileArticlesDragControls = useDragControls();
 const mobileArticleDragControls = useDragControls();
@@ -770,6 +772,7 @@ const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
+const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 220;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -800,6 +803,17 @@ function getMobileDrawerWidth() {
 
 function getMobileArticleSwipeProgress() {
   return Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
+}
+
+function shouldShowMobileArticleFavoriteAffordance() {
+  return Boolean(
+    selectedArticle.value &&
+      !isArticleFavorite(selectedArticle.value) &&
+      mobileDragSession.context === 'article' &&
+      mobileDragSession.edge === 'left' &&
+      !mobileDragSession.interactive &&
+      Math.abs(mobileDragSession.velocityX) < MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY
+  );
 }
 
 const mobileArticlesUnderlayX = transformValue(() => {
@@ -848,11 +862,17 @@ const mobileArticleFavoriteCornerX = transformValue(() => {
 });
 
 const mobileArticleFavoriteCornerOpacity = transformValue(() => {
+  if (!shouldShowMobileArticleFavoriteAffordance()) {
+    return 0;
+  }
   const progress = getMobileArticleSwipeProgress();
   return Math.max(0, Math.min(1, (progress - 0.01) / 0.08));
 });
 
 const mobileArticleFavoriteCornerScale = transformValue(() => {
+  if (!shouldShowMobileArticleFavoriteAffordance()) {
+    return 0.92;
+  }
   const progress = getMobileArticleSwipeProgress();
   return 0.94 + Math.max(0, Math.min(1, progress / 0.22)) * 0.06;
 });
@@ -1730,6 +1750,7 @@ function resetMobileDragSession() {
   mobileDragSession.width = 0;
   mobileDragSession.pointX = 0;
   mobileDragSession.pointY = 0;
+  mobileDragSession.velocityX = 0;
   mobileArticleFavoriteHovering.value = false;
 }
 
@@ -1745,6 +1766,7 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   mobileDragSession.width = width;
   mobileDragSession.pointX = event.clientX;
   mobileDragSession.pointY = event.clientY;
+  mobileDragSession.velocityX = 0;
   mobileDragSession.edge =
     localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'left' : width - localX <= MOBILE_SWIPE_EDGE_GUTTER ? 'right' : 'none';
 
@@ -1823,6 +1845,9 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 
   if (context === 'drawer') {
+    if (mobileDragSession.edge !== 'right') {
+      return;
+    }
     mobileDrawerDragControls.start(event);
   }
 }
@@ -1846,7 +1871,7 @@ function canTriggerMobileArticleFavorite(pointX: number, pointY: number) {
     return false;
   }
 
-  if (mobileDragSession.edge !== 'left' || mobileDragSession.interactive) {
+  if (!shouldShowMobileArticleFavoriteAffordance()) {
     return false;
   }
 
@@ -1864,7 +1889,38 @@ function canTriggerMobileArticleFavorite(pointX: number, pointY: number) {
 function onArticleDrag(_event: PointerEvent, info: PanInfo) {
   mobileDragSession.pointX = info.point.x;
   mobileDragSession.pointY = info.point.y;
+  mobileDragSession.velocityX = Number(info.velocity.x) || 0;
   mobileArticleFavoriteHovering.value = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
+}
+
+function revealSelectedMobileAccountInDrawer() {
+  const fakeid = selectedAccount.value;
+  const container = resolveScrollableElement(mobileAccountsListRef.value);
+
+  if (!fakeid || !container) {
+    return;
+  }
+
+  const escapedFakeid =
+    typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(fakeid) : fakeid.replace(/["\\]/g, '\\$&');
+  const target = container.querySelector<HTMLElement>(`[data-mobile-account-id="${escapedFakeid}"]`);
+
+  if (!target) {
+    return;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const revealPadding = 18;
+
+  if (targetRect.top < containerRect.top + revealPadding) {
+    container.scrollTop -= containerRect.top + revealPadding - targetRect.top;
+    return;
+  }
+
+  if (targetRect.bottom > containerRect.bottom - revealPadding) {
+    container.scrollTop += targetRect.bottom - (containerRect.bottom - revealPadding);
+  }
 }
 
 async function commitMobileArticleFavoriteFromSwipe(width: number) {
@@ -2350,6 +2406,7 @@ async function showMobileAccounts() {
   mobileDrawerSwipeX.set(-getMobileDrawerWidth());
   mobileAccountsPanelOpen.value = true;
   await nextTick();
+  revealSelectedMobileAccountInDrawer();
   void animateMobileDrawerTo(0, mobilePageTransition.value);
 }
 
@@ -3539,7 +3596,7 @@ onUnmounted(() => {
           @click.self="mobileAccountsPanelOpen = false"
         >
           <motion.aside
-            class="app-shell-panel mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
+            class="app-shell-panel mobile-accounts-drawer mobile-touch-surface relative flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
             :style="{ x: mobileDrawerSwipeX }"
             drag="x"
             :dragControls="mobileDrawerDragControls"
@@ -3552,8 +3609,8 @@ onUnmounted(() => {
             :dragTransition="mobileDrawerSnapTransition"
             :transition="mobilePanelSpring"
             :onDragEnd="onDrawerDragEnd"
-            @pointerdown="beginMobileDrag('drawer', $event)"
           >
+              <div class="mobile-drawer-close-sensor absolute inset-y-0 right-0 z-20" @pointerdown="beginMobileDrag('drawer', $event)" />
               <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
                   <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
@@ -3656,6 +3713,7 @@ onUnmounted(() => {
                   <li
                     v-for="account in accountsInCategory"
                     :key="account.fakeid"
+                    :data-mobile-account-id="account.fakeid"
                     class="rounded-[24px] border px-4 py-3 transition-all duration-200"
                     :class="
                       selectedAccount === account.fakeid
@@ -4437,6 +4495,11 @@ onUnmounted(() => {
 .mobile-accounts-drawer {
   max-width: 23rem;
   will-change: transform;
+}
+
+.mobile-drawer-close-sensor {
+  width: 36px;
+  touch-action: none;
 }
 
 .mobile-touch-surface {
