@@ -29,7 +29,7 @@
         <div class="settings-content-shell">
           <div
             ref="scrollContainerRef"
-            class="app-shell-scrollbar h-full min-h-0 overflow-y-auto px-0 py-0 md:px-6 md:py-6"
+            class="app-shell-scrollbar h-full min-h-0 overflow-y-auto overscroll-contain px-0 py-0 md:px-6 md:py-6"
             @scroll.passive="syncActiveSectionFromScroll"
           >
             <div class="mx-auto max-w-5xl space-y-4 md:space-y-6">

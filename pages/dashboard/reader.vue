@@ -747,6 +747,7 @@ const mobileDragSession = reactive<MobileDragSession>({
 });
 const mobileArticlesDragControls = useDragControls();
 const mobileArticleDragControls = useDragControls();
+const mobileDrawerDragControls = useDragControls();
 const prefersReducedMotion = useReducedMotion();
 const mobileArticlesSwipeX = useMotionValue(0);
 const mobileArticleSwipeX = useMotionValue(0);
@@ -1818,6 +1819,11 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
       return;
     }
     mobileArticleDragControls.start(event);
+    return;
+  }
+
+  if (context === 'drawer') {
+    mobileDrawerDragControls.start(event);
   }
 }
 
@@ -2080,8 +2086,8 @@ async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
 
   const offsetX = Number(info.offset.x) || mobileDrawerSwipeX.get();
   const velocityX = Number(info.velocity.x) || 0;
-  const closeThreshold = Math.min(Math.max(width * 0.12, 24), 56);
-  const shouldClose = offsetX <= -closeThreshold || velocityX <= -180;
+  const closeThreshold = Math.min(Math.max(width * 0.04, 14), 22);
+  const shouldClose = offsetX <= -closeThreshold || velocityX <= -140;
 
   if (shouldClose) {
     await animateMobileDrawerTo(-width, mobileSwipeCommitTransition.value);
@@ -3536,6 +3542,8 @@ onUnmounted(() => {
             class="app-shell-panel mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
             :style="{ x: mobileDrawerSwipeX }"
             drag="x"
+            :dragControls="mobileDrawerDragControls"
+            :dragListener="false"
             :dragConstraints="mobileDrawerDragConstraints"
             :dragElastic="mobileDrawerElastic"
             :dragMomentum="false"
@@ -4236,10 +4244,10 @@ onUnmounted(() => {
               <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
             </div>
 
-            <div class="max-h-[calc(100vh-176px)] overflow-hidden px-3 py-3">
+            <div class="h-[calc(100vh-176px)] max-h-[calc(100vh-176px)] overflow-hidden px-3 py-3">
               <div id="title" class="hidden" />
               <KeepAlive>
-                <SettingsPage class="h-full min-h-full bg-transparent" />
+                <SettingsPage class="h-full min-h-0 bg-transparent" />
               </KeepAlive>
             </div>
           </section>
