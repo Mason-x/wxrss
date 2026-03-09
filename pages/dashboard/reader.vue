@@ -773,8 +773,8 @@ const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
-const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 420;
-const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 420;
+const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 1200;
+const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 1200;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -1763,7 +1763,12 @@ function resetMobileDragSession() {
 function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEvent) {
   const container = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const bounds = container?.getBoundingClientRect();
-  const width = bounds?.width || window.innerWidth;
+  const width =
+    context === 'drawer'
+      ? bounds?.width || getMobileDrawerWidth()
+      : context === 'article'
+        ? getMobileViewportWidth()
+        : bounds?.width || window.innerWidth;
   const localX = event.clientX - (bounds?.left || 0);
 
   mobileDragSession.context = context;
@@ -2125,7 +2130,7 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const context = mobileDragSession.context;
   const edge = mobileDragSession.edge;
   const interactive = mobileDragSession.interactive;
-  const width = mobileDragSession.width;
+  const width = mobileDragSession.width || getMobileViewportWidth();
   const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
   const velocityX = Number(info.velocity.x) || 0;
   const fastClose = edge === 'left' && !interactive && velocityX >= MOBILE_ARTICLE_FAST_CLOSE_VELOCITY && info.offset.x > 0;
