@@ -723,6 +723,7 @@ const mobileArticlesListRef = ref<any>(null);
 const mobileArticleContentRef = ref<any>(null);
 const mobileScrollTopVisible = ref(false);
 const mobileAccountsPanelOpen = ref(false);
+const mobileAccountsPanelScrollTop = ref(0);
 const isDesktopViewport = ref(false);
 const mobileHistory = ref<MobileHistoryState[]>([]);
 const mobileHistoryIndex = ref(-1);
@@ -772,7 +773,8 @@ const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
 const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
-const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 220;
+const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 420;
+const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 420;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -907,6 +909,10 @@ const mobileDrawerSnapTransition = computed(() =>
 
 const mobileSwipeCommitTransition = computed(() =>
   prefersReducedMotion.value ? { duration: 0.1 } : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const }
+);
+
+const mobileSwipeFastCommitTransition = computed(() =>
+  prefersReducedMotion.value ? { duration: 0.08 } : { duration: 0.11, ease: [0.32, 1, 0.68, 1] as const }
 );
 
 const mobileSwipeReboundTransition = computed(() =>
@@ -1761,7 +1767,7 @@ function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEv
   const localX = event.clientX - (bounds?.left || 0);
 
   mobileDragSession.context = context;
-  mobileDragSession.interactive = isMobileSwipeInteractiveTarget(event.target);
+  mobileDragSession.interactive = context === 'drawer' ? false : isMobileSwipeInteractiveTarget(event.target);
   mobileDragSession.startX = event.clientX;
   mobileDragSession.width = width;
   mobileDragSession.pointX = event.clientX;
@@ -1845,9 +1851,6 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 
   if (context === 'drawer') {
-    if (mobileDragSession.edge !== 'right') {
-      return;
-    }
     mobileDrawerDragControls.start(event);
   }
 }
@@ -1893,34 +1896,25 @@ function onArticleDrag(_event: PointerEvent, info: PanInfo) {
   mobileArticleFavoriteHovering.value = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
 }
 
-function revealSelectedMobileAccountInDrawer() {
-  const fakeid = selectedAccount.value;
+function syncMobileAccountsPanelScrollTop(event?: Event) {
+  const directTarget = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  const container = directTarget || resolveScrollableElement(mobileAccountsListRef.value);
+
+  if (!container) {
+    return;
+  }
+
+  mobileAccountsPanelScrollTop.value = container.scrollTop;
+}
+
+function restoreMobileAccountsPanelScrollTop() {
   const container = resolveScrollableElement(mobileAccountsListRef.value);
 
-  if (!fakeid || !container) {
+  if (!container) {
     return;
   }
 
-  const escapedFakeid =
-    typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(fakeid) : fakeid.replace(/["\\]/g, '\\$&');
-  const target = container.querySelector<HTMLElement>(`[data-mobile-account-id="${escapedFakeid}"]`);
-
-  if (!target) {
-    return;
-  }
-
-  const containerRect = container.getBoundingClientRect();
-  const targetRect = target.getBoundingClientRect();
-  const revealPadding = 18;
-
-  if (targetRect.top < containerRect.top + revealPadding) {
-    container.scrollTop -= containerRect.top + revealPadding - targetRect.top;
-    return;
-  }
-
-  if (targetRect.bottom > containerRect.bottom - revealPadding) {
-    container.scrollTop += targetRect.bottom - (containerRect.bottom - revealPadding);
-  }
+  container.scrollTop = mobileAccountsPanelScrollTop.value;
 }
 
 async function commitMobileArticleFavoriteFromSwipe(width: number) {
@@ -1942,6 +1936,24 @@ async function commitMobileArticleFavoriteFromSwipe(width: number) {
   clearMobileUnderlay('article');
   mobileArticleSwipeX.set(0);
   return true;
+}
+
+async function commitMobileArticleCloseFromFastSwipe(width: number) {
+  setMobileUnderlayActive('article', true);
+  await animateMobileSwipeValue(
+    'article',
+    getMobileSwipeCommitTarget(width || getMobileViewportWidth(), 1),
+    mobileSwipeFastCommitTransition.value
+  );
+
+  if (canNavigateMobileHistory(-1)) {
+    await navigateMobileHistory(-1);
+  } else {
+    await backFromMobileView();
+  }
+
+  clearMobileUnderlay('article');
+  mobileArticleSwipeX.set(0);
 }
 
 function getMobileSwipeValue(context: MobileInteractiveSwipeContext) {
@@ -2115,10 +2127,17 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const interactive = mobileDragSession.interactive;
   const width = mobileDragSession.width;
   const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
+  const velocityX = Number(info.velocity.x) || 0;
+  const fastClose = edge === 'left' && !interactive && velocityX >= MOBILE_ARTICLE_FAST_CLOSE_VELOCITY && info.offset.x > 0;
   const favoriteTriggered = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
   resetMobileDragSession();
 
   if (context !== 'article') {
+    return;
+  }
+
+  if (fastClose) {
+    await commitMobileArticleCloseFromFastSwipe(width);
     return;
   }
 
@@ -2366,6 +2385,7 @@ function onClickCategory(categoryId: string) {
 
 function onClickAccount(account: MpAccount) {
   rememberMobileArticlesUnderlaySnapshot();
+  syncMobileAccountsPanelScrollTop();
   clearAccountNewArticles(account.fakeid);
   selectedAccount.value = account.fakeid;
   selectedArticle.value = null;
@@ -2406,7 +2426,7 @@ async function showMobileAccounts() {
   mobileDrawerSwipeX.set(-getMobileDrawerWidth());
   mobileAccountsPanelOpen.value = true;
   await nextTick();
-  revealSelectedMobileAccountInDrawer();
+  restoreMobileAccountsPanelScrollTop();
   void animateMobileDrawerTo(0, mobilePageTransition.value);
 }
 
@@ -3149,6 +3169,7 @@ watch(isDesktopViewport, desktop => {
 watch(mobileAccountsPanelOpen, open => {
   if (!open) {
     mobileAvatarMenuOpen.value = false;
+    syncMobileAccountsPanelScrollTop();
   }
 });
 
@@ -3609,8 +3630,8 @@ onUnmounted(() => {
             :dragTransition="mobileDrawerSnapTransition"
             :transition="mobilePanelSpring"
             :onDragEnd="onDrawerDragEnd"
+            @pointerdown="beginMobileDrag('drawer', $event)"
           >
-              <div class="mobile-drawer-close-sensor absolute inset-y-0 right-0 z-20" @pointerdown="beginMobileDrag('drawer', $event)" />
               <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
                   <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
@@ -3690,7 +3711,7 @@ onUnmounted(() => {
                   </UButton>
                 </div>
 
-                <div class="mt-2 flex max-h-[112px] flex-wrap gap-1 overflow-y-auto">
+                <div class="mt-2 flex h-[96px] content-start flex-wrap gap-1 overflow-y-auto pr-1">
                   <button
                     v-for="category in categories"
                     :key="category.id"
@@ -3713,7 +3734,6 @@ onUnmounted(() => {
                   <li
                     v-for="account in accountsInCategory"
                     :key="account.fakeid"
-                    :data-mobile-account-id="account.fakeid"
                     class="rounded-[24px] border px-4 py-3 transition-all duration-200"
                     :class="
                       selectedAccount === account.fakeid
@@ -4495,11 +4515,6 @@ onUnmounted(() => {
 .mobile-accounts-drawer {
   max-width: 23rem;
   will-change: transform;
-}
-
-.mobile-drawer-close-sensor {
-  width: 36px;
-  touch-action: none;
 }
 
 .mobile-touch-surface {
