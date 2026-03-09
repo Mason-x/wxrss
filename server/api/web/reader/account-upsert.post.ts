@@ -7,6 +7,10 @@ interface AccountUpsertBody {
     completed?: boolean;
     count?: number;
     articles?: number;
+    source_type?: 'mp' | 'rss';
+    source_url?: string;
+    site_url?: string;
+    description?: string;
     category?: string;
     focused?: boolean;
     nickname?: string;

@@ -5,6 +5,10 @@ export interface ReaderAccount {
   completed: boolean;
   count: number;
   articles: number;
+  source_type?: 'mp' | 'rss';
+  source_url?: string;
+  site_url?: string;
+  description?: string;
   category?: string;
   focused?: boolean;
   nickname?: string;
@@ -89,6 +93,10 @@ function mapAccountRow(row: any): ReaderAccount {
     completed: Boolean(row.completed),
     count: Number(row.count) || 0,
     articles: Number(row.articles) || 0,
+    source_type: row.source_type === 'rss' ? 'rss' : 'mp',
+    source_url: row.source_url || '',
+    site_url: row.site_url || '',
+    description: row.description || '',
     category: row.category || '',
     focused: Boolean(row.focused),
     nickname: row.nickname || '',
@@ -182,6 +190,14 @@ function isMeaningfulNickname(value?: string): boolean {
   return !/^\?+$/.test(text);
 }
 
+function normalizeSourceType(value?: string): 'mp' | 'rss' {
+  return value === 'rss' ? 'rss' : 'mp';
+}
+
+function normalizeOptionalText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function resolveCategoryForUpsert(payloadCategory: unknown, currentCategory: unknown): string {
   if (typeof payloadCategory !== 'string') {
     return String(currentCategory || '');
@@ -222,6 +238,10 @@ async function applyAccountDelta(
       completed: Boolean(payload.completed),
       count: safeMessageDelta,
       articles: safeArticleDelta,
+      source_type: normalizeSourceType(payload.source_type),
+      source_url: normalizeOptionalText(payload.source_url),
+      site_url: normalizeOptionalText(payload.site_url),
+      description: normalizeOptionalText(payload.description),
       category: typeof payload.category === 'string' ? payload.category : '',
       focused: Boolean(payload.focused),
       nickname: payload.nickname || '',
@@ -235,15 +255,19 @@ async function applyAccountDelta(
     await db.run(
       `
       INSERT INTO reader_accounts(
-        auth_key, fakeid, completed, count, articles, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
+        auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       authKey,
       created.fakeid,
       created.completed ? 1 : 0,
       created.count,
       created.articles,
+      created.source_type || 'mp',
+      created.source_url || '',
+      created.site_url || '',
+      created.description || '',
       created.category || '',
       created.focused ? 1 : 0,
       created.nickname || '',
@@ -261,6 +285,10 @@ async function applyAccountDelta(
     completed: Boolean(current.completed) || Boolean(payload.completed),
     count: (Number(current.count) || 0) + safeMessageDelta,
     articles: (Number(current.articles) || 0) + safeArticleDelta,
+    source_type: normalizeSourceType(String(payload.source_type || current.source_type || 'mp')),
+    source_url: normalizeOptionalText(payload.source_url) || current.source_url || '',
+    site_url: normalizeOptionalText(payload.site_url) || current.site_url || '',
+    description: normalizeOptionalText(payload.description) || current.description || '',
     category: resolveCategoryForUpsert(payload.category, current.category),
     focused: Boolean(current.focused) || Boolean(payload.focused),
     nickname: isMeaningfulNickname(payload.nickname) ? String(payload.nickname || '') : current.nickname || '',
@@ -276,12 +304,16 @@ async function applyAccountDelta(
   await db.run(
     `
     UPDATE reader_accounts
-    SET completed = ?, count = ?, articles = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
+    SET completed = ?, count = ?, articles = ?, source_type = ?, source_url = ?, site_url = ?, description = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
     WHERE auth_key = ? AND fakeid = ?
     `,
     updated.completed ? 1 : 0,
     updated.count,
     updated.articles,
+    updated.source_type || 'mp',
+    updated.source_url || '',
+    updated.site_url || '',
+    updated.description || '',
     updated.category || '',
     updated.focused ? 1 : 0,
     updated.nickname || '',
@@ -379,8 +411,8 @@ export async function listAccounts(
   const params: any[] = [authKey];
 
   if (keyword) {
-    where.push('nickname LIKE ?');
-    params.push(`%${keyword}%`);
+    where.push("(nickname LIKE ? OR source_url LIKE ? OR site_url LIKE ?)");
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
 
   const whereSql = where.join(' AND ');
@@ -426,13 +458,17 @@ export async function importAccounts(authKey: string, accounts: ReaderAccount[])
       await db.run(
         `
         INSERT INTO reader_accounts(
-          auth_key, fakeid, completed, count, articles, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
+          auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(auth_key, fakeid) DO UPDATE SET
           completed = excluded.completed,
           count = excluded.count,
           articles = excluded.articles,
+          source_type = excluded.source_type,
+          source_url = excluded.source_url,
+          site_url = excluded.site_url,
+          description = excluded.description,
           category = excluded.category,
           focused = excluded.focused,
           nickname = excluded.nickname,
@@ -446,6 +482,10 @@ export async function importAccounts(authKey: string, accounts: ReaderAccount[])
         0,
         0,
         0,
+        normalizeSourceType(source.source_type),
+        normalizeOptionalText(source.source_url),
+        normalizeOptionalText(source.site_url),
+        normalizeOptionalText(source.description),
         source.category || '',
         source.focused ? 1 : 0,
         source.nickname || '',

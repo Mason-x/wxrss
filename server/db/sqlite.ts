@@ -297,6 +297,10 @@ async function initSqlite(): Promise<SqliteDb> {
       completed INTEGER NOT NULL DEFAULT 0,
       count INTEGER NOT NULL DEFAULT 0,
       articles INTEGER NOT NULL DEFAULT 0,
+      source_type TEXT NOT NULL DEFAULT 'mp',
+      source_url TEXT NOT NULL DEFAULT '',
+      site_url TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
       category TEXT NOT NULL DEFAULT '',
       focused INTEGER NOT NULL DEFAULT 0,
       nickname TEXT NOT NULL DEFAULT '',
@@ -443,6 +447,42 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE INDEX IF NOT EXISTS idx_cache_debug_auth_fakeid ON cache_debug(auth_key, fakeid);
     CREATE INDEX IF NOT EXISTS idx_cache_debug_updated_at ON cache_debug(updated_at);
+  `);
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_accounts ADD COLUMN source_type TEXT NOT NULL DEFAULT 'mp';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_accounts ADD COLUMN source_url TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_accounts ADD COLUMN site_url TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_accounts ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_reader_accounts_auth_source_type ON reader_accounts(auth_key, source_type);
   `);
 
   try {

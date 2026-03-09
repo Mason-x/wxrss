@@ -5,6 +5,10 @@ import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 interface ArticleUpsertBody {
   account: {
     fakeid: string;
+    source_type?: 'mp' | 'rss';
+    source_url?: string;
+    site_url?: string;
+    description?: string;
     nickname?: string;
     round_head_img?: string;
     category?: string;

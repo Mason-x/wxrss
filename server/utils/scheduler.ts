@@ -10,6 +10,8 @@ import {
   setSchedulerArticles,
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
+import { listArticlesPage } from '~/server/repositories/reader';
+import { syncRssFeed } from '~/server/utils/rss';
 import { cookieStore } from '~/server/utils/CookieStore';
 
 const MAX_PAGE_PER_ACCOUNT = 50;
@@ -137,6 +139,25 @@ function dedupeArticles(newArticles: any[], oldArticles: any[]): any[] {
       return (b?.create_time || 0) - (a?.create_time || 0);
     })
     .slice(0, MAX_ARTICLES_PER_ACCOUNT);
+}
+
+function isRssSchedulerAccount(account: SchedulerAccount): boolean {
+  return account.source_type === 'rss' || String(account.fakeid || '').startsWith('rss:');
+}
+
+function filterArticlesBySyncThreshold(articles: any[], syncThreshold: number): any[] {
+  if (!Array.isArray(articles)) {
+    return [];
+  }
+
+  if (syncThreshold <= 0) {
+    return articles;
+  }
+
+  return articles.filter(article => {
+    const createTime = Number(article?.create_time) || 0;
+    return createTime <= 0 || createTime >= syncThreshold;
+  });
 }
 
 async function fetchAppMsgPublish(
@@ -273,21 +294,47 @@ async function syncOneAccount(
   return collected.length;
 }
 
+async function syncOneRssAccount(
+  authKey: string,
+  account: SchedulerAccount,
+  config: SchedulerConfig
+): Promise<number> {
+  const fakeid = account.fakeid;
+  const cached = await getSchedulerArticles(authKey, fakeid);
+  const syncThreshold = calcSyncThreshold(config);
+  const oldArticles = filterArticlesBySyncThreshold(cached?.articles || [], syncThreshold);
+
+  const result = await syncRssFeed(authKey, {
+    fakeid,
+    url: account.source_url,
+  });
+  const latest = await listArticlesPage(authKey, {
+    fakeid,
+    offset: 0,
+    limit: 500,
+  });
+  const latestArticles = filterArticlesBySyncThreshold(
+    latest.list.map(article => compactArticlePayload(article)),
+    syncThreshold
+  );
+  const merged = dedupeArticles(latestArticles, oldArticles);
+
+  await setSchedulerArticles(authKey, fakeid, {
+    articles: merged,
+    totalCount: Number(result.totalCount) || Number(latest.total) || merged.length,
+  });
+
+  return Number(result.inserted) || 0;
+}
+
 async function runSchedulerForState(state: SchedulerState): Promise<void> {
   const { authKey, config, accounts } = state;
   if (!isDueToday(config, state.lastRunDate)) {
     return;
   }
 
-  const token = await cookieStore.getToken(authKey);
-  const cookie = await cookieStore.getCookie(authKey);
-  if (!token || !cookie) {
-    await upsertSchedulerState(authKey, {
-      lastStatus: 'error',
-      lastError: 'cookie or token missing',
-    });
-    return;
-  }
+  const rssAccounts = accounts.filter(account => isRssSchedulerAccount(account));
+  const mpAccounts = accounts.filter(account => !isRssSchedulerAccount(account));
 
   await upsertSchedulerState(authKey, {
     lastStatus: 'running',
@@ -295,8 +342,19 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
   });
 
   try {
-    for (const account of accounts) {
-      await syncOneAccount(authKey, token, account, config);
+    for (const account of rssAccounts) {
+      await syncOneRssAccount(authKey, account, config);
+    }
+
+    if (mpAccounts.length > 0) {
+      const token = await cookieStore.getToken(authKey);
+      const cookie = await cookieStore.getCookie(authKey);
+      if (!token || !cookie) {
+        throw new Error('cookie or token missing');
+      }
+      for (const account of mpAccounts) {
+        await syncOneAccount(authKey, token, account, config);
+      }
     }
 
     await upsertSchedulerState(authKey, {

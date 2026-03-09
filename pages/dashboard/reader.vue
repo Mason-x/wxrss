@@ -5,7 +5,7 @@ import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { getArticleList } from '~/apis';
+import { getArticleList, syncRssFeed } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
@@ -32,6 +32,7 @@ import {
   getAllInfo,
   getInfoCache,
   importMpAccounts,
+  isRssAccount,
   type MpAccount,
   updateAccountCategory,
   updateAccountFocused,
@@ -581,7 +582,7 @@ const headerBatchSyncProgressText = computed(() => {
   if (!progress.running || progress.totalAccounts <= 0) {
     return '';
   }
-  return `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个公众号`;
+  return `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源`;
 });
 
 const accountsInSelectedCategory = computed(() => {
@@ -647,7 +648,7 @@ const articleListEmptyState = computed(() => {
     return {
       icon: 'i-lucide:book-marked',
       title: '还没有公众号',
-      description: '先添加公众号，再同步文章列表。',
+      description: '先添加公众号或 RSS 订阅，再同步文章列表。',
     };
   }
 
@@ -886,7 +887,7 @@ const mobileSwipeReentryTransition = computed(() =>
 const mobileArticlesHeaderState = computed<MobileHeaderLayerState>(() => {
   const baseMeta = selectedAccount.value
     ? `${articleTotalCount.value} 篇文章`
-    : `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个公众号`;
+    : `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个订阅源`;
   const dynamicMeta = selectedAccount.value ? activeAccountSyncStatus.value : headerBatchSyncProgressText.value;
 
   return {
@@ -1309,6 +1310,10 @@ async function syncSchedulerState(accountList: MpAccount[]) {
         },
         accounts: accountList.map(account => ({
           fakeid: account.fakeid,
+          source_type: account.source_type || 'mp',
+          source_url: account.source_url || '',
+          site_url: account.site_url || '',
+          description: account.description || '',
           nickname: account.nickname || '',
           round_head_img: account.round_head_img || '',
           category: account.category || '',
@@ -2054,16 +2059,25 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
   markArticleAsRead(article);
   selectedArticleHtml.value = '';
   contentLoading.value = true;
+  const preferCachedHtml = String(article.fakeid || '').startsWith('rss:');
 
   try {
-    const html = await request<string>('/api/public/v1/download', {
-      query: {
-        url: article.link,
-        format: 'html',
-      },
-    });
-    selectedArticleHtml.value = stripWechatHeader(html);
+    if (!preferCachedHtml) {
+      const html = await request<string>('/api/public/v1/download', {
+        query: {
+          url: article.link,
+          format: 'html',
+        },
+      });
+      selectedArticleHtml.value = stripWechatHeader(html);
+      contentLoading.value = false;
+      return;
+    }
   } catch {
+    // Fall through to cached html.
+  }
+
+  try {
     try {
       const htmlCache = await getHtmlCache(article.link);
       if (htmlCache) {
@@ -2071,7 +2085,9 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
         selectedArticleHtml.value = stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
         selectedArticleHtml.value =
-          '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
+          preferCachedHtml
+            ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
+            : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
       }
     } catch {
       selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
@@ -2316,25 +2332,32 @@ function addAccount() {
 async function onSelectAccount(account: AccountInfo | MpAccount) {
   addBtnLoading.value = true;
   try {
-    await loadAccountArticle(
-      {
-        fakeid: account.fakeid,
-        nickname: account.nickname,
-        round_head_img: account.round_head_img,
-        completed: false,
-        count: 0,
-        articles: 0,
-        total_count: 0,
-      },
-      false
-    );
+    if (!isRssAccount(account as MpAccount)) {
+      await loadAccountArticle(
+        {
+          fakeid: account.fakeid,
+          nickname: account.nickname,
+          round_head_img: account.round_head_img,
+          completed: false,
+          count: 0,
+          articles: 0,
+          total_count: 0,
+          source_type: 'mp',
+        },
+        false
+      );
+    }
     await refreshData();
     rememberMobileArticlesUnderlaySnapshot();
     selectedAccount.value = account.fakeid;
-    toast.success('公众号添加成功', `已成功添加公众号【${account.nickname}】并完成首页同步`);
+    if (isRssAccount(account as MpAccount)) {
+      toast.success('RSS 添加成功', `已成功添加订阅【${account.nickname}】`);
+    } else {
+      toast.success('公众号添加成功', `已成功添加公众号【${account.nickname}】并完成首页同步`);
+    }
     accountEventBus.emit('account-added', { fakeid: account.fakeid });
   } catch (error) {
-    toast.error('添加公众号失败', (error as Error).message);
+    toast.error(isRssAccount(account as MpAccount) ? '添加 RSS 失败' : '添加公众号失败', (error as Error).message);
   } finally {
     addBtnLoading.value = false;
   }
@@ -2440,7 +2463,7 @@ function deleteCategoryFromEditor(category: string) {
   const affected = accounts.value.filter(account => normalizeCategory(account) === category);
   modal.open(ConfirmModal, {
     title: `删除分类【${category}】？`,
-    description: `将把 ${affected.length} 个公众号移动到未分类。`,
+    description: `将把 ${affected.length} 个订阅源移动到未分类。`,
     async onConfirm() {
       categoryDeleting.value = category;
       try {
@@ -2568,6 +2591,37 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
 }
 
 async function loadAccountArticle(account: MpAccount, loadMore = true) {
+  if (isRssAccount(account)) {
+    syncingRowId.value = account.fakeid;
+    isSyncing.value = true;
+    upsertSyncProgress(account.fakeid, {
+      running: true,
+      syncedMessages: 0,
+      totalMessages: Number(account.total_count) || 0,
+      syncedArticles: Number(account.articles) || 0,
+    });
+
+    try {
+      const result = await syncRssFeed({ fakeid: account.fakeid });
+      if (Number(result.inserted) > 0) {
+        markAccountHasNewArticles(account.fakeid);
+      }
+      upsertSyncProgress(account.fakeid, {
+        running: false,
+        syncedMessages: Number(result.totalCount) || 0,
+        totalMessages: Number(result.totalCount) || 0,
+        syncedArticles: Number(result.account?.articles) || Number(account.articles) || 0,
+      });
+      return result.account;
+    } catch (error) {
+      upsertSyncProgress(account.fakeid, { running: false });
+      throw error;
+    } finally {
+      syncingRowId.value = null;
+      isSyncing.value = false;
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
     _load(account, 0, loadMore, promise).catch(e => {
@@ -2665,7 +2719,12 @@ async function syncCurrentAccount() {
   try {
     isCanceled.value = false;
     await loadAccountArticle(account, true);
-    toast.success('同步完成', `公众号【${account.nickname || account.fakeid}】文章已同步`);
+    toast.success(
+      '同步完成',
+      isRssAccount(account)
+        ? `RSS 订阅【${account.nickname || account.fakeid}】已同步`
+        : `公众号【${account.nickname || account.fakeid}】文章已同步`
+    );
   } catch (error) {
     toast.error('同步失败', (error as Error).message);
   } finally {
@@ -2681,10 +2740,12 @@ async function syncAllAccountsInCurrentScope() {
 
   const targets = [...accounts.value];
   if (targets.length === 0) {
-    toast.warning('提示', '当前没有可同步公众号');
+    toast.warning('提示', '当前没有可同步订阅源');
     return;
   }
 
+  const mpTargets = targets.filter(account => !isRssAccount(account));
+  const rssTargets = targets.filter(account => isRssAccount(account));
   batchSyncProgress.value = {
     running: true,
     completedAccounts: 0,
@@ -2693,45 +2754,105 @@ async function syncAllAccountsInCurrentScope() {
   isCanceled.value = false;
   isSyncing.value = true;
   let finalSnapshot: RemoteBatchSyncJobSnapshot | null = null;
+  let rssSuccessCount = 0;
+  let rssFailedCount = 0;
+  let rssCompletedCount = 0;
+  let rssFirstError = '';
 
   try {
-    let snapshot = await startRemoteBatchSync(targets);
-    applyRemoteBatchSyncSnapshot(snapshot);
-
-    for (;;) {
-      if (snapshot.status !== 'running') {
-        break;
-      }
-
-      if (isCanceled.value) {
-        isCanceled.value = false;
-        await cancelRemoteBatchSync();
-      }
-
-      await new Promise(resolve => setTimeout(resolve, Math.max(1000, Number(snapshot.pollAfterMs) || 3000)));
-      snapshot = (await getRemoteBatchSyncStatus()) as RemoteBatchSyncJobSnapshot;
-      if (!snapshot) {
-        throw new Error('batch sync status missing');
-      }
+    if (mpTargets.length > 0) {
+      let snapshot = await startRemoteBatchSync(mpTargets);
       applyRemoteBatchSyncSnapshot(snapshot);
-    }
-    finalSnapshot = snapshot;
+      batchSyncProgress.value = {
+        running: snapshot.status === 'running',
+        completedAccounts: Number(snapshot.completedAccounts) || 0,
+        totalAccounts: targets.length,
+      };
 
-    if (snapshot.status === 'success') {
-      toast.success('同步完成', `已同步 ${snapshot.successCount} 个公众号`);
-    } else if (snapshot.status === 'canceled') {
-      toast.warning('同步已取消', `已完成 ${snapshot.completedAccounts}/${snapshot.totalAccounts} 个公众号`);
-    } else if (snapshot.successCount === 0) {
-      const firstMessage = normalizeRuntimeErrorMessage(String(snapshot.message || '未知错误'));
+      for (;;) {
+        if (snapshot.status !== 'running') {
+          break;
+        }
+
+        if (isCanceled.value) {
+          isCanceled.value = false;
+          await cancelRemoteBatchSync();
+        }
+
+        await new Promise(resolve => setTimeout(resolve, Math.max(1000, Number(snapshot.pollAfterMs) || 3000)));
+        snapshot = (await getRemoteBatchSyncStatus()) as RemoteBatchSyncJobSnapshot;
+        if (!snapshot) {
+          throw new Error('batch sync status missing');
+        }
+        applyRemoteBatchSyncSnapshot(snapshot);
+        batchSyncProgress.value = {
+          running: snapshot.status === 'running',
+          completedAccounts: Number(snapshot.completedAccounts) || 0,
+          totalAccounts: targets.length,
+        };
+      }
+      finalSnapshot = snapshot;
+    }
+
+    if (finalSnapshot?.status === 'canceled') {
+      toast.warning('同步已取消', `已完成 ${finalSnapshot.completedAccounts}/${targets.length} 个订阅源`);
+      return;
+    }
+
+    if (rssTargets.length > 0) {
+      const completedBeforeRss = Number(finalSnapshot?.completedAccounts) || 0;
+      for (const account of rssTargets) {
+        if (isCanceled.value) {
+          break;
+        }
+
+        batchSyncProgress.value = {
+          running: true,
+          completedAccounts: completedBeforeRss + rssCompletedCount,
+          totalAccounts: targets.length,
+        };
+
+        try {
+          await loadAccountArticle(account, false);
+          rssSuccessCount += 1;
+        } catch (error: any) {
+          rssFailedCount += 1;
+          if (!rssFirstError) {
+            rssFirstError = normalizeRuntimeErrorMessage(String(error?.message || '未知错误'));
+          }
+        } finally {
+          rssCompletedCount += 1;
+          batchSyncProgress.value = {
+            running: true,
+            completedAccounts: completedBeforeRss + rssCompletedCount,
+            totalAccounts: targets.length,
+          };
+        }
+      }
+    }
+
+    const totalSuccessCount = Number(finalSnapshot?.successCount || 0) + rssSuccessCount;
+    const totalFailedCount = Number(finalSnapshot?.failedCount || 0) + rssFailedCount;
+    const totalCompletedCount = Number(finalSnapshot?.completedAccounts || 0) + rssCompletedCount;
+
+    if (isCanceled.value && totalCompletedCount < targets.length) {
+      toast.warning('同步已取消', `已完成 ${totalCompletedCount}/${targets.length} 个订阅源`);
+      return;
+    }
+
+    if (totalFailedCount === 0) {
+      toast.success('同步完成', `已同步 ${totalSuccessCount} 个订阅源`);
+    } else if (totalSuccessCount === 0) {
+      const firstMessage = rssFirstError || normalizeRuntimeErrorMessage(String(finalSnapshot?.message || '未知错误'));
       if (firstMessage === 'session expired') {
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
-      } else if (firstMessage === `all ${snapshot.failedCount} accounts failed`) {
-        toast.error('同步失败', `全部 ${snapshot.failedCount} 个公众号同步失败`);
+      } else if (firstMessage === `all ${finalSnapshot?.failedCount} accounts failed` && rssFailedCount === 0) {
+        toast.error('同步失败', `全部 ${totalFailedCount} 个订阅源同步失败`);
       } else {
         toast.error('同步失败', firstMessage);
       }
     } else {
-      toast.warning('部分同步失败', `成功 ${snapshot.successCount} 个，失败 ${snapshot.failedCount} 个`);
+      toast.warning('部分同步失败', `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`);
     }
   } finally {
     batchSyncProgress.value = {
@@ -2787,7 +2908,7 @@ async function handleFileChange(evt: Event) {
 
     await importMpAccounts(infos);
     await refreshData();
-    toast.success('批量导入成功', `已导入 ${infos.length} 个公众号`);
+    toast.success('批量导入成功', `已导入 ${infos.length} 个订阅源`);
   } catch (error) {
     toast.error('导入公众号失败', (error as Error).message);
   } finally {
@@ -2811,7 +2932,7 @@ function exportAccount() {
       accounts: rows,
     };
     exportAccountJsonFile(data, '公众号');
-    toast.success('批量导出成功', `已导出 ${rows.length} 个公众号`);
+    toast.success('批量导出成功', `已导出 ${rows.length} 个订阅源`);
   } finally {
     exportBtnLoading.value = false;
   }
@@ -3504,7 +3625,7 @@ onUnmounted(() => {
 
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <UTooltip text="添加公众号">
+            <UTooltip text="添加订阅源">
               <UButton
                 size="2xs"
                 color="gray"
@@ -3544,7 +3665,7 @@ onUnmounted(() => {
                 <input ref="fileRef" type="file" accept=".json" class="hidden" @change="handleFileChange" />
               </UButton>
             </UTooltip>
-            <UTooltip text="批量导出公众号">
+            <UTooltip text="批量导出订阅源">
               <UButton
                 size="2xs"
                 color="gray"

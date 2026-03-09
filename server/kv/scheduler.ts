@@ -15,6 +15,10 @@ export interface SchedulerConfig {
 
 export interface SchedulerAccount {
   fakeid: string;
+  source_type?: 'mp' | 'rss';
+  source_url?: string;
+  site_url?: string;
+  description?: string;
   nickname?: string;
   round_head_img?: string;
   category?: string;
@@ -137,11 +141,34 @@ function parseJson<T>(raw: string, fallback: T): T {
   }
 }
 
+function normalizeSchedulerAccount(account: Partial<SchedulerAccount>): SchedulerAccount | null {
+  const fakeid = String(account?.fakeid || '').trim();
+  if (!fakeid) {
+    return null;
+  }
+
+  return {
+    fakeid,
+    source_type: account?.source_type === 'rss' ? 'rss' : 'mp',
+    source_url: String(account?.source_url || '').trim(),
+    site_url: String(account?.site_url || '').trim(),
+    description: String(account?.description || '').trim(),
+    nickname: String(account?.nickname || '').trim(),
+    round_head_img: String(account?.round_head_img || '').trim(),
+    category: String(account?.category || '').trim(),
+    focused: Boolean(account?.focused),
+  };
+}
+
 function normalizeState(authKey: string, state: Partial<SchedulerState>): SchedulerState {
   return {
     authKey,
     config: normalizeSchedulerConfig(state.config),
-    accounts: Array.isArray(state.accounts) ? state.accounts.filter(account => Boolean(account?.fakeid)) : [],
+    accounts: Array.isArray(state.accounts)
+      ? state.accounts
+          .map(account => normalizeSchedulerAccount(account || {}))
+          .filter((account): account is SchedulerAccount => Boolean(account))
+      : [],
     createdAt: state.createdAt || Date.now(),
     updatedAt: state.updatedAt || Date.now(),
     lastRunDate: state.lastRunDate,
@@ -225,14 +252,8 @@ export async function upsertSchedulerState(
 
   const nextAccounts = Array.isArray(payload.accounts)
     ? payload.accounts
-        .filter(account => Boolean(account?.fakeid))
-        .map(account => ({
-          fakeid: account.fakeid,
-          nickname: account.nickname || '',
-          round_head_img: account.round_head_img || '',
-          category: account.category || '',
-          focused: Boolean(account.focused),
-        }))
+        .map(account => normalizeSchedulerAccount(account || {}))
+        .filter((account): account is SchedulerAccount => Boolean(account))
     : prev?.accounts || [];
 
   const state: SchedulerState = {

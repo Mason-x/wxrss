@@ -78,6 +78,10 @@ function buildArticleUpsertPayload(
   const payload: Record<string, any> = {
     account: {
       fakeid: account.fakeid,
+      source_type: account.source_type || 'mp',
+      source_url: account.source_url || '',
+      site_url: account.site_url || '',
+      description: account.description || '',
       nickname: account.nickname,
       round_head_img: account.round_head_img,
       category: account.category || '',

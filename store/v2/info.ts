@@ -2,17 +2,21 @@ import { request } from '#shared/utils/request';
 
 const LEGACY_FOCUS_CATEGORY = '重点关注';
 
+export type AccountSourceType = 'mp' | 'rss';
+
 export interface MpAccount {
   fakeid: string;
   completed: boolean;
   count: number;
   articles: number;
+  source_type?: AccountSourceType;
+  source_url?: string;
+  site_url?: string;
+  description?: string;
   category?: string;
   focused?: boolean;
-
   nickname?: string;
   round_head_img?: string;
-
   total_count: number;
   create_time?: number;
   update_time?: number;
@@ -24,6 +28,28 @@ interface AccountListResponse {
   total: number;
   offset: number;
   limit: number;
+}
+
+export function normalizeAccountSourceType(value?: string): AccountSourceType {
+  return value === 'rss' ? 'rss' : 'mp';
+}
+
+export function isRssAccount(account?: Partial<Pick<MpAccount, 'fakeid' | 'source_type'>> | null): boolean {
+  return normalizeAccountSourceType(account?.source_type) === 'rss' || String(account?.fakeid || '').startsWith('rss:');
+}
+
+function normalizeMpAccount(account: MpAccount): MpAccount {
+  return {
+    ...account,
+    source_type: normalizeAccountSourceType(account?.source_type),
+    source_url: String(account?.source_url || ''),
+    site_url: String(account?.site_url || ''),
+    description: String(account?.description || ''),
+    category: String(account?.category || ''),
+    focused: Boolean(account?.focused),
+    nickname: String(account?.nickname || ''),
+    round_head_img: String(account?.round_head_img || ''),
+  };
 }
 
 async function requestAccounts(query: Record<string, string | number>) {
@@ -45,15 +71,11 @@ async function requestAccounts(query: Record<string, string | number>) {
   }
 }
 
-/**
- * 更新 account 缓存
- * @param mpAccount
- */
 export async function updateInfoCache(mpAccount: MpAccount): Promise<boolean> {
   await request('/api/web/reader/account-upsert', {
     method: 'POST',
     body: {
-      account: mpAccount,
+      account: normalizeMpAccount(mpAccount),
     },
   });
   return true;
@@ -92,10 +114,6 @@ export async function updateAccountFocused(fakeid: string, focused: boolean): Pr
   return true;
 }
 
-/**
- * 获取 info 缓存
- * @param fakeid
- */
 export async function getInfoCache(fakeid: string): Promise<MpAccount | undefined> {
   const resp = await requestAccounts({
     fakeid,
@@ -107,14 +125,15 @@ export async function getInfoCache(fakeid: string): Promise<MpAccount | undefine
     return undefined;
   }
 
-  if ((account.category || '').trim() === LEGACY_FOCUS_CATEGORY && !account.focused) {
-    account.focused = true;
-    account.category = '';
-    await updateAccountFocused(account.fakeid, true);
-    await updateAccountCategory(account.fakeid, '');
+  const normalized = normalizeMpAccount(account);
+  if ((normalized.category || '').trim() === LEGACY_FOCUS_CATEGORY && !normalized.focused) {
+    normalized.focused = true;
+    normalized.category = '';
+    await updateAccountFocused(normalized.fakeid, true);
+    await updateAccountCategory(normalized.fakeid, '');
   }
 
-  return account;
+  return normalized;
 }
 
 export async function getAllInfo(): Promise<MpAccount[]> {
@@ -128,7 +147,7 @@ export async function getAllInfo(): Promise<MpAccount[]> {
       offset,
       limit: pageSize,
     });
-    const rows = Array.isArray(resp.list) ? resp.list : [];
+    const rows = Array.isArray(resp.list) ? resp.list.map(normalizeMpAccount) : [];
     total = Number(resp.total) || 0;
     list.push(...rows);
     offset += rows.length;
@@ -164,7 +183,7 @@ export async function getAccountNameByFakeid(fakeid: string): Promise<string | n
 
 export async function importMpAccounts(mpAccounts: MpAccount[]): Promise<void> {
   const normalized = mpAccounts.map(mpAccount => ({
-    ...mpAccount,
+    ...normalizeMpAccount(mpAccount),
     completed: false,
     count: 0,
     articles: 0,

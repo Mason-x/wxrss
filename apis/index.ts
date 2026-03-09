@@ -27,6 +27,13 @@ interface AppMsgPublishLiteResponse {
   publish_page?: string;
 }
 
+export interface RssSyncResult {
+  account: MpAccount;
+  inserted: number;
+  totalCount: number;
+  sourceUrl: string;
+}
+
 const FIRST_PAGE_PROBE_SIZE = 1;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 const MAX_OOM_RETRY_TIMES = 3;
@@ -193,6 +200,27 @@ export async function getArticleList(
     throw new Error(`${resp.base_resp.ret}:${errMsg}`);
   }
   throw new Error('failed to load article list');
+}
+
+export async function subscribeRssFeed(url: string): Promise<RssSyncResult> {
+  const resp = await request<{ data: RssSyncResult }>('/api/web/reader/rss-subscribe', {
+    method: 'POST',
+    body: {
+      url,
+    },
+  });
+  return resp.data;
+}
+
+export async function syncRssFeed(payload: { fakeid?: string; url?: string }): Promise<RssSyncResult> {
+  const resp = await request<{ data: RssSyncResult }>('/api/web/reader/rss-sync', {
+    method: 'POST',
+    body: {
+      fakeid: payload.fakeid || '',
+      url: payload.url || '',
+    },
+  });
+  return resp.data;
 }
 
 /**

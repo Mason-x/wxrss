@@ -4,6 +4,10 @@ import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 interface AccountImportBody {
   accounts: Array<{
     fakeid: string;
+    source_type?: 'mp' | 'rss';
+    source_url?: string;
+    site_url?: string;
+    description?: string;
     category?: string;
     focused?: boolean;
     nickname?: string;

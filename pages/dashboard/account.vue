@@ -14,7 +14,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { getArticleList } from '~/apis';
+import { getArticleList, syncRssFeed } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
@@ -27,14 +27,15 @@ import { IMAGE_PROXY, websiteName } from '~/config';
 import { sharedGridOptions } from '~/config/shared-grid-options';
 import { deleteAccountData } from '~/store/v2';
 import { getArticleCacheSummary } from '~/store/v2/article';
-import { getAllInfo, getInfoCache, importMpAccounts, type MpAccount, updateAccountCategory } from '~/store/v2/info';
+import { getAllInfo, getInfoCache, importMpAccounts, isRssAccount, type MpAccount, updateAccountCategory } from '~/store/v2/info';
 import type { AccountManifest } from '~/types/account';
 import type { Preferences } from '~/types/preferences';
+import type { AccountInfo } from '~/types/types';
 import { exportAccountJsonFile } from '~/utils/exporter';
 import { createBooleanColumnFilterParams, createDateColumnFilterParams } from '~/utils/grid';
 
 useHead({
-  title: `公众号管理 | ${websiteName}`,
+  title: `订阅源管理 | ${websiteName}`,
 });
 
 interface PromiseInstance {
@@ -68,14 +69,25 @@ function addAccount() {
 
   searchAccountDialogRef.value!.open();
 }
-async function onSelectAccount(account: MpAccount) {
+async function onSelectAccount(account: MpAccount | AccountInfo) {
   addBtnLoading.value = true;
-  await loadAccountArticle(account, false);
-  await refresh();
-  addBtnLoading.value = false;
-  toast.success('公众号添加成功', `已成功添加公众号【${account.nickname}】，并同步了第一页的文章数据`);
-  // 通知 Credentials 面板按钮立即变更为“已添加”
-  accountEventBus.emit('account-added', { fakeid: account.fakeid });
+  try {
+    if (!isRssAccount(account)) {
+      await loadAccountArticle(account, false);
+    }
+    await refresh();
+    toast.success(
+      isRssAccount(account) ? 'RSS 添加成功' : '公众号添加成功',
+      isRssAccount(account)
+        ? `已成功添加订阅【${account.nickname}】`
+        : `已成功添加公众号【${account.nickname}】，并同步了第一页的文章数据`
+    );
+    accountEventBus.emit('account-added', { fakeid: account.fakeid });
+  } catch (error: any) {
+    toast.error(isRssAccount(account) ? '添加 RSS 失败' : '添加公众号失败', String(error?.message || '未知错误'));
+  } finally {
+    addBtnLoading.value = false;
+  }
 }
 
 // 表示同步过程中是否执行了取消操作
@@ -163,6 +175,19 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
 
 // 同步指定公众号
 async function loadAccountArticle(account: MpAccount, loadMore = true) {
+  if (isRssAccount(account)) {
+    syncingRowId.value = account.fakeid;
+    isSyncing.value = true;
+
+    try {
+      const result = await syncRssFeed({ fakeid: account.fakeid });
+      return result.account;
+    } finally {
+      syncingRowId.value = null;
+      isSyncing.value = false;
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
 
@@ -189,7 +214,7 @@ async function loadSelectedAccountArticle() {
     for (const account of rows) {
       await loadAccountArticle(account);
     }
-    toast.success(`已成功同步 ${rows.length} 个公众号`);
+    toast.success(`已成功同步 ${rows.length} 个订阅源`);
   } catch (e: any) {
     toast.error('同步失败', e.message);
   }
@@ -594,7 +619,7 @@ function exportAccount() {
       accounts: rows,
     };
     exportAccountJsonFile(data, '公众号');
-    toast.success('导出公众号', `成功导出了 ${rows.length} 个公众号`);
+    toast.success('导出订阅源', `成功导出了 ${rows.length} 个订阅源`);
   } finally {
     exportBtnLoading.value = false;
   }
@@ -606,7 +631,7 @@ const { getActualDateRange } = useSyncDeadline();
 <template>
   <div class="h-full">
     <Teleport defer to="#title">
-      <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">公众号管理</h1>
+      <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">订阅源管理</h1>
     </Teleport>
 
     <div class="flex h-full flex-col divide-y divide-gray-200">
@@ -688,7 +713,7 @@ const { getActualDateRange } = useSyncDeadline();
           <EmptyStatePanel
             icon="i-lucide-users"
             title="还没有公众号账号"
-            description="先添加或导入账号，之后就可以在这里批量同步和管理分类。"
+            description="先添加或导入订阅源，之后就可以在这里批量同步和管理分类。"
           />
         </div>
 
