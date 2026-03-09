@@ -750,6 +750,7 @@ const mobileArticleDragControls = useDragControls();
 const prefersReducedMotion = useReducedMotion();
 const mobileArticlesSwipeX = useMotionValue(0);
 const mobileArticleSwipeX = useMotionValue(0);
+const mobileDrawerSwipeX = useMotionValue(0);
 const mobileArticleFavoriteHovering = ref(false);
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
@@ -785,6 +786,15 @@ function getMobileViewportHeight() {
     return 844;
   }
   return Math.max(window.innerHeight || 844, 1);
+}
+
+function getMobileDrawerWidth() {
+  if (typeof window === 'undefined') {
+    return 368;
+  }
+
+  const rootFontSize = Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize || '16') || 16;
+  return Math.min(rootFontSize * 23, getMobileViewportWidth() * 0.88);
 }
 
 function getMobileArticleSwipeProgress() {
@@ -859,7 +869,7 @@ const mobileSwipeElastic = computed(() =>
 );
 
 const mobileDrawerElastic = computed(() =>
-  prefersReducedMotion.value ? { left: 1, right: 0.04 } : { left: 0.98, right: 0.08 }
+  prefersReducedMotion.value ? { left: 1, right: 0.02 } : { left: 0.18, right: 0.04 }
 );
 
 const mobileSwipeSnapTransition = computed(() =>
@@ -870,8 +880,8 @@ const mobileSwipeSnapTransition = computed(() =>
 
 const mobileDrawerSnapTransition = computed(() =>
   prefersReducedMotion.value
-    ? { bounceStiffness: 960, bounceDamping: 76 }
-    : { bounceStiffness: 760, bounceDamping: 46 }
+    ? { bounceStiffness: 960, bounceDamping: 88 }
+    : { bounceStiffness: 920, bounceDamping: 74 }
 );
 
 const mobileSwipeCommitTransition = computed(() =>
@@ -885,6 +895,11 @@ const mobileSwipeReboundTransition = computed(() =>
 const mobileSwipeReentryTransition = computed(() =>
   prefersReducedMotion.value ? { duration: 0.09 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] as const }
 );
+
+const mobileDrawerDragConstraints = computed(() => ({
+  left: -getMobileDrawerWidth(),
+  right: 0,
+}));
 
 const mobileArticlesHeaderState = computed<MobileHeaderLayerState>(() => {
   const baseMeta = selectedAccount.value
@@ -2056,15 +2071,25 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
 async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
   const context = mobileDragSession.context;
   const interactive = mobileDragSession.interactive;
+  const width = mobileDragSession.width || getMobileDrawerWidth();
   resetMobileDragSession();
 
-  if (interactive || context !== 'drawer' || !shouldCommitSwipe(info.offset.x, info.velocity.x)) {
+  if (interactive || context !== 'drawer') {
     return;
   }
 
-  if ((info.offset.x || info.velocity.x) < 0) {
+  const offsetX = Number(info.offset.x) || mobileDrawerSwipeX.get();
+  const velocityX = Number(info.velocity.x) || 0;
+  const closeThreshold = Math.min(Math.max(width * 0.12, 24), 56);
+  const shouldClose = offsetX <= -closeThreshold || velocityX <= -180;
+
+  if (shouldClose) {
+    await animateMobileDrawerTo(-width, mobileSwipeCommitTransition.value);
     mobileAccountsPanelOpen.value = false;
+    return;
   }
+
+  await animateMobileDrawerTo(0, mobileSwipeReboundTransition.value);
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
@@ -2211,12 +2236,12 @@ function normalizeCachedRssHtml(html: string) {
     }
 
     const currentMarkup = String(container.innerHTML || '').trim();
-    if (container.children.length > 0 || !/&lt;[a-z!/]/i.test(currentMarkup)) {
+    if (!/&(?:amp;)*(lt|#60);/i.test(currentMarkup)) {
       return html;
     }
 
     const decodedMarkup = decodeHtmlEntitiesDeep(currentMarkup).trim();
-    if (!/<[a-z!/][\s\S]*>/i.test(decodedMarkup)) {
+    if (!/<(?:\/)?(?:p|div|img|figure|figcaption|blockquote|table|thead|tbody|tr|td|th|ul|ol|li|a|span|section|article|h[1-6]|br|hr)\b[\s\S]*>/i.test(decodedMarkup)) {
       return html;
     }
 
@@ -2302,8 +2327,24 @@ async function backFromMobileView() {
   }
 }
 
-function showMobileAccounts() {
+async function animateMobileDrawerTo(target: number, transition: Record<string, any>) {
+  if (prefersReducedMotion.value) {
+    mobileDrawerSwipeX.set(target);
+    return;
+  }
+
+  await animate(mobileDrawerSwipeX, target, transition);
+}
+
+async function showMobileAccounts() {
+  if (mobileAccountsPanelOpen.value) {
+    return;
+  }
+
+  mobileDrawerSwipeX.set(-getMobileDrawerWidth());
   mobileAccountsPanelOpen.value = true;
+  await nextTick();
+  void animateMobileDrawerTo(0, mobilePageTransition.value);
 }
 
 function showMobileAggregateArticles() {
@@ -3493,15 +3534,13 @@ onUnmounted(() => {
         >
           <motion.aside
             class="app-shell-panel mobile-accounts-drawer mobile-touch-surface flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
-            :initial="prefersReducedMotion ? false : { x: '-100%' }"
-            :animate="{ x: 0 }"
-            :exit="{ x: '-100%' }"
+            :style="{ x: mobileDrawerSwipeX }"
             drag="x"
-            :dragConstraints="{ left: 0, right: 0 }"
+            :dragConstraints="mobileDrawerDragConstraints"
             :dragElastic="mobileDrawerElastic"
             :dragMomentum="false"
             :dragDirectionLock="true"
-            :dragSnapToOrigin="true"
+            :dragSnapToOrigin="false"
             :dragTransition="mobileDrawerSnapTransition"
             :transition="mobilePanelSpring"
             :onDragEnd="onDrawerDragEnd"
@@ -4187,7 +4226,7 @@ onUnmounted(() => {
         <Transition name="mobile-menu-drop">
           <section
             v-if="systemMenuOpen && !isDesktopViewport"
-            class="app-shell-panel fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/60 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
+            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/70 bg-[rgba(248,248,246,0.98)] shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70 dark:bg-[rgba(2,6,23,0.98)]"
           >
             <div class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70">
               <div class="min-w-0">
@@ -4197,13 +4236,11 @@ onUnmounted(() => {
               <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
             </div>
 
-            <div class="max-h-[calc(100vh-176px)] overflow-hidden px-4 py-4">
-              <section class="settings-dialog-content h-full">
-                <div id="title" class="hidden" />
-                <KeepAlive>
-                  <SettingsPage class="h-full min-h-full bg-transparent" />
-                </KeepAlive>
-              </section>
+            <div class="max-h-[calc(100vh-176px)] overflow-hidden px-3 py-3">
+              <div id="title" class="hidden" />
+              <KeepAlive>
+                <SettingsPage class="h-full min-h-full bg-transparent" />
+              </KeepAlive>
             </div>
           </section>
         </Transition>

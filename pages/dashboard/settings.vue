@@ -1,10 +1,10 @@
 <template>
   <div class="flex h-full flex-col overflow-hidden text-slate-900 dark:text-slate-100">
-    <div class="min-h-0 flex-1 overflow-hidden px-4 py-4 md:px-6 md:py-6">
+    <div class="min-h-0 flex-1 overflow-hidden md:px-6 md:py-6">
       <div class="grid h-full min-h-0 gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:gap-5">
         <aside class="hidden min-h-0 md:block">
           <div class="settings-anchor-panel sticky top-0">
-            <p class="settings-anchor-eyebrow">Settings</p>
+            <p class="settings-anchor-eyebrow">设置</p>
             <nav class="mt-3 space-y-2">
               <button
                 v-for="section in sections"
@@ -29,10 +29,10 @@
         <div class="settings-content-shell">
           <div
             ref="scrollContainerRef"
-            class="app-shell-scrollbar h-full min-h-0 overflow-y-auto px-4 py-4 md:px-6 md:py-6"
+            class="app-shell-scrollbar h-full min-h-0 overflow-y-auto px-0 py-0 md:px-6 md:py-6"
             @scroll.passive="syncActiveSectionFromScroll"
           >
-            <div class="mx-auto max-w-5xl space-y-5 md:space-y-6">
+            <div class="mx-auto max-w-5xl space-y-4 md:space-y-6">
               <section
                 v-for="section in sections"
                 :id="section.id"
@@ -43,7 +43,7 @@
                 <component :is="section.component" />
               </section>
 
-              <div class="h-16 md:h-24" />
+              <div class="h-10 md:h-20" />
             </div>
           </div>
         </div>
@@ -92,14 +92,14 @@ const sections: SettingsSection[] = [
   {
     id: 'export',
     label: '导出选项',
-    description: '目录与内容策略',
+    description: '目录与内容规则',
     icon: 'i-lucide:files',
     component: SettingExport,
   },
   {
     id: 'misc',
     label: '其他选项',
-    description: '缓存与同步规则',
+    description: '缓存与同步节奏',
     icon: 'i-lucide:sliders-horizontal',
     component: SettingMisc,
   },
@@ -119,7 +119,7 @@ function setSectionRef(id: SettingsSectionId, el: Element | ComponentPublicInsta
 }
 
 function getScrollOffset() {
-  return window.innerWidth >= 768 ? 24 : 16;
+  return window.innerWidth >= 768 ? 24 : 0;
 }
 
 function scrollToSection(id: SettingsSectionId) {
@@ -169,8 +169,11 @@ onMounted(async () => {
 }
 
 .settings-content-shell {
-  @apply min-h-0 overflow-hidden rounded-[30px] border border-slate-200/80 bg-white dark:border-slate-800/80 dark:bg-slate-950;
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .settings-anchor-eyebrow {
@@ -192,16 +195,17 @@ onMounted(async () => {
 }
 
 .settings-section {
-  scroll-margin-top: 1.5rem;
+  scroll-margin-top: 1rem;
 }
 
-@media (max-width: 767px) {
+@media (min-width: 768px) {
   .settings-content-shell {
-    border-radius: 26px;
+    @apply rounded-[30px] border border-slate-200/80 bg-white dark:border-slate-800/80 dark:bg-slate-950;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
   }
 
   .settings-section {
-    scroll-margin-top: 1rem;
+    scroll-margin-top: 1.5rem;
   }
 }
 

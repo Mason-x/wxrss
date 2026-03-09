@@ -271,6 +271,26 @@ function decodeHtmlEntitiesDeep(value: string, maxDepth = 4): string {
   return current;
 }
 
+function decodeEmbeddedEncodedHtml(markup: string): string {
+  let current = String(markup || '').trim();
+  if (!current || !/&(?:amp;)*(lt|#60);/i.test(current)) {
+    return current;
+  }
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    const next = decodeHtmlEntities(current).trim();
+    if (next === current) {
+      break;
+    }
+    current = next;
+    if (!/&(?:amp;)*(lt|#60);/i.test(current)) {
+      break;
+    }
+  }
+
+  return current;
+}
+
 function buildParagraphHtml(text: string): string {
   const lines = String(text || '')
     .split(/\n{2,}/)
@@ -362,14 +382,15 @@ function normalizeBodyHtml(rawHtml: string, fallbackText: string): string {
   const markup = looksLikeHtml(trimmed) ? trimmed : looksLikeHtml(decoded) ? decoded : '';
 
   if (markup) {
-    if (/<html[\s>]/i.test(markup)) {
-      const $ = cheerio.load(markup);
+    const normalizedMarkup = decodeEmbeddedEncodedHtml(markup);
+    if (/<html[\s>]/i.test(normalizedMarkup)) {
+      const $ = cheerio.load(normalizedMarkup);
       const bodyHtml = String($('body').html() || '').trim();
       if (bodyHtml) {
-        return bodyHtml;
+        return decodeEmbeddedEncodedHtml(bodyHtml);
       }
     }
-    return markup;
+    return normalizedMarkup;
   }
 
   return buildParagraphHtml(decoded || trimmed);
