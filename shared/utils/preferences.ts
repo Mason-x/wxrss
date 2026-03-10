@@ -19,6 +19,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   privateProxyList: [],
   privateProxyAuthorization: '',
   rsshubBaseUrl: '',
+  aiSummaryBaseUrl: 'https://api.openai.com/v1',
+  aiSummaryApiKey: '',
+  aiSummaryModel: 'gpt-4.1-mini',
+  aiSummarySystemPrompt:
+    '你是一个中文文章摘要助手。请只基于用户提供的文章内容输出简洁摘要，不要编造原文没有的信息。先用 2 句话概括全文，再给出 3 条以内的关键信息，每条单独一行。',
   exportConfig: {
     dirname: '${title}',
     maxlength: 0,
@@ -93,6 +98,12 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     privateProxyList: normalizeProxyList(source.privateProxyList),
     privateProxyAuthorization: String(source.privateProxyAuthorization || '').trim(),
     rsshubBaseUrl: String(source.rsshubBaseUrl || '').trim(),
+    aiSummaryBaseUrl: String(source.aiSummaryBaseUrl || DEFAULT_PREFERENCES.aiSummaryBaseUrl).trim(),
+    aiSummaryApiKey: String(source.aiSummaryApiKey || '').trim(),
+    aiSummaryModel: String(source.aiSummaryModel || DEFAULT_PREFERENCES.aiSummaryModel).trim(),
+    aiSummarySystemPrompt: String(
+      source.aiSummarySystemPrompt || DEFAULT_PREFERENCES.aiSummarySystemPrompt
+    ).trim(),
     exportConfig: {
       dirname: String(source.exportConfig?.dirname || DEFAULT_PREFERENCES.exportConfig.dirname),
       maxlength: Math.max(0, Math.floor(Number(source.exportConfig?.maxlength) || 0)),

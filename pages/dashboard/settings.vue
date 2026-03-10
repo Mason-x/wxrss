@@ -54,6 +54,7 @@
 
 <script setup lang="ts">
 import { nextTick, type Component, type ComponentPublicInstance } from 'vue';
+import SettingAiSummary from '~/components/setting/AiSummary.vue';
 import SettingExport from '~/components/setting/Export.vue';
 import SettingMisc from '~/components/setting/Misc.vue';
 import SettingProxy from '~/components/setting/Proxy.vue';
@@ -64,7 +65,7 @@ useHead({
   title: `设置 | ${websiteName}`,
 });
 
-type SettingsSectionId = 'scheduler' | 'proxy' | 'export' | 'misc';
+type SettingsSectionId = 'scheduler' | 'ai' | 'proxy' | 'export' | 'misc';
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -81,6 +82,13 @@ const sections: SettingsSection[] = [
     description: '任务与执行时间',
     icon: 'i-lucide:calendar-clock',
     component: SettingScheduler,
+  },
+  {
+    id: 'ai',
+    label: 'AI 摘要',
+    description: '模型与提示词',
+    icon: 'i-lucide:sparkles',
+    component: SettingAiSummary,
   },
   {
     id: 'proxy',
@@ -109,6 +117,7 @@ const activeSection = ref<SettingsSectionId>('scheduler');
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const sectionRefs = reactive<Record<SettingsSectionId, HTMLElement | null>>({
   scheduler: null,
+  ai: null,
   proxy: null,
   export: null,
   misc: null,

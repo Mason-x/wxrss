@@ -11,6 +11,10 @@ export interface Preferences {
 
   // RSSHub 服务地址
   rsshubBaseUrl: string;
+  aiSummaryBaseUrl: string;
+  aiSummaryApiKey: string;
+  aiSummaryModel: string;
+  aiSummarySystemPrompt: string;
 
   // 导出配置
   exportConfig: ExportConfig;

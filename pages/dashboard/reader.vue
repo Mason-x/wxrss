@@ -5,7 +5,7 @@ import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { getArticleList, syncRssFeed } from '~/apis';
+import { generateArticleSummary, getArticleList, syncRssFeed } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
@@ -61,6 +61,13 @@ interface ReaderArticle extends AppMsgExWithFakeID {
 interface PromiseInstance {
   resolve: (value: unknown) => void;
   reject: (reason?: any) => void;
+}
+
+interface ArticleSummaryState {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  summary: string;
+  error: string;
+  model: string;
 }
 
 interface ReaderRuntimeState {
@@ -253,6 +260,7 @@ const selectedCategory = ref('__all__');
 const selectedAccount = ref<string | null>(null);
 const selectedArticle = ref<ReaderArticle | null>(null);
 const selectedArticleHtml = ref('');
+const articleSummaryByKey = ref<Record<string, ArticleSummaryState>>({});
 const selectedArticleKeys = ref<Set<string>>(new Set());
 const selectionMode = ref(false);
 const favoriteOnlySync = useAccountSyncedState<boolean>({
@@ -676,6 +684,43 @@ const syncHeaderTooltip = computed(() => {
 const selectedArticleDisplayTitle = computed(() => {
   if (!selectedArticle.value) return '';
   return articleDisplayTitle(selectedArticle.value);
+});
+
+const aiSummaryConfigured = computed(() => {
+  const currentPreferences = preferences.value as unknown as Preferences;
+  return Boolean(
+    String(currentPreferences.aiSummaryApiKey || '').trim() &&
+      String(currentPreferences.aiSummaryModel || '').trim() &&
+      String(currentPreferences.aiSummaryBaseUrl || '').trim()
+  );
+});
+
+const selectedArticleSummaryKey = computed(() => {
+  if (!selectedArticle.value) {
+    return '';
+  }
+  return articleKey(selectedArticle.value);
+});
+
+const selectedArticleSummaryState = computed<ArticleSummaryState>(() => {
+  const key = selectedArticleSummaryKey.value;
+  if (!key) {
+    return {
+      status: 'idle',
+      summary: '',
+      error: '',
+      model: '',
+    };
+  }
+
+  return (
+    articleSummaryByKey.value[key] || {
+      status: 'idle',
+      summary: '',
+      error: '',
+      model: '',
+    }
+  );
 });
 
 const selectedArticleUrls = computed(() => {
@@ -2238,6 +2283,102 @@ function normalizeCachedRssHtml(html: string) {
   }
 }
 
+function extractArticleSummaryContent(html: string) {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    const parser = new window.DOMParser();
+    const doc = parser.parseFromString(String(html || ''), 'text/html');
+    doc.querySelectorAll('script, style, noscript, iframe, svg').forEach(node => node.remove());
+
+    const text = String(doc.body?.textContent || '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    return text.slice(0, 24000);
+  } catch {
+    return '';
+  }
+}
+
+function updateArticleSummaryState(key: string, patch: Partial<ArticleSummaryState>) {
+  const previous = articleSummaryByKey.value[key] || {
+    status: 'idle' as const,
+    summary: '',
+    error: '',
+    model: '',
+  };
+
+  articleSummaryByKey.value = {
+    ...articleSummaryByKey.value,
+    [key]: {
+      ...previous,
+      ...patch,
+    },
+  };
+}
+
+async function generateSelectedArticleSummary() {
+  if (!selectedArticle.value) {
+    return;
+  }
+
+  const key = selectedArticleSummaryKey.value;
+  if (!key) {
+    return;
+  }
+
+  if (!aiSummaryConfigured.value) {
+    toast.warning('请先配置 AI 摘要', '先在设置里填写 OpenAI 兼容接口配置，再生成文章摘要');
+    openSystemMenu();
+    return;
+  }
+
+  const content = extractArticleSummaryContent(selectedArticleHtml.value);
+  if (!content) {
+    updateArticleSummaryState(key, {
+      status: 'error',
+      error: '当前文章正文还未准备完成，请稍后再试',
+      summary: '',
+      model: '',
+    });
+    return;
+  }
+
+  updateArticleSummaryState(key, {
+    status: 'loading',
+    error: '',
+  });
+
+  try {
+    const result = await generateArticleSummary({
+      title: selectedArticleDisplayTitle.value || selectedArticle.value.title || '无标题',
+      content,
+    });
+
+    updateArticleSummaryState(key, {
+      status: 'success',
+      summary: String(result.summary || '').trim(),
+      error: '',
+      model: String(result.model || ''),
+    });
+  } catch (error: any) {
+    updateArticleSummaryState(key, {
+      status: 'error',
+      summary: '',
+      model: '',
+      error: normalizeRuntimeErrorMessage(
+        String(error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
+      ),
+    });
+  }
+}
+
 function openOriginalArticle(link: string) {
   window.open(link, '_blank');
 }
@@ -3486,10 +3627,74 @@ onUnmounted(() => {
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <IframeHtmlRenderer
-              :html="selectedArticleHtml"
-              :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
-            />
+            <div class="mx-auto w-full max-w-[920px]">
+              <section
+                class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      <UIcon name="i-lucide:sparkles" class="size-4 text-sky-500" />
+                      <span>AI 摘要</span>
+                    </p>
+                  </div>
+
+                  <UButton
+                    size="2xs"
+                    color="primary"
+                    variant="soft"
+                    :loading="selectedArticleSummaryState.status === 'loading'"
+                    @click="generateSelectedArticleSummary"
+                  >
+                    {{
+                      selectedArticleSummaryState.status === 'success'
+                        ? '重新生成'
+                        : selectedArticleSummaryState.status === 'error'
+                          ? '重试'
+                          : '生成摘要'
+                    }}
+                  </UButton>
+                </div>
+
+                <div
+                  v-if="!aiSummaryConfigured"
+                  class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                >
+                  <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
+                  <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">
+                    打开设置
+                  </UButton>
+                </div>
+
+                <div
+                  v-else-if="selectedArticleSummaryState.status === 'loading'"
+                  class="mt-3 rounded-[18px] border border-sky-100/80 bg-white/80 px-3 py-3 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
+                >
+                  正在生成摘要，请稍候……
+                </div>
+
+                <div
+                  v-else-if="selectedArticleSummaryState.status === 'error'"
+                  class="mt-3 rounded-[18px] border border-rose-200/80 bg-rose-50/90 px-3 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+                >
+                  {{ selectedArticleSummaryState.error }}
+                </div>
+
+                <div
+                  v-else-if="selectedArticleSummaryState.status === 'success'"
+                  class="mt-3 rounded-[18px] border border-sky-100/80 bg-white/85 px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
+                >
+                  <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
+                    selectedArticleSummaryState.summary
+                  }}</pre>
+                </div>
+              </section>
+
+              <IframeHtmlRenderer
+                :html="selectedArticleHtml"
+                :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+              />
+            </div>
           </motion.div>
 
         </motion.div>
@@ -3684,7 +3889,7 @@ onUnmounted(() => {
 
     <div v-else class="flex h-full gap-3 overflow-hidden p-3">
     <aside class="app-shell-panel w-[320px] flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
-      <header class="app-shell-glass space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
+      <header class="app-shell-glass relative z-20 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
         <div class="flex items-center justify-start gap-2">
           <template v-if="loginAccount">
             <div ref="desktopAvatarMenuRef" class="relative flex items-center gap-2">
@@ -3765,7 +3970,7 @@ onUnmounted(() => {
 
       </header>
 
-      <ul class="app-shell-scrollbar flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
+      <ul class="app-shell-scrollbar relative z-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
         <li
           v-for="account in accountsInCategory"
           :key="account.fakeid"
@@ -4074,10 +4279,72 @@ onUnmounted(() => {
         />
       </div>
       <div v-else class="app-shell-scrollbar flex-1 overflow-y-auto p-4">
-        <IframeHtmlRenderer
-          :html="selectedArticleHtml"
-          :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
-        />
+        <div class="mx-auto w-full max-w-[920px]">
+          <section
+            class="mb-4 rounded-[26px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-5 py-5 shadow-[0_20px_40px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.45),rgba(2,6,23,0.96))]"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0">
+                <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  <UIcon name="i-lucide:sparkles" class="size-4 text-sky-500" />
+                  <span>AI 摘要</span>
+                </p>
+              </div>
+
+              <UButton
+                size="xs"
+                color="primary"
+                variant="soft"
+                :loading="selectedArticleSummaryState.status === 'loading'"
+                @click="generateSelectedArticleSummary"
+              >
+                {{
+                  selectedArticleSummaryState.status === 'success'
+                    ? '重新生成'
+                    : selectedArticleSummaryState.status === 'error'
+                      ? '重试'
+                      : '生成摘要'
+                }}
+              </UButton>
+            </div>
+
+            <div
+              v-if="!aiSummaryConfigured"
+              class="mt-4 rounded-[20px] border border-amber-200/80 bg-amber-50/90 px-4 py-4 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
+              <UButton size="2xs" color="gray" variant="soft" class="mt-3" @click="openSystemMenu">打开设置</UButton>
+            </div>
+
+            <div
+              v-else-if="selectedArticleSummaryState.status === 'loading'"
+              class="mt-4 rounded-[20px] border border-sky-100/80 bg-white/85 px-4 py-4 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
+            >
+              正在生成摘要，请稍候……
+            </div>
+
+            <div
+              v-else-if="selectedArticleSummaryState.status === 'error'"
+              class="mt-4 rounded-[20px] border border-rose-200/80 bg-rose-50/90 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+            >
+              {{ selectedArticleSummaryState.error }}
+            </div>
+
+            <div
+              v-else-if="selectedArticleSummaryState.status === 'success'"
+              class="mt-4 rounded-[20px] border border-sky-100/80 bg-white/88 px-4 py-4 dark:border-sky-500/20 dark:bg-slate-950/70"
+            >
+              <pre class="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 dark:text-slate-200">{{
+                selectedArticleSummaryState.summary
+              }}</pre>
+            </div>
+          </section>
+
+          <IframeHtmlRenderer
+            :html="selectedArticleHtml"
+            :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+          />
+        </div>
       </div>
     </main>
     </div>
@@ -4275,13 +4542,13 @@ onUnmounted(() => {
 }
 
 .desktop-avatar-menu {
-  @apply absolute left-0 top-[calc(100%+0.55rem)] z-30 w-[220px] overflow-hidden rounded-[26px] border border-white/80
-    bg-white/95 shadow-[0_22px_48px_rgba(15,23,42,0.16)] backdrop-blur dark:border-white/10 dark:bg-slate-950/95;
+  @apply absolute left-0 top-[calc(100%+0.55rem)] z-[120] isolate w-[220px] overflow-hidden rounded-[26px] border border-slate-200/90
+    bg-white shadow-[0_22px_48px_rgba(15,23,42,0.16)] dark:border-slate-800/90 dark:bg-slate-950;
 }
 
 .mobile-avatar-menu {
-  @apply absolute left-0 top-[calc(100%+0.55rem)] z-30 w-[188px] overflow-hidden rounded-[24px] border border-white/80
-    bg-white/95 shadow-[0_18px_40px_rgba(15,23,42,0.14)] backdrop-blur dark:border-white/10 dark:bg-slate-950/95;
+  @apply absolute left-0 top-[calc(100%+0.55rem)] z-[120] isolate w-[188px] overflow-hidden rounded-[24px] border border-slate-200/90
+    bg-white shadow-[0_18px_40px_rgba(15,23,42,0.14)] dark:border-slate-800/90 dark:bg-slate-950;
 }
 
 .desktop-avatar-menu-header {
@@ -4373,7 +4640,7 @@ onUnmounted(() => {
 }
 
 .account-new-dot {
-  @apply relative inline-block size-2.5 rounded-full border border-white/90 bg-rose-500 dark:border-slate-900;
+  @apply relative z-0 inline-block size-2.5 rounded-full border border-white/90 bg-rose-500 dark:border-slate-900;
   box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.42);
   animation: account-new-dot-pulse 1.6s ease-out infinite;
 }

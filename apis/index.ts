@@ -72,6 +72,11 @@ export interface RsshubCategoryItem {
   routeCount: number;
 }
 
+export interface ArticleSummaryResult {
+  summary: string;
+  model: string;
+}
+
 const FIRST_PAGE_PROBE_SIZE = 1;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 const MAX_OOM_RETRY_TIMES = 3;
@@ -282,6 +287,20 @@ export async function searchRsshubRoutes(options: {
     categories: Array.isArray(resp.categories) ? resp.categories : [],
     routes: Array.isArray(resp.routes) ? resp.routes : [],
   };
+}
+
+export async function generateArticleSummary(payload: {
+  title: string;
+  content: string;
+}): Promise<ArticleSummaryResult> {
+  const resp = await request<{ data: ArticleSummaryResult }>('/api/web/ai/article-summary', {
+    method: 'POST',
+    body: {
+      title: payload.title,
+      content: payload.content,
+    },
+  });
+  return resp.data;
 }
 
 /**
