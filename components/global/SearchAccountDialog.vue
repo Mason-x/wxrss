@@ -104,7 +104,7 @@
         </form>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain rss-dialog-scroll">
+      <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain overscroll-x-none rss-dialog-scroll">
         <template v-if="mode === 'mp'">
           <ul class="divide-y divide-slate-100 antialiased dark:divide-slate-800">
             <li
@@ -144,10 +144,10 @@
         </template>
 
         <template v-else>
-          <div class="min-h-full space-y-4 px-3 py-4">
+          <div class="min-h-full max-w-full rss-dialog-page space-y-4 px-3 py-4" :style="rssDialogPageStyle">
             <div
               v-if="selectedRsshubRoute"
-              class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              class="max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
@@ -281,7 +281,7 @@
               <article
                 v-for="group in rssBrowseRouteGroups"
                 :key="group.key"
-                class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                class="max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -306,7 +306,7 @@
                   <div
                     v-for="item in group.routes"
                     :key="item.id"
-                    class="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 px-3 py-3 dark:border-slate-800"
+                    class="flex max-w-full items-start justify-between gap-3 overflow-hidden rounded-2xl border border-slate-100 px-3 py-3 dark:border-slate-800"
                   >
                     <div class="min-w-0 flex-1">
                       <div class="flex items-start gap-2">
@@ -319,7 +319,7 @@
                           <p v-if="item.summary" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                             {{ item.summary }}
                           </p>
-                          <p v-if="item.maintainers.length > 0" class="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+                          <p v-if="item.maintainers.length > 0" class="mt-2 break-all text-[11px] text-slate-400 dark:text-slate-500">
                             @{{ item.maintainers.slice(0, 3).join(' @') }}
                           </p>
                         </div>
@@ -356,7 +356,7 @@
               <article
                 v-for="item in rssDiscoverResults"
                 :key="item.id"
-                class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+                class="max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -545,6 +545,8 @@ const dialogBackGesture = reactive({
   startY: 0,
   deltaX: 0,
   deltaY: 0,
+  offsetX: 0,
+  animating: false,
 });
 
 const emit = defineEmits<{
@@ -559,6 +561,26 @@ let begin = 0;
 const DIALOG_EDGE_BACK_WIDTH_PX = 28;
 const DIALOG_EDGE_BACK_TRIGGER_PX = 72;
 const DIALOG_EDGE_BACK_DIRECTION_RATIO = 1.15;
+const DIALOG_ANYWHERE_BACK_TRIGGER_PX = 56;
+const DIALOG_BACK_MAX_OFFSET_RATIO = 0.9;
+const DIALOG_BACK_RESET_MS = 180;
+let dialogBackResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+const canSwipeBackInsideRssPage = computed(
+  () =>
+    mode.value === 'rss' &&
+    Boolean(
+      selectedRsshubRouteId.value ||
+        selectedRsshubCategoryId.value ||
+        rssDiscoverSearched.value ||
+        rssQuery.value.trim()
+    )
+);
+
+const rssDialogPageStyle = computed(() => ({
+  transform: dialogBackGesture.offsetX > 0 ? `translate3d(${dialogBackGesture.offsetX}px, 0, 0)` : 'translate3d(0, 0, 0)',
+  transition: dialogBackGesture.animating ? `transform ${DIALOG_BACK_RESET_MS}ms cubic-bezier(0.22, 1, 0.36, 1)` : 'none',
+}));
 
 function normalizeRouteValue(value: string): string {
   return String(value || '')
@@ -634,6 +656,10 @@ function closeSwitcher() {
 }
 
 function resetDialogBackGesture() {
+  if (dialogBackResetTimer) {
+    clearTimeout(dialogBackResetTimer);
+    dialogBackResetTimer = null;
+  }
   dialogBackGesture.active = false;
   dialogBackGesture.edge = false;
   dialogBackGesture.axis = null;
@@ -641,10 +667,37 @@ function resetDialogBackGesture() {
   dialogBackGesture.startY = 0;
   dialogBackGesture.deltaX = 0;
   dialogBackGesture.deltaY = 0;
+  dialogBackGesture.offsetX = 0;
+  dialogBackGesture.animating = false;
 }
 
 function shouldEnableDialogEdgeBack() {
   return import.meta.client && window.innerWidth < 768 && isOpen.value;
+}
+
+function clampDialogBackOffset(deltaX: number) {
+  if (!import.meta.client) {
+    return Math.max(0, deltaX);
+  }
+  return Math.max(0, Math.min(deltaX, Math.round(window.innerWidth * DIALOG_BACK_MAX_OFFSET_RATIO)));
+}
+
+function animateDialogBackReset() {
+  if (dialogBackGesture.offsetX <= 0) {
+    resetDialogBackGesture();
+    return;
+  }
+
+  if (dialogBackResetTimer) {
+    clearTimeout(dialogBackResetTimer);
+  }
+
+  dialogBackGesture.animating = true;
+  dialogBackGesture.offsetX = 0;
+  dialogBackResetTimer = setTimeout(() => {
+    dialogBackResetTimer = null;
+    resetDialogBackGesture();
+  }, DIALOG_BACK_RESET_MS);
 }
 
 function navigateBackInDialog() {
@@ -689,7 +742,7 @@ function handleDialogTouchStart(event: TouchEvent) {
   }
 
   dialogBackGesture.active = true;
-  dialogBackGesture.edge = touch.clientX <= DIALOG_EDGE_BACK_WIDTH_PX;
+  dialogBackGesture.edge = canSwipeBackInsideRssPage.value || touch.clientX <= DIALOG_EDGE_BACK_WIDTH_PX;
   dialogBackGesture.startX = touch.clientX;
   dialogBackGesture.startY = touch.clientY;
 }
@@ -719,21 +772,24 @@ function handleDialogTouchMove(event: TouchEvent) {
   }
 
   if (dialogBackGesture.axis === 'x' && deltaX > 0) {
+    dialogBackGesture.animating = false;
+    dialogBackGesture.offsetX = clampDialogBackOffset(deltaX);
     event.preventDefault();
   }
 }
 
 function handleDialogTouchEnd() {
-  if (
-    dialogBackGesture.active &&
-    dialogBackGesture.edge &&
-    dialogBackGesture.axis === 'x' &&
-    dialogBackGesture.deltaX >= DIALOG_EDGE_BACK_TRIGGER_PX
-  ) {
+  const reachedTrigger = canSwipeBackInsideRssPage.value
+    ? dialogBackGesture.deltaX >= DIALOG_ANYWHERE_BACK_TRIGGER_PX
+    : dialogBackGesture.deltaX >= DIALOG_EDGE_BACK_TRIGGER_PX;
+
+  if (dialogBackGesture.active && dialogBackGesture.edge && dialogBackGesture.axis === 'x' && reachedTrigger) {
     navigateBackInDialog();
+    resetDialogBackGesture();
+    return;
   }
 
-  resetDialogBackGesture();
+  animateDialogBackReset();
 }
 
 function switchMode(nextMode: 'mp' | 'rss') {
@@ -972,6 +1028,13 @@ watch(rssQuery, value => {
 
 .rss-dialog-scroll {
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.rss-dialog-page {
+  width: 100%;
+  overflow-x: hidden;
+  will-change: transform;
   touch-action: pan-y;
 }
 </style>
