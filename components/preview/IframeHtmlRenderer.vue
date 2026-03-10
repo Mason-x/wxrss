@@ -592,6 +592,7 @@ function bindGalleryInteractions(doc: Document): void {
       });
     });
 
+    track.scrollTo({ left: 0, behavior: 'auto' });
     syncGalleryIndicators(track);
 
     galleryCleanupFns.push(() => {

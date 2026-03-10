@@ -530,7 +530,36 @@ function extractPictureGalleryImages(rawHTML: string): DynamicGalleryImage[] {
     });
   }
 
-  return [...images.values()];
+  if (images.size <= 1) {
+    return [...images.values()];
+  }
+
+  const $ = cheerio.load(rawHTML);
+  const orderedUrls = new Set<string>();
+  $('#img_swiper img, #img_list img, .img_swiper_area img, .share_media_text img').each((_, el) => {
+    const $img = $(el);
+    const rawUrl =
+      $img.attr('src') ||
+      $img.attr('data-src') ||
+      $img.attr('data-cdn-src') ||
+      $img.attr('data-ori-src') ||
+      '';
+    const url = normalizeMediaUrl(decodeMaybeURIComponent(rawUrl));
+    if (url && images.has(url)) {
+      orderedUrls.add(url);
+    }
+  });
+
+  if (orderedUrls.size === 0) {
+    return [...images.values()];
+  }
+
+  const orderedImages = [...orderedUrls]
+    .map(url => images.get(url))
+    .filter((item): item is DynamicGalleryImage => Boolean(item));
+  const remainingImages = [...images.values()].filter(item => !orderedUrls.has(item.url));
+
+  return [...orderedImages, ...remainingImages];
 }
 
 function isPictureShareShell($jsArticleContent: cheerio.Cheerio<any>): boolean {
