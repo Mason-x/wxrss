@@ -7,8 +7,14 @@
       overlay: { background: 'bg-slate-950/45' },
     }"
   >
-    <div class="flex flex-1 flex-col overflow-hidden bg-white shadow dark:bg-slate-950">
-      <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-3 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <div
+      class="flex h-dvh max-h-dvh flex-1 flex-col overflow-hidden bg-white shadow dark:bg-slate-950"
+      @touchstart="handleDialogTouchStart"
+      @touchmove="handleDialogTouchMove"
+      @touchend="handleDialogTouchEnd"
+      @touchcancel="resetDialogBackGesture"
+    >
+      <div class="sticky top-0 z-10 shrink-0 border-b border-slate-200 bg-white px-3 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <UButton
@@ -98,7 +104,7 @@
         </form>
       </div>
 
-      <div class="flex-1 overflow-y-auto">
+      <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain rss-dialog-scroll">
         <template v-if="mode === 'mp'">
           <ul class="divide-y divide-slate-100 antialiased dark:divide-slate-800">
             <li
@@ -138,7 +144,7 @@
         </template>
 
         <template v-else>
-          <div class="space-y-4 px-3 py-4">
+          <div class="min-h-full space-y-4 px-3 py-4">
             <div
               v-if="selectedRsshubRoute"
               class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -531,6 +537,15 @@ const selectedRsshubRoutePreview = computed(() => {
     return item.rsshubUrl;
   }
 });
+const dialogBackGesture = reactive({
+  active: false,
+  edge: false,
+  axis: null as 'x' | 'y' | null,
+  startX: 0,
+  startY: 0,
+  deltaX: 0,
+  deltaY: 0,
+});
 
 const emit = defineEmits<{
   'select:account': [account: AccountInfo | MpAccount];
@@ -541,6 +556,9 @@ const accountList = reactive<AccountInfo[]>([]);
 const loading = ref(false);
 const noMoreData = ref(false);
 let begin = 0;
+const DIALOG_EDGE_BACK_WIDTH_PX = 28;
+const DIALOG_EDGE_BACK_TRIGGER_PX = 72;
+const DIALOG_EDGE_BACK_DIRECTION_RATIO = 1.15;
 
 function normalizeRouteValue(value: string): string {
   return String(value || '')
@@ -613,6 +631,109 @@ function openSwitcher() {
 
 function closeSwitcher() {
   isOpen.value = false;
+}
+
+function resetDialogBackGesture() {
+  dialogBackGesture.active = false;
+  dialogBackGesture.edge = false;
+  dialogBackGesture.axis = null;
+  dialogBackGesture.startX = 0;
+  dialogBackGesture.startY = 0;
+  dialogBackGesture.deltaX = 0;
+  dialogBackGesture.deltaY = 0;
+}
+
+function shouldEnableDialogEdgeBack() {
+  return import.meta.client && window.innerWidth < 768 && isOpen.value;
+}
+
+function navigateBackInDialog() {
+  if (selectedRsshubRouteId.value) {
+    clearSelectedRsshubRoute();
+    return;
+  }
+
+  if (selectedRsshubCategoryId.value) {
+    exitRsshubCategory();
+    return;
+  }
+
+  if (rssDiscoverSearched.value) {
+    rssQuery.value = '';
+    rssDiscoverSearched.value = false;
+    rssDiscoverResults.value = [];
+    clearSelectedRsshubRoute();
+    return;
+  }
+
+  if (mode.value === 'rss' && rssQuery.value.trim()) {
+    rssQuery.value = '';
+    rssDiscoverResults.value = [];
+    clearSelectedRsshubRoute();
+    return;
+  }
+
+  closeSwitcher();
+}
+
+function handleDialogTouchStart(event: TouchEvent) {
+  resetDialogBackGesture();
+
+  if (!shouldEnableDialogEdgeBack()) {
+    return;
+  }
+
+  const touch = event.touches[0];
+  if (!touch) {
+    return;
+  }
+
+  dialogBackGesture.active = true;
+  dialogBackGesture.edge = touch.clientX <= DIALOG_EDGE_BACK_WIDTH_PX;
+  dialogBackGesture.startX = touch.clientX;
+  dialogBackGesture.startY = touch.clientY;
+}
+
+function handleDialogTouchMove(event: TouchEvent) {
+  if (!dialogBackGesture.active || !dialogBackGesture.edge) {
+    return;
+  }
+
+  const touch = event.touches[0];
+  if (!touch) {
+    return;
+  }
+
+  const deltaX = touch.clientX - dialogBackGesture.startX;
+  const deltaY = touch.clientY - dialogBackGesture.startY;
+  dialogBackGesture.deltaX = deltaX;
+  dialogBackGesture.deltaY = deltaY;
+
+  if (!dialogBackGesture.axis) {
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+    if (absX < 8 && absY < 8) {
+      return;
+    }
+    dialogBackGesture.axis = deltaX > 0 && absX > absY * DIALOG_EDGE_BACK_DIRECTION_RATIO ? 'x' : 'y';
+  }
+
+  if (dialogBackGesture.axis === 'x' && deltaX > 0) {
+    event.preventDefault();
+  }
+}
+
+function handleDialogTouchEnd() {
+  if (
+    dialogBackGesture.active &&
+    dialogBackGesture.edge &&
+    dialogBackGesture.axis === 'x' &&
+    dialogBackGesture.deltaX >= DIALOG_EDGE_BACK_TRIGGER_PX
+  ) {
+    navigateBackInDialog();
+  }
+
+  resetDialogBackGesture();
 }
 
 function switchMode(nextMode: 'mp' | 'rss') {
@@ -847,5 +968,10 @@ watch(rssQuery, value => {
 
 .search-submit-btn {
   @apply !inline-flex h-10 w-10 shrink-0 items-center justify-center !p-0;
+}
+
+.rss-dialog-scroll {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 </style>
