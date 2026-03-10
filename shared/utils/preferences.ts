@@ -54,6 +54,24 @@ function normalizeDailySyncTime(value?: string): string {
   return `${match[1]}:${match[2]}`;
 }
 
+function resolveDailySyncConfig(source: PreferencesInput): Pick<Preferences, 'dailySyncEnabled' | 'dailySyncTime'> {
+  const rawTime = String(source.dailySyncTime || '').trim();
+  const normalizedTime = normalizeDailySyncTime(source.dailySyncTime);
+  const hasLegacyDefaultCombo = source.dailySyncEnabled === false && (!rawTime || normalizedTime === '06:00');
+
+  if (hasLegacyDefaultCombo) {
+    return {
+      dailySyncEnabled: true,
+      dailySyncTime: DEFAULT_PREFERENCES.dailySyncTime,
+    };
+  }
+
+  return {
+    dailySyncEnabled: source.dailySyncEnabled ?? DEFAULT_PREFERENCES.dailySyncEnabled,
+    dailySyncTime: normalizedTime,
+  };
+}
+
 function normalizeProxyList(value?: string[]): string[] {
   if (!Array.isArray(value)) {
     return [...DEFAULT_PREFERENCES.privateProxyList];
@@ -68,6 +86,7 @@ type PreferencesInput = Partial<Preferences> & {
 export function normalizePreferences(input?: PreferencesInput | null): Preferences {
   const source = input || {};
   const syncDelayRange = normalizeSyncDelayRange(source, DEFAULT_PREFERENCES);
+  const dailySyncConfig = resolveDailySyncConfig(source);
 
   return {
     hideDeleted: source.hideDeleted ?? DEFAULT_PREFERENCES.hideDeleted,
@@ -94,8 +113,8 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     },
     accountSyncMinSeconds: syncDelayRange.accountSyncMinSeconds,
     accountSyncMaxSeconds: syncDelayRange.accountSyncMaxSeconds,
-    dailySyncEnabled: source.dailySyncEnabled ?? DEFAULT_PREFERENCES.dailySyncEnabled,
-    dailySyncTime: normalizeDailySyncTime(source.dailySyncTime),
+    dailySyncEnabled: dailySyncConfig.dailySyncEnabled,
+    dailySyncTime: dailySyncConfig.dailySyncTime,
     syncDateRange: normalizeSyncDateRange(source.syncDateRange),
     syncDatePoint: Number.isFinite(source.syncDatePoint)
       ? Number(source.syncDatePoint)
