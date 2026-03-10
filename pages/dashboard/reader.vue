@@ -771,9 +771,10 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
 const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
-const MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET = 24;
+const MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS = 0.04;
+const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 320;
 const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
-const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 1200;
+const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 560;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
 const MOBILE_UNDERLAY_WINDOW_SIZE = 22;
@@ -813,7 +814,8 @@ function shouldShowMobileArticleFavoriteAffordance() {
       mobileDragSession.context === 'article' &&
       mobileDragSession.edge === 'left' &&
       !mobileDragSession.interactive &&
-      getMobileArticleSwipeProgress() > 0.02
+      getMobileArticleSwipeProgress() > MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS &&
+      Math.abs(mobileDragSession.velocityX) <= MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY
   );
 }
 
@@ -858,8 +860,7 @@ const mobileArticleUnderlayScrimOpacity = transformValue(() => {
 });
 
 const mobileArticleFavoriteCornerX = transformValue(() => {
-  const progress = getMobileArticleSwipeProgress();
-  return (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
+  return 0;
 });
 
 const mobileArticleFavoriteCornerOpacity = transformValue(() => {
@@ -867,7 +868,7 @@ const mobileArticleFavoriteCornerOpacity = transformValue(() => {
     return 0;
   }
   const progress = getMobileArticleSwipeProgress();
-  return Math.max(0, Math.min(1, (progress - 0.015) / 0.05));
+  return Math.max(0, Math.min(1, (progress - MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS) / 0.06));
 });
 
 const mobileArticleFavoriteCornerScale = transformValue(() => {
@@ -3595,7 +3596,7 @@ onUnmounted(() => {
 
         <div
           v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
-          class="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+          class="pointer-events-none fixed inset-0 z-[60] overflow-hidden md:hidden"
         >
           <motion.div
             class="absolute"
@@ -3609,6 +3610,7 @@ onUnmounted(() => {
           >
             <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
               <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
+              <span class="mobile-article-favorite-corner-label">星标</span>
             </div>
           </motion.div>
         </div>
@@ -4548,12 +4550,16 @@ onUnmounted(() => {
 }
 
 .mobile-article-favorite-corner {
-  @apply relative h-[288px] w-[288px] rounded-full text-slate-500 shadow-[-24px_-24px_44px_rgba(15,23,42,0.16)] dark:text-slate-300;
-  background-color: rgba(148, 163, 184, 0.96);
+  @apply relative h-[288px] w-[288px] rounded-full text-slate-100 shadow-[-24px_-24px_44px_rgba(15,23,42,0.2)];
+  background-color: rgba(71, 85, 105, 0.95);
 }
 
 .mobile-article-favorite-corner-icon {
-  @apply absolute left-[56px] top-[56px] size-[56px];
+  @apply absolute left-[58px] top-[58px] size-[44px];
+}
+
+.mobile-article-favorite-corner-label {
+  @apply absolute left-[50px] top-[108px] text-[15px] font-medium tracking-[0.08em];
 }
 
 .mobile-article-favorite-corner.is-ready {
@@ -4562,7 +4568,7 @@ onUnmounted(() => {
 }
 
 :global(.dark) .mobile-article-favorite-corner {
-  background-color: rgba(15, 23, 42, 0.94);
+  background-color: rgba(30, 41, 59, 0.96);
 }
 
 :global(.dark) .mobile-article-favorite-corner.is-ready {
