@@ -84,7 +84,7 @@
               autocapitalize="off"
               autocorrect="off"
               spellcheck="false"
-              placeholder="输入 RSS 地址、rsshub:// 路由或关键词"
+              placeholder="输入 RSS 地址、rsshub:// 路由或站点/关键词"
             />
             <UButton
               type="submit"
@@ -96,11 +96,23 @@
               :disabled="rssPrimaryLoading || !rssQuery.trim()"
               aria-label="搜索或添加 RSS"
             />
+            <UPopover :popper="{ placement: 'bottom-end' }">
+              <UButton
+                type="button"
+                color="gray"
+                variant="ghost"
+                icon="i-heroicons:question-mark-circle-16-solid"
+                class="search-help-btn"
+                aria-label="RSS 添加说明"
+              />
+              <template #panel>
+                <div class="max-w-[18rem] p-3 text-xs leading-5 text-slate-600 dark:text-slate-300">
+                  支持两种方式：直接添加：`https://sspai.com/feed` 或 `rsshub://github/issue/follow/follow`；关键词搜索：输入如
+                  `github issue`、`youtube`、`bilibili`，列出 RSSHub 路由。
+                </div>
+              </template>
+            </UPopover>
           </div>
-          <p class="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
-            支持两种方式：直接添加：`https://sspai.com/feed` 或 `rsshub://github/issue/follow/follow`；关键词搜索：输入如
-            `github issue`、`youtube`、`bilibili`，列出 RSSHub 路由
-          </p>
         </form>
       </div>
 
@@ -146,7 +158,7 @@
         <template v-else>
           <div class="min-h-full max-w-full rss-dialog-page space-y-4 px-3 py-4" :style="rssDialogPageStyle">
             <div
-              v-if="selectedRsshubRoute"
+              v-if="false && selectedRsshubRoute"
               class="max-w-full overflow-hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
             >
               <div class="flex items-start justify-between gap-3">
@@ -212,7 +224,7 @@
                 <UButton
                   color="gray"
                   :loading="rssLoading"
-                  :disabled="rssLoading || (selectedRsshubRoutePreview.startsWith('rsshub://') && !hasRsshubBaseUrl)"
+                  :disabled="!selectedRsshubRouteCanSubmit"
                   @click="submitSelectedRsshubRoute"
                 >
                   添加这个 RSSHub 订阅
@@ -221,6 +233,12 @@
                   会自动生成 `rsshub://...` 地址后添加。
                 </span>
               </div>
+              <p
+                v-if="selectedRsshubRouteBuildError"
+                class="mt-3 text-[11px] text-amber-600 dark:text-amber-300"
+              >
+                {{ selectedRsshubRouteBuildError }}
+              </p>
               <p
                 v-if="selectedRsshubRoutePreview.startsWith('rsshub://') && !hasRsshubBaseUrl"
                 class="mt-3 text-[11px] text-amber-600 dark:text-amber-300"
@@ -261,12 +279,12 @@
             <div v-else-if="isBrowsingRsshubCategory && rssBrowseRouteGroups.length > 0" class="space-y-3">
               <div class="flex items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="min-w-0">
-                  <p class="text-sm font-semibold text-slate-900 dark:text-white">
-                    {{ selectedRsshubCategory?.label || '分类路由' }}
-                  </p>
-                  <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                    {{ selectedRsshubCategory?.description || '按站点分组浏览 RSSHub 路由' }}
-                  </p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">
+                      {{ selectedRsshubCategory?.label || '分类路由' }}
+                    </p>
+                    <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      {{ selectedRsshubCategory?.description || '按站点分组浏览 RSSHub 路由' }}
+                    </p>
                 </div>
                 <UButton
                   size="2xs"
@@ -342,7 +360,7 @@
                         size="2xs"
                         color="gray"
                         variant="soft"
-                        @click="selectRsshubRoute(item)"
+                        @click="openRsshubRouteEditor(item)"
                       >
                         填写参数
                       </UButton>
@@ -414,7 +432,7 @@
                       size="2xs"
                       color="gray"
                       variant="soft"
-                      @click="selectRsshubRoute(item)"
+                      @click="openRsshubRouteEditor(item)"
                     >
                       填写参数
                     </UButton>
@@ -439,6 +457,107 @@
           </div>
         </template>
       </div>
+
+      <UModal
+        v-model="rssRouteEditorOpen"
+        :ui="{
+          width: 'w-[92vw] max-w-[40rem]',
+          container: 'flex min-h-full items-end justify-center sm:items-center',
+        }"
+      >
+        <UCard v-if="selectedRsshubRoute" class="w-full">
+          <template #header>
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate text-base font-semibold text-slate-900 dark:text-white">
+                    {{ selectedRsshubRoute.routeName }}
+                  </p>
+                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                    {{ selectedRsshubRoute.namespaceName }}
+                  </span>
+                  <span
+                    v-if="selectedRsshubRoute.requiresConfig"
+                    class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-600 dark:bg-amber-500/10 dark:text-amber-300"
+                  >
+                    需要额外配置
+                  </span>
+                </div>
+                <p v-if="selectedRsshubRoute.summary" class="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  {{ selectedRsshubRoute.summary }}
+                </p>
+              </div>
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:x"
+                class="icon-btn"
+                @click="clearSelectedRsshubRoute"
+              />
+            </div>
+          </template>
+
+          <div class="space-y-4">
+            <p class="break-all text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              {{ selectedRsshubRoutePreview }}
+            </p>
+
+            <div v-if="selectedRsshubRoute.params.length > 0" class="space-y-3">
+              <div v-for="param in selectedRsshubRoute.params" :key="param.key" class="space-y-1.5">
+                <label class="text-xs font-medium text-slate-700 dark:text-slate-200">
+                  {{ param.key }}
+                  <span v-if="param.required" class="ml-1 text-rose-500">*</span>
+                </label>
+
+                <USelectMenu
+                  v-if="param.options.length > 0"
+                  v-model="rssRouteValues[param.key]"
+                  :options="param.options"
+                  value-attribute="value"
+                  option-attribute="label"
+                />
+                <UInput
+                  v-else
+                  v-model="rssRouteValues[param.key]"
+                  :placeholder="param.defaultValue || (param.required ? '必填参数' : '可选参数')"
+                />
+
+                <p v-if="param.description" class="text-[11px] text-slate-500 dark:text-slate-400">
+                  {{ param.description }}
+                </p>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <UButton
+                color="gray"
+                :loading="rssLoading"
+                :disabled="!selectedRsshubRouteCanSubmit"
+                @click="submitSelectedRsshubRoute"
+              >
+                添加这个 RSSHub 订阅
+              </UButton>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400">
+                会自动生成 `rsshub://...` 地址后添加。
+              </span>
+            </div>
+
+            <p
+              v-if="selectedRsshubRouteBuildError"
+              class="text-[11px] text-amber-600 dark:text-amber-300"
+            >
+              {{ selectedRsshubRouteBuildError }}
+            </p>
+            <p
+              v-if="selectedRsshubRoutePreview.startsWith('rsshub://') && !hasRsshubBaseUrl"
+              class="text-[11px] text-amber-600 dark:text-amber-300"
+            >
+              请先在设置里的 RSSHub 一栏填写可用的服务地址，再添加 RSSHub 路由。
+            </p>
+          </div>
+        </UCard>
+      </UModal>
     </div>
   </USlideover>
 </template>
@@ -468,6 +587,7 @@ const rssQuery = ref('');
 const rssLoading = ref(false);
 const rssDiscoverLoading = ref(false);
 const rssDiscoverSearched = ref(false);
+const rssRouteEditorOpen = ref(false);
 const rssCategories = ref<RsshubCategoryItem[]>([]);
 const rssDiscoverResults = ref<RsshubDiscoverItem[]>([]);
 const selectedRsshubCategoryId = ref<string | null>(null);
@@ -537,6 +657,26 @@ const selectedRsshubRoutePreview = computed(() => {
     return item.rsshubUrl;
   }
 });
+const selectedRsshubRouteBuildError = computed(() => {
+  const item = selectedRsshubRoute.value;
+  if (!item) {
+    return '';
+  }
+
+  try {
+    buildRsshubRouteUrl(item, rssRouteValues);
+    return '';
+  } catch (error: any) {
+    return String(error?.message || '请先补全 RSSHub 路由参数');
+  }
+});
+const selectedRsshubRouteCanSubmit = computed(
+  () =>
+    Boolean(selectedRsshubRoute.value) &&
+    !rssLoading.value &&
+    !selectedRsshubRouteBuildError.value &&
+    !(selectedRsshubRoutePreview.value.startsWith('rsshub://') && !hasRsshubBaseUrl.value)
+);
 const dialogBackGesture = reactive({
   active: false,
   edge: false,
@@ -558,8 +698,6 @@ const accountList = reactive<AccountInfo[]>([]);
 const loading = ref(false);
 const noMoreData = ref(false);
 let begin = 0;
-const DIALOG_EDGE_BACK_WIDTH_PX = 28;
-const DIALOG_EDGE_BACK_TRIGGER_PX = 72;
 const DIALOG_EDGE_BACK_DIRECTION_RATIO = 1.15;
 const DIALOG_ANYWHERE_BACK_TRIGGER_PX = 56;
 const DIALOG_BACK_MAX_OFFSET_RATIO = 0.9;
@@ -570,10 +708,8 @@ const canSwipeBackInsideRssPage = computed(
   () =>
     mode.value === 'rss' &&
     Boolean(
-      selectedRsshubRouteId.value ||
-        selectedRsshubCategoryId.value ||
-        rssDiscoverSearched.value ||
-        rssQuery.value.trim()
+      selectedRsshubCategoryId.value ||
+        rssDiscoverSearched.value
     )
 );
 
@@ -587,6 +723,14 @@ function normalizeRouteValue(value: string): string {
     .trim()
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
+}
+
+function encodeRouteValue(value: string): string {
+  return normalizeRouteValue(value)
+    .split('/')
+    .map(segment => encodeURIComponent(segment.trim()))
+    .filter(Boolean)
+    .join('/');
 }
 
 function describeRequestError(error: any): string {
@@ -605,7 +749,7 @@ function buildRsshubRouteUrl(item: RsshubDiscoverItem, values: Record<string, st
 
       const key = match[1];
       const optional = Boolean(match[2]);
-      const value = normalizeRouteValue(String(values[key] || ''));
+      const value = encodeRouteValue(String(values[key] || ''));
       if (!value) {
         if (optional) {
           return [];
@@ -625,6 +769,7 @@ function resetRssRouteValues() {
 }
 
 function clearSelectedRsshubRoute() {
+  rssRouteEditorOpen.value = false;
   selectedRsshubRouteId.value = null;
   resetRssRouteValues();
 }
@@ -644,6 +789,11 @@ function selectRsshubRoute(item: RsshubDiscoverItem) {
   });
 }
 
+function openRsshubRouteEditor(item: RsshubDiscoverItem) {
+  selectRsshubRoute(item);
+  rssRouteEditorOpen.value = true;
+}
+
 function openSwitcher() {
   isOpen.value = true;
   if (mode.value === 'rss') {
@@ -652,6 +802,7 @@ function openSwitcher() {
 }
 
 function closeSwitcher() {
+  rssRouteEditorOpen.value = false;
   isOpen.value = false;
 }
 
@@ -672,7 +823,7 @@ function resetDialogBackGesture() {
 }
 
 function shouldEnableDialogEdgeBack() {
-  return import.meta.client && window.innerWidth < 768 && isOpen.value;
+  return import.meta.client && window.innerWidth < 768 && isOpen.value && canSwipeBackInsideRssPage.value;
 }
 
 function clampDialogBackOffset(deltaX: number) {
@@ -742,7 +893,7 @@ function handleDialogTouchStart(event: TouchEvent) {
   }
 
   dialogBackGesture.active = true;
-  dialogBackGesture.edge = canSwipeBackInsideRssPage.value || touch.clientX <= DIALOG_EDGE_BACK_WIDTH_PX;
+  dialogBackGesture.edge = true;
   dialogBackGesture.startX = touch.clientX;
   dialogBackGesture.startY = touch.clientY;
 }
@@ -779,11 +930,12 @@ function handleDialogTouchMove(event: TouchEvent) {
 }
 
 function handleDialogTouchEnd() {
-  const reachedTrigger = canSwipeBackInsideRssPage.value
-    ? dialogBackGesture.deltaX >= DIALOG_ANYWHERE_BACK_TRIGGER_PX
-    : dialogBackGesture.deltaX >= DIALOG_EDGE_BACK_TRIGGER_PX;
-
-  if (dialogBackGesture.active && dialogBackGesture.edge && dialogBackGesture.axis === 'x' && reachedTrigger) {
+  if (
+    dialogBackGesture.active &&
+    dialogBackGesture.edge &&
+    dialogBackGesture.axis === 'x' &&
+    dialogBackGesture.deltaX >= DIALOG_ANYWHERE_BACK_TRIGGER_PX
+  ) {
     navigateBackInDialog();
     resetDialogBackGesture();
     return;
@@ -965,13 +1117,23 @@ async function submitSelectedRsshubRoute() {
     return;
   }
 
+  if (selectedRsshubRouteBuildError.value) {
+    toast.add({
+      color: 'amber',
+      title: '参数未完成',
+      description: selectedRsshubRouteBuildError.value,
+      icon: 'i-octicon:alert-24',
+    });
+    return;
+  }
+
   try {
     await submitRssValue(buildRsshubRouteUrl(item, rssRouteValues));
   } catch (error: any) {
     toast.add({
       color: 'amber',
-      title: '参数未完成',
-      description: String(error?.message || '请先补全 RSSHub 路由参数'),
+      title: '添加失败',
+      description: String(error?.message || '请检查 RSSHub 路由参数'),
       icon: 'i-octicon:alert-24',
     });
   }
@@ -1003,6 +1165,12 @@ watch(rssQuery, value => {
   rssDiscoverSearched.value = false;
   rssDiscoverResults.value = [];
 });
+
+watch(rssRouteEditorOpen, open => {
+  if (!open && selectedRsshubRouteId.value) {
+    clearSelectedRsshubRoute();
+  }
+});
 </script>
 
 <style scoped>
@@ -1024,6 +1192,10 @@ watch(rssQuery, value => {
 
 .search-submit-btn {
   @apply !inline-flex h-10 w-10 shrink-0 items-center justify-center !p-0;
+}
+
+.search-help-btn {
+  @apply !inline-flex h-10 w-10 shrink-0 items-center justify-center !p-0 rounded-full;
 }
 
 .rss-dialog-scroll {
