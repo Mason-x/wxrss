@@ -1309,7 +1309,7 @@ async function syncSchedulerState(accountList: MpAccount[]) {
       body: {
         config: {
           dailySyncEnabled: Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
-          dailySyncTime: String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
+          dailySyncTime: String((preferences.value as unknown as Preferences).dailySyncTime || '03:00'),
           accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
           accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
           syncDateRange: (preferences.value as unknown as Preferences).syncDateRange,
@@ -1483,7 +1483,7 @@ watch(
     Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
     Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
     Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
-    String((preferences.value as unknown as Preferences).dailySyncTime || '06:00'),
+    String((preferences.value as unknown as Preferences).dailySyncTime || '03:00'),
     String((preferences.value as unknown as Preferences).syncDateRange || 'all'),
     Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
   ],
@@ -3601,7 +3601,7 @@ onUnmounted(() => {
                   </UButton>
                 </div>
 
-                <div class="mt-2 flex h-[96px] content-start flex-wrap gap-1 overflow-y-auto pr-1">
+                <div class="mt-2 flex max-h-[96px] content-start flex-wrap gap-1 overflow-y-auto pr-1">
                   <button
                     v-for="category in categories"
                     :key="category.id"

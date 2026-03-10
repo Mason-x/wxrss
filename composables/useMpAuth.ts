@@ -19,6 +19,23 @@ function getLoginExpiresAt(account: LoginAccount | null | undefined): number {
   return Number.isFinite(expiresAt) ? expiresAt : 0;
 }
 
+function normalizeLoginAccount(account: LoginAccount | null | undefined, authKey?: string): LoginAccount | null {
+  const expires = String(account?.expires || '').trim();
+  const normalizedAuthKey = String(authKey || account?.auth_key || '').trim();
+
+  if (!expires || !normalizedAuthKey) {
+    return null;
+  }
+
+  return {
+    nickname: String(account?.nickname || '').trim(),
+    avatar: String(account?.avatar || '').trim(),
+    expires,
+    auth_key: normalizedAuthKey,
+    identity_key: String(account?.identity_key || '').trim(),
+  };
+}
+
 export default function useMpAuth() {
   const loginAccount = useLoginAccount();
   const authStatus = useState<'unknown' | 'authenticated' | 'unauthenticated'>('mp-auth-status', () => 'unknown');
@@ -38,16 +55,27 @@ export default function useMpAuth() {
     authCheckedAt.value = Date.now();
   }
 
+  function markAuthenticated(account?: LoginAccount | null) {
+    const normalized = normalizeLoginAccount(account || loginAccount.value);
+    if (normalized) {
+      loginAccount.value = normalized;
+    }
+    authStatus.value = 'authenticated';
+    authCheckedAt.value = Date.now();
+  }
+
   async function validateLogin(options?: { force?: boolean }) {
     const force = Boolean(options?.force);
-
-    if (!loginAccount.value || isLoginExpired(loginAccount.value)) {
-      clearLoginState();
-      return false;
-    }
+    const currentAccount = loginAccount.value;
+    const hasUsableLocalLogin = Boolean(currentAccount && !isLoginExpired(currentAccount));
 
     const now = Date.now();
-    if (!force && authStatus.value === 'authenticated' && now - authCheckedAt.value < AUTH_VALIDATION_TTL_MS) {
+    if (
+      !force &&
+      hasUsableLocalLogin &&
+      authStatus.value === 'authenticated' &&
+      now - authCheckedAt.value < AUTH_VALIDATION_TTL_MS
+    ) {
       return true;
     }
 
@@ -65,19 +93,17 @@ export default function useMpAuth() {
           return false;
         }
 
-        authStatus.value = 'authenticated';
-        authCheckedAt.value = Date.now();
-
-        if (resp.data && loginAccount.value && loginAccount.value.auth_key !== resp.data) {
-          loginAccount.value = {
-            ...loginAccount.value,
-            auth_key: resp.data,
-          };
-        }
+        const restoredAccount =
+          normalizeLoginAccount(resp?.login || null, resp?.data) ||
+          normalizeLoginAccount(loginAccount.value, resp?.data);
+        markAuthenticated(restoredAccount);
 
         return true;
       } catch {
-        clearLoginState();
+        if (hasUsableLocalLogin) {
+          authStatus.value = 'unknown';
+          return true;
+        }
         return false;
       } finally {
         validationPromise = null;

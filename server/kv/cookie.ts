@@ -6,6 +6,7 @@ export type CookieKVKey = string;
 export interface CookieKVValue {
   token: string;
   cookies: CookieEntity[];
+  expiresAt?: number;
 }
 
 const COOKIE_TTL_MS = 60 * 60 * 24 * 4 * 1000; // 4 days
@@ -79,6 +80,7 @@ export async function getMpCookie(key: CookieKVKey): Promise<CookieKVValue | nul
     return {
       token: row.token,
       cookies,
+      expiresAt: Number(row.expires_at) || 0,
     };
   } catch (err) {
     console.error('sqlite getMpCookie failed:', err);

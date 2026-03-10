@@ -62,6 +62,16 @@ export interface RsshubDiscoverItem {
   requiresConfig: boolean;
 }
 
+export interface RsshubCategoryItem {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  accentFrom: string;
+  accentTo: string;
+  routeCount: number;
+}
+
 const FIRST_PAGE_PROBE_SIZE = 1;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 const MAX_OOM_RETRY_TIMES = 3;
@@ -251,14 +261,27 @@ export async function syncRssFeed(payload: { fakeid?: string; url?: string }): P
   return resp.data;
 }
 
-export async function searchRsshubRoutes(keyword: string, limit = 20): Promise<RsshubDiscoverItem[]> {
-  const resp = await request<{ data: RsshubDiscoverItem[] }>('/api/web/reader/rss-discover', {
+export async function searchRsshubRoutes(options: {
+  keyword?: string;
+  category?: string;
+  limit?: number;
+}): Promise<{
+  categories: RsshubCategoryItem[];
+  routes: RsshubDiscoverItem[];
+}> {
+  const resp = await request<{ categories?: RsshubCategoryItem[]; routes?: RsshubDiscoverItem[] }>(
+    '/api/web/reader/rss-discover',
+    {
     query: {
-      keyword,
-      limit,
+      keyword: options.keyword || '',
+      category: options.category || '',
+      limit: options.limit || 20,
     },
   });
-  return Array.isArray(resp.data) ? resp.data : [];
+  return {
+    categories: Array.isArray(resp.categories) ? resp.categories : [],
+    routes: Array.isArray(resp.routes) ? resp.routes : [],
+  };
 }
 
 /**

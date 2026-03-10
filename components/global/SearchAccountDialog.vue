@@ -67,44 +67,34 @@
 
         <form v-else class="space-y-3" @submit.prevent="handleRssPrimaryAction">
           <div class="flex items-center gap-2">
-          <UInput
-            v-model="rssQuery"
-            icon="i-lucide:rss"
-            color="white"
-            size="md"
-            class="dialog-search-input flex-1"
-            :trailing="false"
-            autocomplete="off"
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            placeholder="输入 RSS 地址、rsshub:// 路由或关键词"
-          />
-          <UButton
-            type="submit"
-            color="gray"
-            variant="soft"
-            icon="i-lucide:search"
-            class="search-submit-btn"
-            :loading="rssPrimaryLoading"
-            :disabled="rssPrimaryLoading || !rssQuery.trim()"
-            aria-label="搜索或添加 RSS"
-          />
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
+            <UInput
+              v-model="rssQuery"
+              icon="i-lucide:rss"
+              color="white"
+              size="md"
+              class="dialog-search-input flex-1"
+              :trailing="false"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              placeholder="输入 RSS 地址、rsshub:// 路由或关键词"
+            />
             <UButton
-              class="hidden"
               type="submit"
               color="gray"
+              variant="soft"
+              icon="i-lucide:search"
+              class="search-submit-btn"
               :loading="rssPrimaryLoading"
               :disabled="rssPrimaryLoading || !rssQuery.trim()"
-            >
-              {{ looksLikeDirectRssInput ? '添加订阅' : '搜索添加' }}
-            </UButton>
-            <span class="text-[11px] text-slate-500 dark:text-slate-400">
-              关键词会搜索 RSSHub 路由；地址会直接尝试订阅。
-            </span>
+              aria-label="搜索或添加 RSS"
+            />
           </div>
+          <p class="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+            支持两种方式：直接添加：`https://sspai.com/feed` 或 `rsshub://github/issue/follow/follow`；关键词搜索：输入如
+            `github issue`、`youtube`、`bilibili`，列出 RSSHub 路由
+          </p>
         </form>
       </div>
 
@@ -149,12 +139,6 @@
 
         <template v-else>
           <div class="space-y-4 px-3 py-4">
-            <div class="rounded-3xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300">
-              <p class="font-medium text-slate-900 dark:text-white">支持两种方式</p>
-              <p class="mt-2">直接添加：`https://sspai.com/feed` 或 `rsshub://github/issue/follow/follow`</p>
-              <p class="mt-1">关键词搜索：输入如 `github issue`、`youtube`、`bilibili`，列出 RSSHub 路由</p>
-            </div>
-
             <div
               v-if="selectedRsshubRoute"
               class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
@@ -239,8 +223,127 @@
               </p>
             </div>
 
-            <div v-if="rssDiscoverLoading" class="flex items-center justify-center rounded-3xl border border-slate-200 bg-white px-4 py-10 dark:border-slate-800 dark:bg-slate-900">
+            <div
+              v-if="rssDiscoverLoading"
+              class="flex items-center justify-center rounded-3xl border border-slate-200 bg-white px-4 py-10 dark:border-slate-800 dark:bg-slate-900"
+            >
               <Loader :size="26" class="animate-spin text-slate-500" />
+            </div>
+
+            <div v-else-if="showRsshubCategories" class="space-y-3">
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <button
+                  v-for="category in rssCategories"
+                  :key="category.id"
+                  type="button"
+                  class="group relative overflow-hidden rounded-[28px] p-4 text-left text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                  :style="{ background: `linear-gradient(145deg, ${category.accentFrom}, ${category.accentTo})` }"
+                  @click="browseRsshubCategory(category.id)"
+                >
+                  <div class="absolute right-3 top-3 rounded-full bg-white/14 p-2 text-white/80">
+                    <UIcon :name="category.icon" class="size-5" />
+                  </div>
+                  <div class="relative flex min-h-[8.5rem] flex-col justify-end">
+                    <p class="text-lg font-semibold tracking-tight">{{ category.label }}</p>
+                    <p class="mt-1 line-clamp-2 text-xs text-white/80">{{ category.description }}</p>
+                    <p class="mt-3 text-xs font-medium text-white/85">{{ category.routeCount }} 条路由</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div v-else-if="isBrowsingRsshubCategory && rssBrowseRouteGroups.length > 0" class="space-y-3">
+              <div class="flex items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-slate-900 dark:text-white">
+                    {{ selectedRsshubCategory?.label || '分类路由' }}
+                  </p>
+                  <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                    {{ selectedRsshubCategory?.description || '按站点分组浏览 RSSHub 路由' }}
+                  </p>
+                </div>
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:chevron-left"
+                  class="icon-btn"
+                  @click="exitRsshubCategory"
+                />
+              </div>
+
+              <article
+                v-for="group in rssBrowseRouteGroups"
+                :key="group.key"
+                class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="truncate text-base font-semibold text-slate-900 dark:text-white">
+                        {{ group.namespaceName }}
+                      </p>
+                      <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        {{ selectedRsshubCategory?.label || 'RSSHub' }}
+                      </span>
+                    </div>
+                    <p v-if="group.siteUrl" class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                      {{ group.siteUrl }}
+                    </p>
+                  </div>
+                  <span class="shrink-0 text-[11px] text-slate-400 dark:text-slate-500">
+                    {{ group.routes.length }} 条
+                  </span>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div
+                    v-for="item in group.routes"
+                    :key="item.id"
+                    class="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 px-3 py-3 dark:border-slate-800"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start gap-2">
+                        <span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-orange-400" />
+                        <div class="min-w-0 flex-1">
+                          <p class="text-sm font-medium text-slate-900 dark:text-white">{{ item.routeName }}</p>
+                          <p class="mt-1 break-all text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                            {{ item.rsshubUrl }}
+                          </p>
+                          <p v-if="item.summary" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                            {{ item.summary }}
+                          </p>
+                          <p v-if="item.maintainers.length > 0" class="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+                            @{{ item.maintainers.slice(0, 3).join(' @') }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="flex shrink-0 flex-col gap-2">
+                      <UButton
+                        v-if="item.params.length === 0"
+                        size="2xs"
+                        color="gray"
+                        :loading="rssLoading && pendingRssUrl === item.rsshubUrl"
+                        :disabled="rssLoading || (item.rsshubUrl.startsWith('rsshub://') && !hasRsshubBaseUrl)"
+                        @click="submitRssValue(item.rsshubUrl)"
+                      >
+                        一键添加
+                      </UButton>
+                      <UButton
+                        v-else
+                        size="2xs"
+                        color="gray"
+                        variant="soft"
+                        @click="selectRsshubRoute(item)"
+                      >
+                        填写参数
+                      </UButton>
+                    </div>
+                  </div>
+                </div>
+              </article>
             </div>
 
             <div v-else-if="rssDiscoverResults.length > 0" class="space-y-3">
@@ -325,7 +428,7 @@
               v-if="rssDiscoverResults.length > 0 && !hasRsshubBaseUrl"
               class="rounded-3xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-[11px] text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200"
             >
-              当前还没有配置 RSSHub 服务地址。搜索结果可以查看，但添加前需要先到设置里填写可用的 RSSHub 地址。
+              当前还没有配置 RSSHub 服务地址。搜索和分类结果可以查看，但添加前需要先到设置里填写可用的 RSSHub 地址。
             </div>
           </div>
         </template>
@@ -336,7 +439,13 @@
 
 <script setup lang="ts">
 import { Loader } from 'lucide-vue-next';
-import { getAccountList, searchRsshubRoutes, subscribeRssFeed, type RsshubDiscoverItem } from '~/apis';
+import {
+  getAccountList,
+  searchRsshubRoutes,
+  subscribeRssFeed,
+  type RsshubCategoryItem,
+  type RsshubDiscoverItem,
+} from '~/apis';
 import { ACCOUNT_LIST_PAGE_SIZE, ACCOUNT_TYPE } from '~/config';
 import type { MpAccount } from '~/store/v2/info';
 import type { Preferences } from '~/types/preferences';
@@ -353,7 +462,9 @@ const rssQuery = ref('');
 const rssLoading = ref(false);
 const rssDiscoverLoading = ref(false);
 const rssDiscoverSearched = ref(false);
+const rssCategories = ref<RsshubCategoryItem[]>([]);
 const rssDiscoverResults = ref<RsshubDiscoverItem[]>([]);
+const selectedRsshubCategoryId = ref<string | null>(null);
 const selectedRsshubRouteId = ref<string | null>(null);
 const pendingRssUrl = ref('');
 const rssRouteValues = reactive<Record<string, string>>({});
@@ -361,9 +472,54 @@ const rssRouteValues = reactive<Record<string, string>>({});
 const looksLikeDirectRssInput = computed(() => /^(https?:\/\/|rsshub:\/\/)/i.test(rssQuery.value.trim()));
 const hasRsshubBaseUrl = computed(() => /^https?:\/\//i.test(String(preferences.value.rsshubBaseUrl || '').trim()));
 const rssPrimaryLoading = computed(() => rssLoading.value || rssDiscoverLoading.value);
+const selectedRsshubCategory = computed(
+  () => rssCategories.value.find(item => item.id === selectedRsshubCategoryId.value) || null
+);
 const selectedRsshubRoute = computed(
   () => rssDiscoverResults.value.find(item => item.id === selectedRsshubRouteId.value) || null
 );
+const showRsshubCategories = computed(
+  () =>
+    mode.value === 'rss' &&
+    !rssDiscoverLoading.value &&
+    !selectedRsshubCategoryId.value &&
+    !rssDiscoverSearched.value &&
+    rssCategories.value.length > 0
+);
+const isBrowsingRsshubCategory = computed(() => Boolean(selectedRsshubCategoryId.value) && !rssQuery.value.trim());
+const rssBrowseRouteGroups = computed(() => {
+  if (!isBrowsingRsshubCategory.value) {
+    return [];
+  }
+
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      namespaceName: string;
+      namespace: string;
+      siteUrl: string;
+      routes: RsshubDiscoverItem[];
+    }
+  >();
+
+  for (const item of rssDiscoverResults.value) {
+    const existing = groups.get(item.namespace);
+    if (existing) {
+      existing.routes.push(item);
+      continue;
+    }
+    groups.set(item.namespace, {
+      key: item.namespace,
+      namespaceName: item.namespaceName,
+      namespace: item.namespace,
+      siteUrl: item.siteUrl,
+      routes: [item],
+    });
+  }
+
+  return Array.from(groups.values());
+});
 const selectedRsshubRoutePreview = computed(() => {
   const item = selectedRsshubRoute.value;
   if (!item) {
@@ -375,6 +531,16 @@ const selectedRsshubRoutePreview = computed(() => {
     return item.rsshubUrl;
   }
 });
+
+const emit = defineEmits<{
+  'select:account': [account: AccountInfo | MpAccount];
+}>();
+
+const accountQuery = ref('');
+const accountList = reactive<AccountInfo[]>([]);
+const loading = ref(false);
+const noMoreData = ref(false);
+let begin = 0;
 
 function normalizeRouteValue(value: string): string {
   return String(value || '')
@@ -423,6 +589,13 @@ function clearSelectedRsshubRoute() {
   resetRssRouteValues();
 }
 
+function resetRsshubBrowseState() {
+  selectedRsshubCategoryId.value = null;
+  rssDiscoverSearched.value = false;
+  rssDiscoverResults.value = [];
+  clearSelectedRsshubRoute();
+}
+
 function selectRsshubRoute(item: RsshubDiscoverItem) {
   selectedRsshubRouteId.value = item.id;
   resetRssRouteValues();
@@ -433,6 +606,9 @@ function selectRsshubRoute(item: RsshubDiscoverItem) {
 
 function openSwitcher() {
   isOpen.value = true;
+  if (mode.value === 'rss') {
+    void ensureRsshubCategoriesLoaded();
+  }
 }
 
 function closeSwitcher() {
@@ -441,22 +617,21 @@ function closeSwitcher() {
 
 function switchMode(nextMode: 'mp' | 'rss') {
   mode.value = nextMode;
+  if (nextMode === 'rss') {
+    if (!rssQuery.value.trim() && !selectedRsshubCategoryId.value) {
+      rssDiscoverSearched.value = false;
+      rssDiscoverResults.value = [];
+    }
+    void ensureRsshubCategoriesLoaded();
+  }
 }
-
-const accountQuery = ref('');
-const accountList = reactive<AccountInfo[]>([]);
-let begin = 0;
 
 async function searchAccount() {
   begin = 0;
   accountList.length = 0;
   noMoreData.value = false;
-
   await loadData();
 }
-
-const loading = ref(false);
-const noMoreData = ref(false);
 
 async function loadData() {
   loading.value = true;
@@ -469,15 +644,15 @@ async function loadData() {
   } catch (e: any) {
     if (e.message === 'session expired') {
       void navigateToLogin(route.fullPath);
-    } else {
-      console.error(e);
-      toast.add({
-        color: 'rose',
-        title: '错误',
-        description: describeRequestError(e),
-        icon: 'i-octicon:bell-24',
-      });
+      return;
     }
+
+    toast.add({
+      color: 'rose',
+      title: '搜索失败',
+      description: describeRequestError(e),
+      icon: 'i-octicon:bell-24',
+    });
   } finally {
     loading.value = false;
   }
@@ -494,25 +669,47 @@ async function submitRssValue(value: string) {
   try {
     const result = await subscribeRssFeed(normalized);
     rssQuery.value = '';
-    rssDiscoverSearched.value = false;
-    rssDiscoverResults.value = [];
-    clearSelectedRsshubRoute();
+    resetRsshubBrowseState();
     isOpen.value = false;
     emit('select:account', result.account);
   } catch (e: any) {
     if (e.message === 'session expired') {
       void navigateToLogin(route.fullPath);
-    } else {
-      toast.add({
-        color: 'rose',
-        title: '添加失败',
-        description: describeRequestError(e),
-        icon: 'i-octicon:bell-24',
-      });
+      return;
     }
+
+    toast.add({
+      color: 'rose',
+      title: '添加失败',
+      description: describeRequestError(e),
+      icon: 'i-octicon:bell-24',
+    });
   } finally {
     rssLoading.value = false;
     pendingRssUrl.value = '';
+  }
+}
+
+async function updateRsshubCatalog(options: { keyword?: string; category?: string; limit?: number }) {
+  const result = await searchRsshubRoutes({
+    keyword: options.keyword || '',
+    category: options.category || '',
+    limit: options.limit || 20,
+  });
+  rssCategories.value = result.categories;
+  rssDiscoverResults.value = result.routes;
+}
+
+async function ensureRsshubCategoriesLoaded() {
+  if (rssCategories.value.length > 0 || rssDiscoverLoading.value) {
+    return;
+  }
+
+  rssDiscoverLoading.value = true;
+  try {
+    await updateRsshubCatalog({ limit: 120 });
+  } finally {
+    rssDiscoverLoading.value = false;
   }
 }
 
@@ -523,10 +720,14 @@ async function discoverRsshubRoutes() {
   }
 
   rssDiscoverLoading.value = true;
+  selectedRsshubCategoryId.value = null;
   rssDiscoverSearched.value = false;
   clearSelectedRsshubRoute();
   try {
-    rssDiscoverResults.value = await searchRsshubRoutes(keyword);
+    await updateRsshubCatalog({
+      keyword,
+      limit: 24,
+    });
     rssDiscoverSearched.value = true;
   } catch (e: any) {
     toast.add({
@@ -540,11 +741,44 @@ async function discoverRsshubRoutes() {
   }
 }
 
+async function browseRsshubCategory(categoryId: string) {
+  if (!categoryId || rssDiscoverLoading.value) {
+    return;
+  }
+
+  rssQuery.value = '';
+  rssDiscoverLoading.value = true;
+  selectedRsshubCategoryId.value = categoryId;
+  rssDiscoverSearched.value = false;
+  clearSelectedRsshubRoute();
+  try {
+    await updateRsshubCatalog({
+      category: categoryId,
+      limit: categoryId === 'all' ? 160 : 120,
+    });
+  } catch (e: any) {
+    selectedRsshubCategoryId.value = null;
+    toast.add({
+      color: 'rose',
+      title: '加载分类失败',
+      description: describeRequestError(e),
+      icon: 'i-octicon:bell-24',
+    });
+  } finally {
+    rssDiscoverLoading.value = false;
+  }
+}
+
+function exitRsshubCategory() {
+  resetRsshubBrowseState();
+}
+
 async function handleRssPrimaryAction() {
   if (looksLikeDirectRssInput.value) {
     await submitRssValue(rssQuery.value);
     return;
   }
+
   await discoverRsshubRoutes();
 }
 
@@ -571,13 +805,26 @@ function selectAccount(account: AccountInfo | MpAccount) {
   emit('select:account', account);
 }
 
-const emit = defineEmits<{
-  'select:account': [account: AccountInfo | MpAccount];
-}>();
-
 defineExpose({
   open: openSwitcher,
   close: closeSwitcher,
+});
+
+watch(
+  () => [isOpen.value, mode.value] as const,
+  ([open, currentMode]) => {
+    if (open && currentMode === 'rss') {
+      void ensureRsshubCategoriesLoaded();
+    }
+  }
+);
+
+watch(rssQuery, value => {
+  if (value.trim() || selectedRsshubCategoryId.value) {
+    return;
+  }
+  rssDiscoverSearched.value = false;
+  rssDiscoverResults.value = [];
 });
 </script>
 

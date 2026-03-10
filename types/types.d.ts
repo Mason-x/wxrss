@@ -20,6 +20,7 @@ export interface GetAuthKeyResult {
   code: number;
   data: string;
   msg: string;
+  login?: LoginAccount | null;
 }
 
 export interface ScanLoginResult {
