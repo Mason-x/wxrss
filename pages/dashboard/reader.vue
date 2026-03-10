@@ -755,7 +755,6 @@ const prefersReducedMotion = useReducedMotion();
 const mobileArticlesSwipeX = useMotionValue(0);
 const mobileArticleSwipeX = useMotionValue(0);
 const mobileDrawerSwipeX = useMotionValue(0);
-const mobileArticleFavoriteHovering = ref(false);
 
 const MOBILE_SWIPE_EDGE_GUTTER = 28;
 const MOBILE_SWIPE_TRIGGER_THRESHOLD = 48;
@@ -770,10 +769,6 @@ const MOBILE_ARTICLE_UNDERLAY_BASE_X = -18;
 const MOBILE_ARTICLE_UNDERLAY_BASE_SCALE = 0.986;
 const MOBILE_ARTICLE_UNDERLAY_BASE_OPACITY = 0.92;
 const MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY = 0.14;
-const MOBILE_ARTICLE_FAVORITE_CORNER_SIZE = 288;
-const MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS = 0.04;
-const MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY = 320;
-const MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS = 0.1;
 const MOBILE_ARTICLE_FAST_CLOSE_VELOCITY = 560;
 const MOBILE_ARTICLE_EDGE_SENSOR_WIDTH = 32;
 const MOBILE_UNDERLAY_ITEM_ESTIMATED_HEIGHT = 96;
@@ -805,18 +800,6 @@ function getMobileDrawerWidth() {
 
 function getMobileArticleSwipeProgress() {
   return Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
-}
-
-function shouldShowMobileArticleFavoriteAffordance() {
-  return Boolean(
-    selectedArticle.value &&
-      !isArticleFavorite(selectedArticle.value) &&
-      mobileDragSession.context === 'article' &&
-      mobileDragSession.edge === 'left' &&
-      !mobileDragSession.interactive &&
-      getMobileArticleSwipeProgress() > MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS &&
-      Math.abs(mobileDragSession.velocityX) <= MOBILE_ARTICLE_FAVORITE_MAX_VELOCITY
-  );
 }
 
 const mobileArticlesUnderlayX = transformValue(() => {
@@ -857,26 +840,6 @@ const mobileArticleUnderlayOpacity = transformValue(() => {
 const mobileArticleUnderlayScrimOpacity = transformValue(() => {
   const progress = Math.max(0, Math.min(1, mobileArticleSwipeX.get() / getMobileViewportWidth()));
   return MOBILE_ARTICLE_UNDERLAY_SCRIM_OPACITY * (1 - progress);
-});
-
-const mobileArticleFavoriteCornerX = transformValue(() => {
-  return 0;
-});
-
-const mobileArticleFavoriteCornerOpacity = transformValue(() => {
-  if (!shouldShowMobileArticleFavoriteAffordance()) {
-    return 0;
-  }
-  const progress = getMobileArticleSwipeProgress();
-  return Math.max(0, Math.min(1, (progress - MOBILE_ARTICLE_FAVORITE_REVEAL_PROGRESS) / 0.06));
-});
-
-const mobileArticleFavoriteCornerScale = transformValue(() => {
-  if (!shouldShowMobileArticleFavoriteAffordance()) {
-    return 0.92;
-  }
-  const progress = getMobileArticleSwipeProgress();
-  return 0.92 + Math.max(0, Math.min(1, progress / 0.16)) * 0.08;
 });
 
 const mobilePanelSpring = computed(() =>
@@ -1757,7 +1720,6 @@ function resetMobileDragSession() {
   mobileDragSession.pointX = 0;
   mobileDragSession.pointY = 0;
   mobileDragSession.velocityX = 0;
-  mobileArticleFavoriteHovering.value = false;
 }
 
 function rememberMobileDragSession(context: MobileSwipeContext, event: PointerEvent) {
@@ -1860,45 +1822,10 @@ function beginMobileDrag(context: MobileSwipeContext, event: PointerEvent) {
   }
 }
 
-function getMobileArticleFavoriteZoneRect() {
-  const width = getMobileViewportWidth();
-  const height = getMobileViewportHeight();
-  const progress = getMobileArticleSwipeProgress();
-  const revealOffset = (1 - progress) * MOBILE_ARTICLE_FAVORITE_CORNER_REVEAL_OFFSET;
-
-  return {
-    left: width - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2 + revealOffset,
-    top: height - MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2,
-    right: width + MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2 + revealOffset,
-    bottom: height + MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2,
-  };
-}
-
-function canTriggerMobileArticleFavorite(pointX: number, pointY: number) {
-  if (!selectedArticle.value || isArticleFavorite(selectedArticle.value)) {
-    return false;
-  }
-
-  if (!shouldShowMobileArticleFavoriteAffordance()) {
-    return false;
-  }
-
-  if (getMobileArticleSwipeProgress() < MOBILE_ARTICLE_FAVORITE_TRIGGER_PROGRESS) {
-    return false;
-  }
-
-  const zone = getMobileArticleFavoriteZoneRect();
-  const centerX = (zone.left + zone.right) / 2;
-  const centerY = (zone.top + zone.bottom) / 2;
-  const radius = MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2;
-  return Math.hypot(pointX - centerX, pointY - centerY) <= radius;
-}
-
 function onArticleDrag(_event: PointerEvent, info: PanInfo) {
   mobileDragSession.pointX = info.point.x;
   mobileDragSession.pointY = info.point.y;
   mobileDragSession.velocityX = Number(info.velocity.x) || 0;
-  mobileArticleFavoriteHovering.value = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
 }
 
 function syncMobileAccountsPanelScrollTop(event?: Event) {
@@ -1920,27 +1847,6 @@ function restoreMobileAccountsPanelScrollTop() {
   }
 
   container.scrollTop = mobileAccountsPanelScrollTop.value;
-}
-
-async function commitMobileArticleFavoriteFromSwipe(width: number) {
-  const article = selectedArticle.value;
-  if (!article || isArticleFavorite(article)) {
-    return false;
-  }
-
-  setMobileUnderlayActive('article', true);
-  await animateMobileSwipeValue('article', getMobileSwipeCommitTarget(width || getMobileViewportWidth(), 1), mobileSwipeCommitTransition.value);
-  await toggleArticleFavorite(article);
-
-  if (canNavigateMobileHistory(-1)) {
-    await navigateMobileHistory(-1);
-  } else {
-    await backFromMobileView();
-  }
-
-  clearMobileUnderlay('article');
-  mobileArticleSwipeX.set(0);
-  return true;
 }
 
 async function commitMobileArticleCloseFromFastSwipe(width: number) {
@@ -2134,7 +2040,6 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
   const velocityX = Number(info.velocity.x) || 0;
   const fastClose = edge === 'left' && !interactive && velocityX >= MOBILE_ARTICLE_FAST_CLOSE_VELOCITY && info.offset.x > 0;
-  const favoriteTriggered = canTriggerMobileArticleFavorite(info.point.x, info.point.y);
   resetMobileDragSession();
 
   if (context !== 'article') {
@@ -2143,11 +2048,6 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
 
   if (fastClose) {
     await commitMobileArticleCloseFromFastSwipe(width);
-    return;
-  }
-
-  if (favoriteTriggered) {
-    await commitMobileArticleFavoriteFromSwipe(width);
     return;
   }
 
@@ -3593,27 +3493,6 @@ onUnmounted(() => {
           </motion.div>
 
         </motion.div>
-
-        <div
-          v-if="selectedArticle && !isArticleFavorite(selectedArticle)"
-          class="pointer-events-none fixed inset-0 z-[60] overflow-hidden md:hidden"
-        >
-          <motion.div
-            class="absolute"
-            :style="{
-              right: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-              bottom: `-${MOBILE_ARTICLE_FAVORITE_CORNER_SIZE / 2}px`,
-              x: mobileArticleFavoriteCornerX,
-              opacity: mobileArticleFavoriteCornerOpacity,
-              scale: mobileArticleFavoriteCornerScale,
-            }"
-          >
-            <div class="mobile-article-favorite-corner" :class="{ 'is-ready': mobileArticleFavoriteHovering }">
-              <UIcon name="i-heroicons:star" class="mobile-article-favorite-corner-icon" />
-              <span class="mobile-article-favorite-corner-label">星标</span>
-            </div>
-          </motion.div>
-        </div>
       </div>
 
       <AnimatePresence>
@@ -4547,32 +4426,6 @@ onUnmounted(() => {
 
 :global(.dark) .mobile-article-sheet {
   background-image: linear-gradient(180deg, rgba(2, 6, 23, 0.985) 0%, rgba(2, 6, 23, 1) 12%, rgba(2, 6, 23, 1) 100%);
-}
-
-.mobile-article-favorite-corner {
-  @apply relative h-[288px] w-[288px] rounded-full text-slate-100 shadow-[-24px_-24px_44px_rgba(15,23,42,0.2)];
-  background-color: rgba(71, 85, 105, 0.95);
-}
-
-.mobile-article-favorite-corner-icon {
-  @apply absolute left-[58px] top-[58px] size-[44px];
-}
-
-.mobile-article-favorite-corner-label {
-  @apply absolute left-[50px] top-[108px] text-[15px] font-medium tracking-[0.08em];
-}
-
-.mobile-article-favorite-corner.is-ready {
-  @apply text-amber-600 dark:text-amber-300;
-  background-color: rgba(252, 211, 77, 0.94);
-}
-
-:global(.dark) .mobile-article-favorite-corner {
-  background-color: rgba(30, 41, 59, 0.96);
-}
-
-:global(.dark) .mobile-article-favorite-corner.is-ready {
-  background-color: rgba(245, 158, 11, 0.34);
 }
 
 .mobile-article-edge-sensor {
