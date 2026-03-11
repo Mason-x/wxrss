@@ -357,6 +357,16 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE INDEX IF NOT EXISTS idx_reader_ai_reports_auth_updated ON reader_ai_reports(auth_key, updated_at DESC);
 
+    CREATE TABLE IF NOT EXISTS newrank_recommendation_cache (
+      category_id TEXT PRIMARY KEY,
+      month TEXT NOT NULL DEFAULT '',
+      month_label TEXT NOT NULL DEFAULT '',
+      items_json TEXT NOT NULL DEFAULT '[]',
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_newrank_recommendation_cache_updated_at ON newrank_recommendation_cache(updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS cache_html (
       auth_key TEXT NOT NULL,
       url TEXT NOT NULL,

@@ -76,6 +76,15 @@
           </p>
         </div>
 
+        <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:clipboard-paste" @click="pasteTextIntoField('aiSummarySystemPrompt', '文章摘要提示词')">
+            粘贴
+          </UButton>
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:trash-2" @click="clearTextField('aiSummarySystemPrompt', '文章摘要提示词')">
+            清空
+          </UButton>
+        </div>
+
         <UTextarea
           v-model="preferences.aiSummarySystemPrompt"
           :rows="16"
@@ -177,6 +186,15 @@
           </p>
         </div>
 
+        <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:clipboard-paste" @click="pasteTextIntoField('aiTagSystemPrompt', '标签判定提示词')">
+            粘贴
+          </UButton>
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:trash-2" @click="clearTextField('aiTagSystemPrompt', '标签判定提示词')">
+            清空
+          </UButton>
+        </div>
+
         <UTextarea
           v-model="preferences.aiTagSystemPrompt"
           :rows="6"
@@ -194,6 +212,15 @@
           </p>
         </div>
 
+        <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:clipboard-paste" @click="pasteTextIntoField('aiDailyReportSystemPrompt', 'AI 日报提示词')">
+            粘贴
+          </UButton>
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:trash-2" @click="clearTextField('aiDailyReportSystemPrompt', 'AI 日报提示词')">
+            清空
+          </UButton>
+        </div>
+
         <UTextarea
           v-model="preferences.aiDailyReportSystemPrompt"
           :rows="8"
@@ -208,9 +235,11 @@
 
 <script setup lang="ts">
 import { request } from '#shared/utils/request';
+import toastFactory from '~/composables/toast';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const toast = toastFactory();
 const testing = ref(false);
 const testStatus = ref<'idle' | 'success' | 'error'>('idle');
 const testStatusText = ref('');
@@ -283,6 +312,21 @@ function addTagDefinition() {
 function removeTagDefinition(index: number) {
   ensureTagDefinitions();
   preferences.value.aiTagDefinitions.splice(index, 1);
+}
+
+async function pasteTextIntoField(key: 'aiSummarySystemPrompt' | 'aiTagSystemPrompt' | 'aiDailyReportSystemPrompt', label: string) {
+  try {
+    const text = await navigator.clipboard.readText();
+    preferences.value[key] = text;
+    toast.success('已粘贴内容', `${label} 已从剪贴板填入。`);
+  } catch (error: any) {
+    toast.warning('无法读取剪贴板', String(error?.message || '请检查浏览器剪贴板权限。'));
+  }
+}
+
+function clearTextField(key: 'aiSummarySystemPrompt' | 'aiTagSystemPrompt' | 'aiDailyReportSystemPrompt', label: string) {
+  preferences.value[key] = '';
+  toast.info('已清空内容', `${label} 已清空。`);
 }
 
 async function testAiApi() {

@@ -17,6 +17,6 @@ export default defineEventHandler(async event => {
   return await getNewrankMpRecommendations({
     cookie: preferences.newrankCookie,
     category: String(query.category || '').trim(),
-    limit: Number(query.limit) || 8,
+    limit: Number(query.limit) || 30,
   });
 });

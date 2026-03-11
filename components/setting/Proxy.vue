@@ -8,17 +8,26 @@
     </template>
 
     <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
-      <textarea
-        v-model="textareaValue"
-        class="h-72 w-full resize-none rounded-[26px] border border-white/75 bg-white/80 p-4 font-mono text-sm shadow-[0_18px_32px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80"
-        spellcheck="false"
-        placeholder="每行一个代理地址，例如：https://proxy-01.example.com"
-      />
+      <div class="w-full space-y-3">
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:clipboard-paste" @click="pasteProxyList">
+            粘贴
+          </UButton>
+          <UButton size="xs" color="gray" variant="soft" icon="i-lucide:trash-2" @click="clear">
+            清空
+          </UButton>
+        </div>
+
+        <textarea
+          v-model="textareaValue"
+          class="h-72 w-full resize-none rounded-[26px] border border-white/75 bg-white/80 p-4 font-mono text-sm shadow-[0_18px_32px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80"
+          spellcheck="false"
+          placeholder="每行一个代理地址，例如：https://proxy-01.example.com"
+        />
+      </div>
 
       <div class="w-full space-y-4 lg:max-w-md">
-        <div
-          class="app-shell-muted rounded-[26px] p-4 text-sm leading-7 sm:p-5"
-        >
+        <div class="app-shell-muted rounded-[26px] p-4 text-sm leading-7 sm:p-5">
           <p class="font-medium">使用要求</p>
           <ol class="mt-2 list-decimal space-y-2 pl-5 text-slate-600 dark:text-slate-300">
             <li>必须填写完整的 `http://` 或 `https://` 地址。</li>
@@ -34,9 +43,6 @@
         <div class="flex gap-3">
           <UButton type="button" color="black" class="flex-1 justify-center rounded-full sm:w-24" @click="save">
             {{ saveBtnText }}
-          </UButton>
-          <UButton type="button" color="gray" variant="soft" class="justify-center rounded-full sm:w-24" @click="clear">
-            清空
           </UButton>
         </div>
       </div>
@@ -81,6 +87,15 @@ function setSaveButtonState(text: string) {
 onMounted(() => {
   syncTextareaFromPreferences();
 });
+
+async function pasteProxyList() {
+  try {
+    textareaValue.value = await navigator.clipboard.readText();
+    toast.success('已粘贴代理配置', '代理节点已从剪贴板填入。');
+  } catch (error: any) {
+    toast.warning('无法读取剪贴板', String(error?.message || '请检查浏览器剪贴板权限。'));
+  }
+}
 
 function save() {
   const result = validatePrivateProxyList(textareaValue.value.split('\n'));

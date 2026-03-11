@@ -66,6 +66,11 @@ export interface NewrankMpRecommendationsResult {
   items: NewrankMpRecommendationItem[];
 }
 
+export interface NewrankCookieTestResult {
+  ok: boolean;
+  text: string;
+}
+
 export interface RsshubDiscoverParamOption {
   label: string;
   value: string;
@@ -443,9 +448,19 @@ export async function getNewrankMpRecommendations(options?: {
   return await request<NewrankMpRecommendationsResult>('/api/web/mp/newrank-recommendations', {
     query: {
       category: String(options?.category || '').trim(),
-      limit: Number(options?.limit) || 8,
+      limit: Number(options?.limit) || 30,
     },
   });
+}
+
+export async function testNewrankCookie(cookie: string): Promise<NewrankCookieTestResult> {
+  const resp = await request<{ data: NewrankCookieTestResult }>('/api/web/mp/newrank-cookie-test', {
+    method: 'POST',
+    body: {
+      cookie,
+    },
+  });
+  return resp.data;
 }
 
 /**
