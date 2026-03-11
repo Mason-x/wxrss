@@ -11,6 +11,7 @@ import {
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
 import { listArticlesPage } from '~/server/repositories/reader';
+import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { syncRssFeed } from '~/server/utils/rss';
 import { cookieStore } from '~/server/utils/CookieStore';
 
@@ -356,6 +357,8 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
         await syncOneAccount(authKey, token, account, config);
       }
     }
+
+    await runAiDailyDigest(authKey);
 
     await upsertSchedulerState(authKey, {
       lastRunDate: todayKey(),

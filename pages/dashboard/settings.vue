@@ -85,8 +85,8 @@ const sections: SettingsSection[] = [
   },
   {
     id: 'ai',
-    label: 'AI 摘要',
-    description: '模型与提示词',
+    label: 'AI 功能',
+    description: '摘要、标签与日报',
     icon: 'i-lucide:sparkles',
     component: SettingAiSummary,
   },
@@ -134,7 +134,9 @@ function getScrollOffset() {
 function scrollToSection(id: SettingsSectionId) {
   const container = scrollContainerRef.value;
   const target = sectionRefs[id];
-  if (!container || !target) return;
+  if (!container || !target) {
+    return;
+  }
 
   activeSection.value = id;
   container.scrollTo({
@@ -149,7 +151,9 @@ function syncActiveSectionFromScroll() {
   }
 
   const container = scrollContainerRef.value;
-  if (!container) return;
+  if (!container) {
+    return;
+  }
 
   const threshold = container.scrollTop + getScrollOffset() + 12;
   let nextActive = sections[0].id;
@@ -215,6 +219,14 @@ onMounted(async () => {
 
   .settings-section {
     scroll-margin-top: 1.5rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .settings-content-shell :deep(input),
+  .settings-content-shell :deep(textarea),
+  .settings-content-shell :deep(select) {
+    font-size: 16px !important;
   }
 }
 

@@ -75,6 +75,29 @@ export interface RsshubCategoryItem {
 export interface ArticleSummaryResult {
   summary: string;
   model: string;
+  cached?: boolean;
+  tags?: string[];
+  rating?: string;
+  summaryText?: string;
+  highlights?: string[];
+}
+
+export interface AiDailyProcessResult {
+  processed: boolean;
+  reportDate: string;
+  taggedCount: number;
+  reportUpdated: boolean;
+  summarizedCount?: number;
+  reason?: string;
+}
+
+export interface AiDailyReportItem {
+  reportDate: string;
+  title: string;
+  contentHtml: string;
+  sourceCount: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 const FIRST_PAGE_PROBE_SIZE = 1;
@@ -290,17 +313,47 @@ export async function searchRsshubRoutes(options: {
 }
 
 export async function generateArticleSummary(payload: {
+  url?: string;
   title: string;
   content: string;
 }): Promise<ArticleSummaryResult> {
   const resp = await request<{ data: ArticleSummaryResult }>('/api/web/ai/article-summary', {
     method: 'POST',
     body: {
+      url: payload.url,
       title: payload.title,
       content: payload.content,
     },
   });
   return resp.data;
+}
+
+export async function refreshAiDailyDigest(): Promise<AiDailyProcessResult> {
+  const resp = await request<{ data: AiDailyProcessResult }>('/api/web/ai/daily-refresh', {
+    method: 'POST',
+  });
+  return resp.data;
+}
+
+export async function listAiDailyReports(
+  offset = 0,
+  limit = 60
+): Promise<{ list: AiDailyReportItem[]; total: number; offset: number; limit: number }> {
+  return await request('/api/web/ai/daily-reports', {
+    query: {
+      offset,
+      limit,
+    },
+  });
+}
+
+export async function getAiDailyReport(date: string): Promise<AiDailyReportItem | null> {
+  const resp = await request<{ data: AiDailyReportItem | null }>('/api/web/ai/daily-report', {
+    query: {
+      date,
+    },
+  });
+  return resp.data || null;
 }
 
 /**

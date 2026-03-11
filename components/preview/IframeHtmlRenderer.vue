@@ -23,7 +23,7 @@ import type { Preferences } from '~/types/preferences';
 
 interface Props {
   html: string;
-  contentKind?: 'default' | 'rss';
+  contentKind?: 'default' | 'rss' | 'report';
 }
 
 interface MpVideoInfoResponse {
@@ -97,11 +97,160 @@ function buildSrcdoc(html: string): string {
         -webkit-text-size-adjust: 100%;
         overflow-wrap: break-word;
       }
+      body > * {
+        max-width: 100%;
+      }
       body[data-renderer-kind="rss"] {
         padding: 0 clamp(16px, 3.4vw, 28px) 1.75rem;
       }
+      body[data-renderer-kind="report"] {
+        padding: 0 clamp(16px, 3.8vw, 32px) 2rem;
+        color: #0f172a;
+      }
+      .ai-daily-report {
+        width: min(100%, 920px);
+        margin: 0 auto;
+        padding: clamp(20px, 3.6vw, 32px);
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 28px;
+        background: #ffffff;
+        box-shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
+        color: #0f172a;
+      }
+      .ai-daily-report-empty {
+        margin: 0;
+        color: #64748b;
+      }
+      .ai-daily-report > :first-child {
+        margin-top: 0;
+      }
+      .ai-daily-report > :last-child {
+        margin-bottom: 0;
+      }
+      .ai-daily-report section + section,
+      .ai-daily-report article + article,
+      .ai-daily-report .section + .section {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid rgba(226, 232, 240, 0.9);
+      }
+      .ai-daily-report h1,
+      .ai-daily-report h2,
+      .ai-daily-report h3,
+      .ai-daily-report h4 {
+        margin: 1.25rem 0 0.75rem;
+        color: #0f172a;
+        line-height: 1.3;
+        font-weight: 700;
+      }
+      .ai-daily-report h1 {
+        font-size: clamp(1.5rem, 3vw, 2rem);
+      }
+      .ai-daily-report h2 {
+        font-size: clamp(1.2rem, 2.3vw, 1.45rem);
+      }
+      .ai-daily-report h3 {
+        font-size: clamp(1.05rem, 2vw, 1.2rem);
+      }
+      .ai-daily-report p,
+      .ai-daily-report li {
+        color: #334155;
+        font-size: 15px;
+        line-height: 1.85;
+      }
+      .ai-daily-report p {
+        margin: 0.9rem 0;
+      }
+      .ai-daily-report ul,
+      .ai-daily-report ol {
+        margin: 0.85rem 0;
+        padding-left: 1.25rem;
+      }
+      .ai-daily-report li + li {
+        margin-top: 0.45rem;
+      }
+      .ai-daily-report strong {
+        color: #0f172a;
+        font-weight: 700;
+      }
+      .ai-daily-report blockquote {
+        margin: 1rem 0;
+        padding: 0.9rem 1rem;
+        border-left: 3px solid #38bdf8;
+        border-radius: 14px;
+        background: #f8fafc;
+        color: #475569;
+      }
+      .ai-daily-report hr {
+        margin: 1.4rem 0;
+        border: 0;
+        border-top: 1px solid rgba(226, 232, 240, 0.9);
+      }
+      .ai-daily-report a {
+        color: #2563eb;
+        text-decoration: none;
+      }
+      .ai-daily-report a:hover {
+        text-decoration: underline;
+      }
+      .ai-daily-report code {
+        padding: 0.15rem 0.35rem;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 0.92em;
+      }
+      .ai-daily-report pre {
+        margin: 1rem 0;
+        padding: 1rem 1.1rem;
+        border-radius: 18px;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      .ai-daily-report pre code {
+        padding: 0;
+        background: transparent;
+        color: inherit;
+      }
       img, video, iframe {
         max-width: 100%;
+      }
+      img {
+        display: block;
+        width: auto !important;
+        max-width: 100% !important;
+        height: auto !important;
+        margin-inline: auto;
+      }
+      picture,
+      figure,
+      .image-wrapper,
+      .img-wrapper,
+      .img_container,
+      .img-box,
+      .kg-image-card,
+      .wp-caption,
+      .rich_media_content img {
+        max-width: 100% !important;
+      }
+      figure,
+      .image-wrapper,
+      .img-wrapper,
+      .img_container,
+      .img-box,
+      .kg-image-card,
+      .wp-caption {
+        width: 100% !important;
+        margin-inline: auto;
+      }
+      figure img,
+      .image-wrapper img,
+      .img-wrapper img,
+      .img_container img,
+      .img-box img,
+      .kg-image-card img,
+      .wp-caption img {
+        max-width: 100% !important;
       }
       video {
         display: block;
@@ -141,14 +290,14 @@ function buildSrcdoc(html: string): string {
 
   if (hasHead) {
     const withHead = sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}${styleMarkup}`);
-    if (props.contentKind !== 'rss' || !hasBody) {
+    if (props.contentKind === 'default' || !hasBody) {
       return withHead;
     }
 
-    return withHead.replace(/<body([^>]*)>/i, '<body$1 data-renderer-kind="rss">');
+    return withHead.replace(/<body([^>]*)>/i, `<body$1 data-renderer-kind="${props.contentKind}">`);
   }
 
-  const bodyAttr = props.contentKind === 'rss' ? ' data-renderer-kind="rss"' : '';
+  const bodyAttr = props.contentKind !== 'default' ? ` data-renderer-kind="${props.contentKind}"` : '';
   return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttr}>${sanitized}</body></html>`;
 }
 

@@ -46,6 +46,7 @@
 import type { Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+
 const cardUi = {
   ring: '',
   divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',

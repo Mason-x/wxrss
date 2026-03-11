@@ -23,8 +23,37 @@ export interface ReaderArticle extends Record<string, any> {
   fakeid: string;
   _status: string;
   favorite?: boolean;
+  ai_summary?: string;
+  ai_tags?: string[];
   is_deleted: boolean;
 }
+
+export interface ReaderAiDailyReport {
+  reportDate: string;
+  title: string;
+  contentHtml: string;
+  sourceCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ReaderAiProcessingArticle {
+  fakeid: string;
+  link: string;
+  title: string;
+  digest: string;
+  authorName: string;
+  accountName: string;
+  createTime: number;
+  updateTime: number;
+  aiTags: string[];
+  aiTaggedAt: number;
+  aiSummary: string;
+  cachedHtml: string;
+}
+
+const SUMMARY_READING_TIER_TAGS = new Set(['{{featured}}', '{{skim}}', '{{skip}}']);
+const SUMMARY_SPONSORED_TAG = '{{sponsored}}';
 
 const ARTICLE_STORAGE_FIELD_ALLOWLIST = new Set<string>([
   'aid',
@@ -128,6 +157,8 @@ function mapArticleRow(row: any): ReaderArticle {
     fakeid: row.fakeid,
     _status: row.status || '',
     favorite: Boolean(row.favorite),
+    ai_summary: String(row.ai_summary || ''),
+    ai_tags: resolveArticleAiTags(row.ai_tags_json, row.ai_summary),
     is_deleted: Boolean(row.is_deleted),
   };
 }
@@ -146,8 +177,94 @@ function mapArticleLiteRow(row: any): ReaderArticle {
     update_time: Number(row.update_time) || 0,
     _status: row.status || '',
     favorite: Boolean(row.favorite),
+    ai_summary: String(row.ai_summary || ''),
+    ai_tags: resolveArticleAiTags(row.ai_tags_json, row.ai_summary),
     is_deleted: Boolean(row.is_deleted),
     round_head_img: row.account_round_head_img || '',
+  };
+}
+
+function parseStructuredSummaryTags(raw: unknown): string[] {
+  const source = String(raw || '').trim();
+  if (!source || source[0] !== '{') {
+    return [];
+  }
+
+  try {
+    const payload = JSON.parse(source);
+    const inputTags = Array.isArray(payload?.tags)
+      ? payload.tags
+      : payload?.rating
+        ? [payload.rating]
+        : [];
+
+    const normalized = normalizeAiTags(inputTags);
+    const primaryReadingTag = normalized.find(tag => SUMMARY_READING_TIER_TAGS.has(tag)) || '';
+    const firstNonSponsoredTag = normalized.find(tag => !SUMMARY_READING_TIER_TAGS.has(tag) && tag !== SUMMARY_SPONSORED_TAG) || '';
+    const sponsoredTag = normalized.includes(SUMMARY_SPONSORED_TAG) ? SUMMARY_SPONSORED_TAG : '';
+
+    return [primaryReadingTag || firstNonSponsoredTag, sponsoredTag || (primaryReadingTag ? firstNonSponsoredTag : '')]
+      .filter(Boolean)
+      .slice(0, 2);
+  } catch {
+    return [];
+  }
+}
+
+function parseAiTagsJson(raw: unknown): string[] {
+  try {
+    const parsed = JSON.parse(String(raw || '[]'));
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return normalizeAiTags(parsed);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeAiTags(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map(tag => String(tag || '').trim())
+        .filter(Boolean)
+        .map(tag => {
+          const plain = tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+          if (!plain) {
+            return '';
+          }
+          const normalized = plain
+            .replace(/[^a-z0-9_\-\s]+/g, ' ')
+            .replace(/[\s-]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 48);
+          return normalized ? `{{${normalized}}}` : '';
+        })
+        .filter(Boolean)
+    )
+  ).slice(0, 3);
+}
+
+function resolveArticleAiTags(rawTags: unknown, rawSummary: unknown): string[] {
+  const summaryTags = parseStructuredSummaryTags(rawSummary);
+  if (summaryTags.length > 0) {
+    return summaryTags;
+  }
+  return parseAiTagsJson(rawTags);
+}
+
+function mapAiDailyReportRow(row: any): ReaderAiDailyReport {
+  return {
+    reportDate: String(row.report_date || ''),
+    title: String(row.title || ''),
+    contentHtml: String(row.content_html || ''),
+    sourceCount: Number(row.source_count) || 0,
+    createdAt: Number(row.created_at) || 0,
+    updatedAt: Number(row.updated_at) || 0,
   };
 }
 
@@ -873,7 +990,22 @@ export async function getArticleByLink(authKey: string, link: string): Promise<R
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
-    SELECT fakeid, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, favorite, is_deleted, status
+    SELECT
+      fakeid,
+      link,
+      aid,
+      appmsgid,
+      itemidx,
+      title,
+      digest,
+      author_name,
+      create_time,
+      update_time,
+      favorite,
+      ai_summary,
+      ai_tags_json,
+      is_deleted,
+      status
     FROM reader_articles
     WHERE auth_key = ? AND link = ?
     ORDER BY update_time DESC, create_time DESC
@@ -922,6 +1054,37 @@ export async function updateArticleFavorite(authKey: string, link: string, favor
     WHERE auth_key = ? AND link = ?
     `,
     favorite ? 1 : 0,
+    authKey,
+    link
+  );
+}
+
+export async function updateArticleAiSummary(authKey: string, link: string, summary: string): Promise<void> {
+  const db = await getSqliteDb();
+  await db.run(
+    `
+    UPDATE reader_articles
+    SET ai_summary = ?, ai_summary_updated_at = ?
+    WHERE auth_key = ? AND link = ?
+    `,
+    String(summary || '').trim(),
+    nowSeconds(),
+    authKey,
+    link
+  );
+}
+
+export async function updateArticleAiTags(authKey: string, link: string, tags: string[]): Promise<void> {
+  const db = await getSqliteDb();
+  const normalizedTags = normalizeAiTags(tags);
+  await db.run(
+    `
+    UPDATE reader_articles
+    SET ai_tags_json = ?, ai_tagged_at = ?
+    WHERE auth_key = ? AND link = ?
+    `,
+    JSON.stringify(normalizedTags),
+    nowSeconds(),
     authKey,
     link
   );
@@ -1001,6 +1164,8 @@ export async function listArticlesPage(
       a.create_time,
       a.update_time,
       a.favorite,
+      a.ai_summary,
+      a.ai_tags_json,
       a.is_deleted,
       a.status,
       ac.nickname AS account_nickname,
@@ -1030,4 +1195,145 @@ export async function listArticlesPage(
     offset,
     limit,
   };
+}
+
+export async function listAiDailyReports(
+  authKey: string,
+  options: { offset?: number; limit?: number } = {}
+): Promise<{ list: ReaderAiDailyReport[]; total: number; offset: number; limit: number }> {
+  const db = await getSqliteDb();
+  const offset = normalizeOffset(options.offset);
+  const limit = normalizeLimit(options.limit, 60, 365);
+
+  const totalRow = await db.get<{ total: number }>(
+    `
+    SELECT COUNT(1) AS total
+    FROM reader_ai_reports
+    WHERE auth_key = ?
+    `,
+    authKey
+  );
+
+  const rows = await db.all<any>(
+    `
+    SELECT report_date, title, content_html, source_count, created_at, updated_at
+    FROM reader_ai_reports
+    WHERE auth_key = ?
+    ORDER BY report_date DESC
+    LIMIT ? OFFSET ?
+    `,
+    authKey,
+    limit,
+    offset
+  );
+
+  return {
+    list: rows.map(mapAiDailyReportRow),
+    total: Number(totalRow?.total) || 0,
+    offset,
+    limit,
+  };
+}
+
+export async function getAiDailyReport(authKey: string, reportDate: string): Promise<ReaderAiDailyReport | null> {
+  const db = await getSqliteDb();
+  const row = await db.get<any>(
+    `
+    SELECT report_date, title, content_html, source_count, created_at, updated_at
+    FROM reader_ai_reports
+    WHERE auth_key = ? AND report_date = ?
+    LIMIT 1
+    `,
+    authKey,
+    String(reportDate || '').trim()
+  );
+  return row ? mapAiDailyReportRow(row) : null;
+}
+
+export async function upsertAiDailyReport(
+  authKey: string,
+  input: { reportDate: string; title: string; contentHtml: string; sourceCount?: number }
+): Promise<ReaderAiDailyReport> {
+  const db = await getSqliteDb();
+  const now = Date.now();
+  await db.run(
+    `
+    INSERT INTO reader_ai_reports(auth_key, report_date, title, content_html, source_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(auth_key, report_date) DO UPDATE SET
+      title = excluded.title,
+      content_html = excluded.content_html,
+      source_count = excluded.source_count,
+      updated_at = excluded.updated_at
+    `,
+    authKey,
+    String(input.reportDate || '').trim(),
+    String(input.title || '').trim(),
+    String(input.contentHtml || '').trim(),
+    Number(input.sourceCount) || 0,
+    now,
+    now
+  );
+
+  return (await getAiDailyReport(authKey, input.reportDate)) as ReaderAiDailyReport;
+}
+
+export async function listAiProcessingArticles(
+  authKey: string,
+  options: { startTime: number; endTime: number; limit?: number }
+): Promise<ReaderAiProcessingArticle[]> {
+  const db = await getSqliteDb();
+  const startTime = Math.max(0, Math.floor(Number(options.startTime) || 0));
+  const endTime = Math.max(startTime, Math.floor(Number(options.endTime) || 0));
+  const limit = normalizeLimit(options.limit, 80, 200);
+
+  const rows = await db.all<any>(
+    `
+    SELECT
+      a.fakeid,
+      a.link,
+      a.title,
+      a.digest,
+      a.author_name,
+      a.create_time,
+      a.update_time,
+      a.ai_summary,
+      a.ai_tags_json,
+      a.ai_tagged_at,
+      ac.nickname AS account_nickname,
+      ch.content_blob AS html_blob
+    FROM reader_articles a
+    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
+    WHERE a.auth_key = ?
+      AND COALESCE(NULLIF(a.update_time, 0), a.create_time) >= ?
+      AND COALESCE(NULLIF(a.update_time, 0), a.create_time) < ?
+      AND a.is_deleted = 0
+    ORDER BY a.update_time DESC, a.create_time DESC
+    LIMIT ?
+    `,
+    authKey,
+    startTime,
+    endTime,
+    limit
+  );
+
+  return rows.map(row => ({
+    fakeid: String(row.fakeid || ''),
+    link: String(row.link || ''),
+    title: String(row.title || ''),
+    digest: String(row.digest || ''),
+    authorName: String(row.author_name || ''),
+    accountName: String(row.account_nickname || row.fakeid || ''),
+    createTime: Number(row.create_time) || 0,
+    updateTime: Number(row.update_time) || 0,
+    aiTags: parseAiTagsJson(row.ai_tags_json),
+    aiTaggedAt: Number(row.ai_tagged_at) || 0,
+    aiSummary: String(row.ai_summary || ''),
+    cachedHtml: Buffer.isBuffer(row.html_blob)
+      ? row.html_blob.toString('utf8')
+      : row.html_blob instanceof Uint8Array
+        ? Buffer.from(row.html_blob).toString('utf8')
+        : String(row.html_blob || ''),
+  }));
 }

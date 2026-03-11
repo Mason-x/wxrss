@@ -14,7 +14,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { getArticleList, syncRssFeed } from '~/apis';
+import { getArticleList, refreshAiDailyDigest, syncRssFeed } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
@@ -214,6 +214,7 @@ async function loadSelectedAccountArticle() {
     for (const account of rows) {
       await loadAccountArticle(account);
     }
+    await runAiRefreshAfterSync();
     toast.success(`已成功同步 ${rows.length} 个订阅源`);
   } catch (e: any) {
     toast.error('同步失败', e.message);
@@ -509,9 +510,18 @@ async function syncSingleAccount(account: MpAccount) {
   isCanceled.value = false;
   try {
     await loadAccountArticle(account);
+    await runAiRefreshAfterSync();
     toast.success('同步完成', `公众号【${account.nickname}】的文章已同步完毕`);
   } catch (e: any) {
     toast.error('同步失败', e.message);
+  }
+}
+
+async function runAiRefreshAfterSync() {
+  try {
+    await refreshAiDailyDigest();
+  } catch (error) {
+    console.error('AI daily refresh failed:', error);
   }
 }
 

@@ -5,7 +5,15 @@ import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { generateArticleSummary, getArticleList, syncRssFeed } from '~/apis';
+import {
+  generateArticleSummary,
+  getAiDailyReport,
+  listAiDailyReports,
+  refreshAiDailyDigest,
+  getArticleList,
+  syncRssFeed,
+  type AiDailyReportItem,
+} from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
@@ -56,7 +64,11 @@ interface ReaderArticle extends AppMsgExWithFakeID {
   contentDownload?: boolean;
   commentDownload?: boolean;
   favorite?: boolean;
+  ai_summary?: string;
+  ai_tags?: string[];
 }
+
+type ArticlePaneMode = 'articles' | 'reports';
 
 interface PromiseInstance {
   resolve: (value: unknown) => void;
@@ -68,6 +80,13 @@ interface ArticleSummaryState {
   summary: string;
   error: string;
   model: string;
+}
+
+interface StructuredArticleSummaryPayload {
+  tags: string[];
+  rating: string;
+  summary: string;
+  highlights: string[];
 }
 
 interface ReaderRuntimeState {
@@ -259,8 +278,13 @@ const accountNewArticleMap = ref<Record<string, true>>({});
 const selectedCategory = ref('__all__');
 const selectedAccount = ref<string | null>(null);
 const selectedArticle = ref<ReaderArticle | null>(null);
+const selectedDailyReport = ref<AiDailyReportItem | null>(null);
 const selectedArticleHtml = ref('');
 const articleSummaryByKey = ref<Record<string, ArticleSummaryState>>({});
+const articlePaneMode = ref<ArticlePaneMode>('articles');
+const dailyReportRows = ref<AiDailyReportItem[]>([]);
+const dailyReportTotalCount = ref(0);
+const dailyReportLoading = ref(false);
 const selectedArticleKeys = ref<Set<string>>(new Set());
 const selectionMode = ref(false);
 const favoriteOnlySync = useAccountSyncedState<boolean>({
@@ -616,6 +640,7 @@ const accountsInCategory = computed(() => {
 });
 
 const displayedArticles = computed<ReaderArticle[]>(() => articleRows.value);
+const displayedDailyReports = computed<AiDailyReportItem[]>(() => dailyReportRows.value);
 
 const {
   list: virtualDisplayedArticles,
@@ -627,6 +652,9 @@ const {
 });
 
 const articleListTitle = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return 'AI 日报';
+  }
   const selected = findAccount(selectedAccount.value);
   if (selected) {
     return selected.nickname || selected.fakeid;
@@ -640,7 +668,19 @@ const articleListTitle = computed(() => {
   return `分类：${selectedCategory.value}`;
 });
 
+const currentListTotalCount = computed(() =>
+  articlePaneMode.value === 'reports' ? dailyReportTotalCount.value : articleTotalCount.value
+);
+
 const articleListEmptyState = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return {
+      icon: 'i-lucide:file-stack',
+      title: '还没有 AI 日报',
+      description: '当天同步后，服务端会自动为当天文章生成 AI 日报。',
+    };
+  }
+
   if (favoriteOnly.value) {
     return {
       icon: 'i-heroicons:star',
@@ -665,6 +705,9 @@ const articleListEmptyState = computed(() => {
 });
 
 const canSyncFromHeader = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return false;
+  }
   if (selectedAccount.value) {
     return true;
   }
@@ -672,6 +715,9 @@ const canSyncFromHeader = computed(() => {
 });
 
 const syncHeaderTooltip = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return 'AI 日报页不支持同步';
+  }
   if (selectedAccount.value) {
     return '同步当前公众号';
   }
@@ -681,9 +727,53 @@ const syncHeaderTooltip = computed(() => {
   return '请选择公众号后同步';
 });
 
+const showDailyReportEntryButton = computed(() => !selectedAccount.value && selectedCategory.value === '__all__');
+
 const selectedArticleDisplayTitle = computed(() => {
   if (!selectedArticle.value) return '';
   return articleDisplayTitle(selectedArticle.value);
+});
+
+const selectedContentTitle = computed(() => {
+  if (selectedDailyReport.value) {
+    return selectedDailyReport.value.title;
+  }
+  return selectedArticleDisplayTitle.value;
+});
+
+const selectedContentMeta = computed(() => {
+  if (selectedDailyReport.value) {
+    return `AI 日报 · ${selectedDailyReport.value.reportDate}`;
+  }
+  if (!selectedArticle.value) {
+    return '';
+  }
+  return `${selectedArticle.value.author_name || selectedArticle.value.accountName} · ${formatTimeStamp(
+    selectedArticle.value.update_time || selectedArticle.value.create_time
+  )}`;
+});
+
+function buildAiDailyReportHtml(contentHtml: string): string {
+  const body = String(contentHtml || '').trim();
+  return `
+    <article class="ai-daily-report">
+      ${body || '<p class="ai-daily-report-empty">AI 日报内容为空。</p>'}
+    </article>
+  `.trim();
+}
+
+const selectedContentHtml = computed(() => {
+  if (selectedDailyReport.value) {
+    return buildAiDailyReportHtml(selectedDailyReport.value.contentHtml || '');
+  }
+  return selectedArticleHtml.value;
+});
+
+const selectedContentKind = computed<'default' | 'rss' | 'report'>(() => {
+  if (selectedDailyReport.value) {
+    return 'report';
+  }
+  return selectedArticle.value && String(selectedArticle.value.fakeid || '').startsWith('rss:') ? 'rss' : 'default';
 });
 
 const aiSummaryConfigured = computed(() => {
@@ -713,17 +803,136 @@ const selectedArticleSummaryState = computed<ArticleSummaryState>(() => {
     };
   }
 
-  return (
-    articleSummaryByKey.value[key] || {
-      status: 'idle',
-      summary: '',
-      error: '',
-      model: '',
+  const cachedSummary = String(selectedArticle.value?.ai_summary || '').trim();
+  const state = articleSummaryByKey.value[key];
+  if (cachedSummary) {
+    if (state?.status === 'loading') {
+      return state;
     }
+    return {
+      status: 'success',
+      summary: cachedSummary,
+      error: '',
+      model: 'cached',
+    };
+  }
+
+  return state || {
+    status: 'idle',
+    summary: '',
+    error: '',
+    model: '',
+  };
+});
+
+function normalizeSummaryTagVariable(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return '';
+  }
+
+  const plain = raw.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+  if (!plain) {
+    return '';
+  }
+
+  const normalized = plain
+    .replace(/[^a-z0-9_\-\s]+/g, ' ')
+    .replace(/[\s-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+
+  return normalized ? `{{${normalized}}}` : '';
+}
+
+const SUMMARY_READING_TIER_TAGS = new Set(['{{featured}}', '{{skim}}', '{{skip}}']);
+const SUMMARY_SPONSORED_TAG = '{{sponsored}}';
+
+function normalizeSummaryTagList(input: unknown): string[] {
+  const source = Array.isArray(input) ? input : [];
+  const normalized = Array.from(
+    new Set(
+      source
+        .map(tag => normalizeSummaryTagVariable(tag))
+        .filter(Boolean)
+    )
   );
+
+  const primaryReadingTag = normalized.find(tag => SUMMARY_READING_TIER_TAGS.has(tag)) || '';
+  const firstNonSponsoredTag = normalized.find(tag => !SUMMARY_READING_TIER_TAGS.has(tag) && tag !== SUMMARY_SPONSORED_TAG) || '';
+  const sponsoredTag = normalized.includes(SUMMARY_SPONSORED_TAG) ? SUMMARY_SPONSORED_TAG : '';
+
+  return [primaryReadingTag || firstNonSponsoredTag, sponsoredTag || (primaryReadingTag ? firstNonSponsoredTag : '')]
+    .filter(Boolean)
+    .slice(0, 2);
+}
+
+function parseStructuredArticleSummaryPayload(raw: string): StructuredArticleSummaryPayload | null {
+  const normalized = String(raw || '').trim();
+  if (!normalized || normalized[0] !== '{') {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(normalized);
+    const tags = normalizeSummaryTagList(
+      Array.isArray(payload?.tags)
+        ? payload.tags
+        : payload?.rating
+          ? [payload.rating]
+          : []
+    );
+    const summary = String(payload?.summary || '').trim();
+    const highlights = Array.isArray(payload?.highlights)
+      ? payload.highlights
+          .map((item: unknown) => String(item || '').trim())
+          .filter(Boolean)
+          .slice(0, 3)
+      : [];
+
+    if (tags.length === 0 || !summary || highlights.length === 0) {
+      return null;
+    }
+
+    return {
+      tags,
+      rating: tags[0],
+      summary,
+      highlights,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getStructuredSummaryTags(article?: Partial<ReaderArticle> | null): string[] {
+  if (!article) {
+    return [];
+  }
+  return parseStructuredArticleSummaryPayload(String(article.ai_summary || '').trim())?.tags || [];
+}
+
+const selectedArticleSummaryPayload = computed<StructuredArticleSummaryPayload | null>(() =>
+  parseStructuredArticleSummaryPayload(selectedArticleSummaryState.value.summary)
+);
+
+const selectedArticleSummaryTagDisplays = computed<ArticleTagDisplayItem[]>(() => {
+  const tags = selectedArticleSummaryPayload.value?.tags || [];
+  return tags.map(tag => (
+    aiTagDisplayMap.value.get(tag)
+    || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim())
+    || {
+      key: tag,
+      label: tag,
+      color: '#94a3b8',
+    }
+  ));
 });
 
 const selectedArticleUrls = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return [] as string[];
+  }
   if (selectedArticleKeys.value.size === 0) {
     return [] as string[];
   }
@@ -733,6 +942,9 @@ const selectedArticleUrls = computed(() => {
 });
 
 const effectiveArticleUrls = computed(() => {
+  if (articlePaneMode.value === 'reports') {
+    return [] as string[];
+  }
   if (selectedArticleUrls.value.length > 0) {
     return selectedArticleUrls.value;
   }
@@ -758,11 +970,11 @@ const selectionBtnTooltip = computed(() => {
 });
 
 const mobileView = computed<'articles' | 'article'>(() => {
-  if (selectedArticle.value) return 'article';
+  if (selectedArticle.value || selectedDailyReport.value) return 'article';
   return 'articles';
 });
 
-const mobileCanGoBack = computed(() => Boolean(selectedArticle.value || selectedAccount.value));
+const mobileCanGoBack = computed(() => Boolean(selectedArticle.value || selectedDailyReport.value || selectedAccount.value));
 const mobileAccountsListRef = ref<any>(null);
 const mobileArticlesListRef = ref<any>(null);
 const mobileArticleContentRef = ref<any>(null);
@@ -937,6 +1149,15 @@ const mobileDrawerDragConstraints = computed(() => ({
 }));
 
 const mobileArticlesHeaderState = computed<MobileHeaderLayerState>(() => {
+  if (articlePaneMode.value === 'reports') {
+    return {
+      kind: 'articles',
+      title: articleListTitle.value,
+      meta: `${currentListTotalCount.value} 份日报`,
+      accountId: null,
+    };
+  }
+
   const baseMeta = selectedAccount.value
     ? `${articleTotalCount.value} 篇文章`
     : `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个订阅源`;
@@ -961,6 +1182,16 @@ const mobileCurrentHeaderState = computed<MobileHeaderLayerState>(() => {
       accountId: null,
     };
   }
+
+  if (mobileView.value === 'article' && selectedDailyReport.value) {
+    return {
+      kind: 'article',
+      title: selectedDailyReport.value.title || 'AI 日报',
+      meta: `AI 日报 · ${selectedDailyReport.value.reportDate}`,
+      accountId: null,
+    };
+  }
+
   return mobileArticlesHeaderState.value;
 });
 
@@ -1902,7 +2133,9 @@ async function commitMobileArticleCloseFromFastSwipe(width: number) {
     mobileSwipeFastCommitTransition.value
   );
 
-  if (canNavigateMobileHistory(-1)) {
+  if (selectedDailyReport.value) {
+    await backFromMobileView();
+  } else if (canNavigateMobileHistory(-1)) {
     await navigateMobileHistory(-1);
   } else {
     await backFromMobileView();
@@ -1977,6 +2210,13 @@ function resolveMobileSwipeAction(
 
   if (deltaX > 0) {
     if (edge === 'left') {
+      if (selectedDailyReport.value) {
+        return {
+          kind: 'transition',
+          revealPreviousLayer: true,
+          execute: () => backFromMobileView(),
+        };
+      }
       if (canNavigateMobileHistory(-1)) {
         return {
           kind: 'transition',
@@ -2127,6 +2367,8 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
   clearMobileUnderlay();
   mobileArticleSwipeX.set(0);
   mobileArticlesSwipeX.set(0);
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
   if (options.trackHistory !== false) {
     pushMobileHistoryState(buildMobileHistoryState({ articleKey: articleKey(article) }));
   }
@@ -2323,6 +2565,161 @@ function updateArticleSummaryState(key: string, patch: Partial<ArticleSummarySta
   };
 }
 
+interface ArticleTagDisplayItem {
+  key: string;
+  label: string;
+  color: string;
+}
+
+function normalizeTagColor(value: string, fallback = '#94a3b8'): string {
+  const matched = /^#([0-9a-fA-F]{6})$/.exec(String(value || '').trim());
+  return matched ? `#${matched[1].toLowerCase()}` : fallback;
+}
+
+const aiTagDisplayMap = computed(() => {
+  const map = new Map<string, ArticleTagDisplayItem>();
+  const currentPreferences = preferences.value as unknown as Preferences;
+  const definitions = Array.isArray(currentPreferences.aiTagDefinitions) ? currentPreferences.aiTagDefinitions : [];
+  for (const item of definitions) {
+    const variable = String(item?.variable || '').trim();
+    const plainVariable = variable.replace(/^\{\{\s*|\s*\}\}$/g, '').trim();
+    const label = String(item?.label || '').trim();
+    const color = normalizeTagColor(String(item?.color || ''), '#94a3b8');
+    const displayItem: ArticleTagDisplayItem = {
+      key: variable || plainVariable || label,
+      label: label || variable || plainVariable,
+      color,
+    };
+    if (variable && label && !map.has(variable)) {
+      map.set(variable, displayItem);
+    }
+    if (plainVariable && label && !map.has(plainVariable)) {
+      map.set(plainVariable, displayItem);
+    }
+  }
+  return map;
+});
+
+function getArticleAiTags(article?: Partial<ReaderArticle> | null): ArticleTagDisplayItem[] {
+  if (!article) {
+    return [];
+  }
+  const structuredTags = getStructuredSummaryTags(article);
+  const sourceTags = structuredTags.length > 0
+    ? structuredTags
+    : Array.isArray(article.ai_tags)
+      ? article.ai_tags
+      : [];
+  return Array.from(
+    new Map(
+      sourceTags
+        .map(tag => String(tag || '').trim())
+        .filter(Boolean)
+        .map(tag => {
+          const display = aiTagDisplayMap.value.get(tag) || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim());
+          const label = display?.label || tag;
+          return [
+            label,
+            display || {
+              key: tag,
+              label,
+              color: '#94a3b8',
+            },
+          ] as const;
+        })
+    ).values()
+  ).slice(0, 3);
+}
+
+function getArticleTagStyle(tag: ArticleTagDisplayItem) {
+  return {
+    backgroundColor: normalizeTagColor(tag.color, '#94a3b8'),
+    borderColor: 'transparent',
+    color: '#ffffff',
+  };
+}
+
+function patchArticleAiFields(link: string, patch: Partial<Pick<ReaderArticle, 'ai_summary' | 'ai_tags'>>) {
+  const nextTags = patch.ai_tags ? [...patch.ai_tags] : undefined;
+  articleRows.value = articleRows.value.map(article =>
+    article.link === link
+      ? {
+          ...article,
+          ...(patch.ai_summary !== undefined ? { ai_summary: patch.ai_summary } : {}),
+          ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
+        }
+      : article
+  );
+
+  if (selectedArticle.value?.link === link) {
+    selectedArticle.value = {
+      ...selectedArticle.value,
+      ...(patch.ai_summary !== undefined ? { ai_summary: patch.ai_summary } : {}),
+      ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
+    };
+  }
+}
+
+async function loadDailyReports(options: { autoSelectLatest?: boolean } = {}) {
+  dailyReportLoading.value = true;
+  try {
+    const resp = await listAiDailyReports(0, 90);
+    dailyReportRows.value = Array.isArray(resp.list) ? resp.list : [];
+    dailyReportTotalCount.value = Number(resp.total) || dailyReportRows.value.length;
+
+    if (options.autoSelectLatest) {
+      const latest = dailyReportRows.value[0];
+      if (latest) {
+        await openDailyReport(latest);
+      } else {
+        selectedDailyReport.value = null;
+      }
+    }
+  } finally {
+    dailyReportLoading.value = false;
+  }
+}
+
+async function openDailyReport(report: AiDailyReportItem) {
+  const latest = await getAiDailyReport(report.reportDate);
+  if (!latest) {
+    throw new Error('AI 日报不存在');
+  }
+  articlePaneMode.value = 'reports';
+  selectedDailyReport.value = latest;
+  selectedArticle.value = null;
+  selectedArticleHtml.value = '';
+  contentLoading.value = false;
+}
+
+async function openAiDailyReports() {
+  articlePaneMode.value = 'reports';
+  selectedArticle.value = null;
+  selectedArticleHtml.value = '';
+  selectedDailyReport.value = null;
+  contentLoading.value = false;
+  await loadDailyReports();
+}
+
+function closeAiDailyReports() {
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
+}
+
+async function runAiRefreshAfterSync() {
+  try {
+    const result = await refreshAiDailyDigest();
+    if (!result.processed) {
+      return;
+    }
+    if (articlePaneMode.value === 'reports') {
+      await loadDailyReports({ autoSelectLatest: Boolean(selectedDailyReport.value) });
+    }
+  } catch (error) {
+    console.error('AI daily refresh failed:', error);
+  }
+}
+
 async function generateSelectedArticleSummary() {
   if (!selectedArticle.value) {
     return;
@@ -2357,13 +2754,25 @@ async function generateSelectedArticleSummary() {
 
   try {
     const result = await generateArticleSummary({
+      url: selectedArticle.value.link,
       title: selectedArticleDisplayTitle.value || selectedArticle.value.title || '无标题',
       content,
     });
 
+    const summary = String(result.summary || '').trim();
+    const nextTags = Array.isArray(result.tags)
+      ? result.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 2)
+      : result.rating
+        ? [String(result.rating)]
+        : [];
+    patchArticleAiFields(selectedArticle.value.link, {
+      ai_summary: summary,
+      ...(nextTags.length > 0 ? { ai_tags: nextTags } : {}),
+    });
+
     updateArticleSummaryState(key, {
       status: 'success',
-      summary: String(result.summary || '').trim(),
+      summary,
       error: '',
       model: String(result.model || ''),
     });
@@ -2420,6 +2829,8 @@ async function loadMoreArticles() {
 }
 
 function onClickCategory(categoryId: string) {
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
   selectedCategory.value = categoryId;
   selectedAccount.value = null;
   pushMobileHistoryState({
@@ -2433,6 +2844,8 @@ function onClickAccount(account: MpAccount) {
   rememberMobileArticlesUnderlaySnapshot();
   syncMobileAccountsPanelScrollTop();
   clearAccountNewArticles(account.fakeid);
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
   selectedAccount.value = account.fakeid;
   selectedArticle.value = null;
   mobileAccountsPanelOpen.value = false;
@@ -2440,6 +2853,10 @@ function onClickAccount(account: MpAccount) {
 }
 
 async function backFromMobileView() {
+  if (selectedDailyReport.value) {
+    selectedDailyReport.value = null;
+    return;
+  }
   if (await navigateMobileHistory(-1)) {
     return;
   }
@@ -2477,6 +2894,8 @@ async function showMobileAccounts() {
 }
 
 function showMobileAggregateArticles() {
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
   selectedArticle.value = null;
   selectedArticleKeys.value.clear();
   selectionMode.value = false;
@@ -2644,6 +3063,8 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
     }
     await refreshData();
     rememberMobileArticlesUnderlaySnapshot();
+    articlePaneMode.value = 'articles';
+    selectedDailyReport.value = null;
     selectedAccount.value = account.fakeid;
     if (isRssAccount(account as MpAccount)) {
       toast.success('RSS 添加成功', `已成功添加订阅【${account.nickname}】`);
@@ -2671,6 +3092,8 @@ function deleteCurrentAccount() {
         isDeleting.value = true;
         await deleteAccountData([fakeid]);
         accountEventBus.emit('account-removed', { fakeid });
+        articlePaneMode.value = 'articles';
+        selectedDailyReport.value = null;
         selectedAccount.value = null;
         selectedArticle.value = null;
         selectedArticleHtml.value = '';
@@ -3014,6 +3437,7 @@ async function syncCurrentAccount() {
   try {
     isCanceled.value = false;
     await loadAccountArticle(account, true);
+    await runAiRefreshAfterSync();
     toast.success(
       '同步完成',
       isRssAccount(account)
@@ -3136,6 +3560,7 @@ async function syncAllAccountsInCurrentScope() {
     }
 
     if (totalFailedCount === 0) {
+      await runAiRefreshAfterSync();
       toast.success('同步完成', `已同步 ${totalSuccessCount} 个订阅源`);
     } else if (totalSuccessCount === 0) {
       const firstMessage = rssFirstError || normalizeRuntimeErrorMessage(String(finalSnapshot?.message || '未知错误'));
@@ -3147,6 +3572,7 @@ async function syncAllAccountsInCurrentScope() {
         toast.error('同步失败', firstMessage);
       }
     } else {
+      await runAiRefreshAfterSync();
       toast.warning('部分同步失败', `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`);
     }
   } finally {
@@ -3347,7 +3773,7 @@ onUnmounted(() => {
           key="mobile-articles"
           class="absolute inset-0 z-[2] flex h-full flex-col app-shell-bg"
           :class="mobileArticlesUnderlayActive ? 'shadow-[-18px_0_40px_rgba(15,23,42,0.12)]' : ''"
-          :drag="selectedArticle ? false : 'x'"
+          :drag="mobileView === 'article' ? false : 'x'"
           :dragControls="mobileArticlesDragControls"
           :dragListener="false"
           :dragConstraints="{ left: 0, right: 0 }"
@@ -3358,7 +3784,7 @@ onUnmounted(() => {
           :dragTransition="mobileSwipeSnapTransition"
           :onDragEnd="onArticlesDragEnd"
           :style="
-            selectedArticle
+            mobileView === 'article'
               ? mobileArticleUnderlayActive
                 ? { x: mobileArticleUnderlayX, scale: mobileArticleUnderlayScale, opacity: mobileArticleUnderlayOpacity }
                 : { x: 0, scale: 1, opacity: 0 }
@@ -3370,7 +3796,7 @@ onUnmounted(() => {
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
                   <UButton
-                    v-if="selectedAccount"
+                    v-if="articlePaneMode !== 'reports' && selectedAccount"
                     size="2xs"
                     color="gray"
                     variant="ghost"
@@ -3379,7 +3805,7 @@ onUnmounted(() => {
                     @click="backFromMobileView"
                   />
                   <UButton
-                    v-else
+                    v-else-if="articlePaneMode !== 'reports'"
                     size="2xs"
                     color="gray"
                     variant="ghost"
@@ -3387,6 +3813,7 @@ onUnmounted(() => {
                     class="icon-btn mt-0.5"
                     @click="showMobileAccounts"
                   />
+                  <div v-else class="size-7 shrink-0" />
                   <div class="min-w-0 flex-1">
                     <div v-if="selectedAccountInfo" class="flex items-center gap-2">
                       <h1 class="truncate text-base font-semibold">{{ mobileArticlesHeaderState.title }}</h1>
@@ -3420,7 +3847,28 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex items-center gap-2">
-                  <UTooltip :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+                  <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:chevron-left"
+                      class="icon-btn"
+                      @click="closeAiDailyReports()"
+                    />
+                  </UTooltip>
+                  <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:sparkles"
+                      label="AI日报"
+                      class="toolbar-text-btn"
+                      @click="openAiDailyReports()"
+                    />
+                  </UTooltip>
+                  <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
                     <UButton
                       size="2xs"
                       color="gray"
@@ -3455,11 +3903,48 @@ onUnmounted(() => {
             v-else
             ref="mobileArticlesListRef"
             class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-            :class="selectedArticle ? 'pointer-events-none' : ''"
+            :class="mobileView === 'article' ? 'pointer-events-none' : ''"
             @pointerdown="beginMobileDrag('articles', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <ul v-if="displayedArticles.length > 0" class="space-y-3">
+            <ul v-if="articlePaneMode === 'reports' && displayedDailyReports.length > 0" class="space-y-3">
+              <motion.li
+                v-for="(report, index) in displayedDailyReports"
+                :key="report.reportDate"
+                layout
+                class="cursor-pointer rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.07)] transition-colors dark:border-white/10 dark:bg-slate-900/80"
+                :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
+                :animate="{ opacity: 1, y: 0, scale: 1 }"
+                :whileTap="{ scale: 0.988 }"
+                :transition="
+                  prefersReducedMotion
+                    ? { duration: 0.12 }
+                    : {
+                        type: 'spring',
+                        stiffness: 460,
+                        damping: 32,
+                        mass: 0.75,
+                        delay: Math.min(index, 6) * 0.02,
+                      }
+                "
+                @click="openDailyReport(report)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="line-clamp-2 text-sm font-medium">{{ report.title }}</p>
+                    <div class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <span>{{ report.reportDate }}</span>
+                      <span>·</span>
+                      <span>{{ report.sourceCount }} 篇文章</span>
+                    </div>
+                  </div>
+                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
+                    <UIcon name="i-lucide:sparkles" class="size-4" />
+                  </span>
+                </div>
+              </motion.li>
+            </ul>
+            <ul v-else-if="displayedArticles.length > 0" class="space-y-3">
               <motion.li
                 v-for="(article, index) in displayedArticles"
                 :key="articleKey(article)"
@@ -3490,7 +3975,19 @@ onUnmounted(() => {
                     @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
                   />
                   <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
-                    <p class="line-clamp-2 text-sm font-medium">{{ articleDisplayTitle(article) }}</p>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span
+                        v-for="tag in getArticleAiTags(article)"
+                        :key="`${articleKey(article)}:${tag.key}`"
+                        class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                        :style="getArticleTagStyle(tag)"
+                      >
+                        {{ tag.label }}
+                      </span>
+                      <p class="min-w-0 flex-1 text-sm font-medium leading-5 line-clamp-2">
+                        {{ articleDisplayTitle(article) }}
+                      </p>
+                    </div>
                     <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span class="min-w-0 flex items-center gap-2 truncate">
                         <span class="article-account-avatar">
@@ -3530,7 +4027,7 @@ onUnmounted(() => {
               />
             </div>
 
-            <div v-if="articlePageHasMore || articlePageLoading" class="px-1 py-3">
+            <div v-if="articlePaneMode === 'articles' && (articlePageHasMore || articlePageLoading)" class="px-1 py-3">
               <UButton
                 size="sm"
                 color="gray"
@@ -3547,13 +4044,13 @@ onUnmounted(() => {
         </motion.div>
 
         <motion.div
-          v-if="selectedArticle && mobileArticleUnderlayActive"
+          v-if="mobileView === 'article' && mobileArticleUnderlayActive"
           class="pointer-events-none absolute inset-0 z-[3] bg-slate-950/10 dark:bg-slate-950/20"
           :style="{ opacity: mobileArticleUnderlayScrimOpacity }"
         />
 
         <motion.div
-          v-if="selectedArticle"
+          v-if="selectedArticle || selectedDailyReport"
           key="mobile-article"
           class="mobile-article-sheet absolute inset-0 z-10 flex h-full flex-col bg-white text-slate-900 shadow-[-22px_0_44px_rgba(15,23,42,0.16)] dark:bg-slate-950 dark:text-slate-100"
           drag="x"
@@ -3613,7 +4110,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="contentLoading">
+          <div v-if="selectedArticle && contentLoading">
             <EmptyStatePanel
               icon="i-lucide-loader-circle"
               title="内容加载中"
@@ -3629,6 +4126,7 @@ onUnmounted(() => {
           >
             <div class="mx-auto w-full max-w-[920px]">
               <section
+                v-if="selectedArticle"
                 class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
               >
                 <div class="flex items-start justify-between gap-3">
@@ -3684,15 +4182,40 @@ onUnmounted(() => {
                   v-else-if="selectedArticleSummaryState.status === 'success'"
                   class="mt-3 rounded-[18px] border border-sky-100/80 bg-white/85 px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
                 >
-                  <pre class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
+                  <template v-if="selectedArticleSummaryPayload">
+                    <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                      <div
+                        v-for="tag in selectedArticleSummaryTagDisplays"
+                        :key="`mobile-summary-tag-${tag.key}`"
+                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                        :style="getArticleTagStyle(tag)"
+                      >
+                        {{ tag.label }}
+                      </div>
+                    </div>
+                    <p class="mt-3 text-sm font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                      {{ selectedArticleSummaryPayload.summary }}
+                    </p>
+                    <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                      <li
+                        v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
+                        :key="`mobile-summary-highlight-${index}`"
+                        class="flex gap-2"
+                      >
+                        <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky-400" />
+                        <span>{{ highlight }}</span>
+                      </li>
+                    </ul>
+                  </template>
+                  <pre v-else class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
                     selectedArticleSummaryState.summary
                   }}</pre>
                 </div>
               </section>
 
               <IframeHtmlRenderer
-                :html="selectedArticleHtml"
-                :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+                :html="selectedContentHtml"
+                :content-kind="selectedContentKind"
               />
             </div>
           </motion.div>
@@ -4031,11 +4554,11 @@ onUnmounted(() => {
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
             <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
-            <span class="text-xs text-slate-500 shrink-0">{{ articleTotalCount }} 篇</span>
-            <span v-if="activeAccountSyncStatus" class="text-xs text-emerald-600 shrink-0">
+            <span class="text-xs text-slate-500 shrink-0">{{ currentListTotalCount }} 篇</span>
+            <span v-if="articlePaneMode !== 'reports' && activeAccountSyncStatus" class="text-xs text-emerald-600 shrink-0">
               {{ activeAccountSyncStatus }}
             </span>
-            <UTooltip text="编辑当前公众号分类">
+            <UTooltip v-if="articlePaneMode !== 'reports'" text="编辑当前公众号分类">
               <UButton
                 size="2xs"
                 color="gray"
@@ -4046,7 +4569,7 @@ onUnmounted(() => {
                 @click="editSelectedAccountCategory"
               />
             </UTooltip>
-            <UTooltip text="删除当前订阅源">
+            <UTooltip v-if="articlePaneMode !== 'reports'" text="删除当前订阅源">
               <UButton
                 size="2xs"
                 color="gray"
@@ -4061,10 +4584,31 @@ onUnmounted(() => {
           </div>
 
           <div class="flex items-center gap-2">
-            <span v-if="headerBatchSyncProgressText" class="text-xs text-slate-500 shrink-0">
+            <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:chevron-left"
+                class="icon-btn"
+                @click="closeAiDailyReports()"
+              />
+            </UTooltip>
+            <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:sparkles"
+                label="AI日报"
+                class="toolbar-text-btn"
+                @click="openAiDailyReports()"
+              />
+            </UTooltip>
+            <span v-if="articlePaneMode !== 'reports' && headerBatchSyncProgressText" class="text-xs text-slate-500 shrink-0">
               {{ headerBatchSyncProgressText }}
             </span>
-            <UTooltip :text="syncHeaderTooltip">
+            <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
               <UButton
                 size="2xs"
                 color="gray"
@@ -4079,7 +4623,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="flex flex-wrap items-center justify-between gap-2">
+        <div v-if="articlePaneMode === 'articles'" class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex flex-wrap gap-2 items-center">
             <UTooltip :text="selectionBtnTooltip">
               <UButton
@@ -4166,6 +4710,48 @@ onUnmounted(() => {
         <LoadingCards />
       </div>
 
+      <div v-else-if="articlePaneMode === 'reports' && dailyReportLoading" class="px-3 py-3">
+        <LoadingCards />
+      </div>
+
+      <div v-else-if="articlePaneMode === 'reports' && displayedDailyReports.length === 0" class="flex-1">
+        <EmptyStatePanel
+          :icon="articleListEmptyState.icon"
+          :title="articleListEmptyState.title"
+          :description="articleListEmptyState.description"
+        />
+      </div>
+
+      <div v-else-if="articlePaneMode === 'reports'" class="app-shell-scrollbar flex-1 overflow-y-auto px-2 py-2">
+        <ul class="space-y-2">
+          <li
+            v-for="report in displayedDailyReports"
+            :key="report.reportDate"
+            class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
+            :class="
+              selectedDailyReport?.reportDate === report.reportDate
+                ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
+                : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
+            "
+            @click="openDailyReport(report)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="line-clamp-2 text-sm font-medium">{{ report.title }}</p>
+                <div class="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                  <span>{{ report.reportDate }}</span>
+                  <span>·</span>
+                  <span>{{ report.sourceCount }} 篇文章</span>
+                </div>
+              </div>
+              <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
+                <UIcon name="i-lucide:sparkles" class="size-4" />
+              </span>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div v-else-if="displayedArticles.length === 0" class="flex-1">
         <EmptyStatePanel
           :icon="articleListEmptyState.icon"
@@ -4197,7 +4783,19 @@ onUnmounted(() => {
               @change="toggleArticleSelection(row.data, ($event.target as HTMLInputElement).checked)"
             />
             <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium line-clamp-2">{{ articleDisplayTitle(row.data) }}</p>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span
+                  v-for="tag in getArticleAiTags(row.data)"
+                  :key="`${articleKey(row.data)}:${tag.key}`"
+                  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                  :style="getArticleTagStyle(tag)"
+                >
+                  {{ tag.label }}
+                </span>
+                <p class="min-w-0 flex-1 text-sm font-medium line-clamp-2 leading-5">
+                  {{ articleDisplayTitle(row.data) }}
+                </p>
+              </div>
               <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
                 <span class="min-w-0 flex items-center gap-2 truncate">
                   <span class="article-account-avatar">
@@ -4232,7 +4830,10 @@ onUnmounted(() => {
         </li>
       </ul>
       </div>
-      <div v-if="!loading && (articlePageHasMore || articlePageLoading)" class="border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70">
+      <div
+        v-if="articlePaneMode === 'articles' && !loading && (articlePageHasMore || articlePageLoading)"
+        class="border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
+      >
         <UButton
           size="2xs"
           color="gray"
@@ -4249,12 +4850,11 @@ onUnmounted(() => {
 
     <main class="app-shell-panel flex-1 overflow-hidden rounded-[30px] flex flex-col">
       <div class="app-shell-glass border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
-        <template v-if="selectedArticle">
-          <h1 class="text-[30px] leading-tight font-bold">{{ selectedArticleDisplayTitle }}</h1>
+        <template v-if="selectedDailyReport || selectedArticle">
+          <h1 class="text-[30px] leading-tight font-bold">{{ selectedContentTitle }}</h1>
           <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
-            <span>{{ selectedArticle.author_name || selectedArticle.accountName }}</span>
-            <span>{{ formatTimeStamp(selectedArticle.update_time || selectedArticle.create_time) }}</span>
-            <button type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
+            <span>{{ selectedContentMeta }}</span>
+            <button v-if="selectedArticle" type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
               查看原文
             </button>
           </div>
@@ -4264,14 +4864,14 @@ onUnmounted(() => {
         </template>
       </div>
 
-      <div v-if="!selectedArticle">
+      <div v-if="!selectedArticle && !selectedDailyReport">
         <EmptyStatePanel
           icon="i-lucide-file-text"
-          title="请选择一篇文章"
-          description="选择文章后，就可以在这里阅读正文内容。"
+          :title="articlePaneMode === 'reports' ? '请选择一份 AI 日报' : '请选择一篇文章'"
+          :description="articlePaneMode === 'reports' ? '选择日报后，就可以在这里阅读内容。' : '选择文章后，就可以在这里阅读正文内容。'"
         />
       </div>
-      <div v-else-if="contentLoading">
+      <div v-else-if="selectedArticle && contentLoading">
         <EmptyStatePanel
           icon="i-lucide-loader-circle"
           title="内容加载中"
@@ -4281,9 +4881,10 @@ onUnmounted(() => {
       <div v-else class="app-shell-scrollbar flex-1 overflow-y-auto p-4">
         <div class="mx-auto w-full max-w-[920px]">
           <section
-            class="mb-4 rounded-[26px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-5 py-5 shadow-[0_20px_40px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.45),rgba(2,6,23,0.96))]"
+            v-if="selectedArticle"
+            class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
           >
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                   <UIcon name="i-lucide:sparkles" class="size-4 text-sky-500" />
@@ -4310,39 +4911,64 @@ onUnmounted(() => {
 
             <div
               v-if="!aiSummaryConfigured"
-              class="mt-4 rounded-[20px] border border-amber-200/80 bg-amber-50/90 px-4 py-4 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+              class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
             >
               <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
-              <UButton size="2xs" color="gray" variant="soft" class="mt-3" @click="openSystemMenu">打开设置</UButton>
+              <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">打开设置</UButton>
             </div>
 
             <div
               v-else-if="selectedArticleSummaryState.status === 'loading'"
-              class="mt-4 rounded-[20px] border border-sky-100/80 bg-white/85 px-4 py-4 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
+              class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
             >
               正在生成摘要，请稍候……
             </div>
 
             <div
               v-else-if="selectedArticleSummaryState.status === 'error'"
-              class="mt-4 rounded-[20px] border border-rose-200/80 bg-rose-50/90 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+              class="mt-3 rounded-[18px] border border-rose-200/80 bg-rose-50/90 px-3 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
             >
               {{ selectedArticleSummaryState.error }}
             </div>
 
             <div
               v-else-if="selectedArticleSummaryState.status === 'success'"
-              class="mt-4 rounded-[20px] border border-sky-100/80 bg-white/88 px-4 py-4 dark:border-sky-500/20 dark:bg-slate-950/70"
+              class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
             >
-              <pre class="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 dark:text-slate-200">{{
+              <template v-if="selectedArticleSummaryPayload">
+                <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                  <div
+                    v-for="tag in selectedArticleSummaryTagDisplays"
+                    :key="`desktop-summary-tag-${tag.key}`"
+                    class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                    :style="getArticleTagStyle(tag)"
+                  >
+                    {{ tag.label }}
+                  </div>
+                </div>
+                <p class="mt-3 text-sm font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                  {{ selectedArticleSummaryPayload.summary }}
+                </p>
+                <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                  <li
+                    v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
+                    :key="`desktop-summary-highlight-${index}`"
+                    class="flex gap-2"
+                  >
+                    <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky-400" />
+                    <span>{{ highlight }}</span>
+                  </li>
+                </ul>
+              </template>
+              <pre v-else class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
                 selectedArticleSummaryState.summary
               }}</pre>
             </div>
           </section>
 
           <IframeHtmlRenderer
-            :html="selectedArticleHtml"
-            :content-kind="selectedArticle && String(selectedArticle.fakeid || '').startsWith('rss:') ? 'rss' : 'default'"
+            :html="selectedContentHtml"
+            :content-kind="selectedContentKind"
           />
         </div>
       </div>
@@ -4521,8 +5147,19 @@ onUnmounted(() => {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
+.toolbar-text-btn {
+  @apply !inline-flex h-7 !px-2.5 !py-0 !gap-1.5 items-center justify-center whitespace-nowrap leading-none rounded-full
+    border border-white/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80
+    text-[11px] font-medium text-slate-700 dark:text-slate-200
+    hover:-translate-y-px hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-900
+    transition-all duration-200;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
 .icon-btn :deep(.iconify),
-.icon-btn :deep([class*='i-']) {
+.icon-btn :deep([class*='i-']),
+.toolbar-text-btn :deep(.iconify),
+.toolbar-text-btn :deep([class*='i-']) {
   margin: 0 !important;
   width: 14px !important;
   height: 14px !important;

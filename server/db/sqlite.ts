@@ -330,6 +330,10 @@ async function initSqlite(): Promise<SqliteDb> {
       create_time INTEGER NOT NULL DEFAULT 0,
       update_time INTEGER NOT NULL DEFAULT 0,
       favorite INTEGER NOT NULL DEFAULT 0,
+      ai_summary TEXT NOT NULL DEFAULT '',
+      ai_summary_updated_at INTEGER NOT NULL DEFAULT 0,
+      ai_tags_json TEXT NOT NULL DEFAULT '[]',
+      ai_tagged_at INTEGER NOT NULL DEFAULT 0,
       is_deleted INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT '',
       data_json TEXT NOT NULL,
@@ -339,6 +343,19 @@ async function initSqlite(): Promise<SqliteDb> {
     CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_fakeid_time ON reader_articles(auth_key, fakeid, create_time DESC);
     CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_link ON reader_articles(auth_key, link);
     CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_time ON reader_articles(auth_key, update_time DESC, create_time DESC);
+
+    CREATE TABLE IF NOT EXISTS reader_ai_reports (
+      auth_key TEXT NOT NULL,
+      report_date TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      content_html TEXT NOT NULL DEFAULT '',
+      source_count INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (auth_key, report_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reader_ai_reports_auth_updated ON reader_ai_reports(auth_key, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS cache_html (
       auth_key TEXT NOT NULL,
@@ -501,8 +518,41 @@ async function initSqlite(): Promise<SqliteDb> {
     // Ignore when the column already exists.
   }
 
+  try {
+    await db.exec(`
+      ALTER TABLE reader_articles ADD COLUMN ai_summary TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_articles ADD COLUMN ai_summary_updated_at INTEGER NOT NULL DEFAULT 0;
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_articles ADD COLUMN ai_tags_json TEXT NOT NULL DEFAULT '[]';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE reader_articles ADD COLUMN ai_tagged_at INTEGER NOT NULL DEFAULT 0;
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_favorite_time ON reader_articles(auth_key, favorite, update_time DESC, create_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_ai_tagged_time ON reader_articles(auth_key, ai_tagged_at, update_time DESC, create_time DESC);
   `);
 
   await compactLegacyArticleJsonIfNeeded(db);

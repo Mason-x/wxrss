@@ -1,8 +1,16 @@
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
-import { normalizeArticleContent, requestAiSummary } from '~/server/utils/ai-summary';
+import { getArticleByLink, updateArticleAiSummary, updateArticleAiTags } from '~/server/repositories/reader';
+import {
+  buildArticleSummaryUserPrompt,
+  buildRuntimeSummarySystemPrompt,
+  normalizeArticleContent,
+  parseStructuredArticleSummary,
+  requestAiSummary,
+} from '~/server/utils/ai-summary';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface ArticleSummaryRequestBody {
+  url?: string;
   title?: string;
   content?: string;
 }
@@ -17,6 +25,7 @@ export default defineEventHandler(async event => {
   }
 
   const body = await readBody<ArticleSummaryRequestBody>(event);
+  const url = String(body?.url || '').trim();
   const title = String(body?.title || '').trim();
   const content = normalizeArticleContent(body?.content);
 
@@ -35,6 +44,32 @@ export default defineEventHandler(async event => {
   }
 
   const { preferences } = await getStoredPreferencesByAuthKey(authKey);
+  const allowedVariables = preferences.aiTagDefinitions.map(item => item.variable);
+
+  if (url) {
+    const existing = await getArticleByLink(authKey, url);
+    const cachedSummary = String(existing?.ai_summary || '').trim();
+    if (cachedSummary) {
+      const parsedCached = parseStructuredArticleSummary(cachedSummary, allowedVariables);
+      const currentTags = Array.isArray(existing?.ai_tags) ? existing.ai_tags : [];
+      const cachedTags = parsedCached?.tags || [];
+      if (cachedTags.length > 0 && JSON.stringify(currentTags) !== JSON.stringify(cachedTags)) {
+        await updateArticleAiTags(authKey, url, cachedTags);
+      }
+      return {
+        data: {
+          summary: cachedSummary,
+          model: 'cached',
+          cached: true,
+          tags: parsedCached?.tags || [],
+          rating: parsedCached?.rating || '',
+          summaryText: parsedCached?.summary || '',
+          highlights: parsedCached?.highlights || [],
+        },
+      };
+    }
+  }
+
   const result = await requestAiSummary(
     {
       baseUrl: preferences.aiSummaryBaseUrl,
@@ -42,10 +77,38 @@ export default defineEventHandler(async event => {
       model: preferences.aiSummaryModel,
       systemPrompt: preferences.aiSummarySystemPrompt,
     },
-    `文章标题：${title}\n\n文章正文：\n${content}`
+    buildArticleSummaryUserPrompt({
+      title,
+      content,
+    }),
+    {
+      temperature: 0.2,
+      systemPrompt: buildRuntimeSummarySystemPrompt(
+        preferences.aiSummarySystemPrompt,
+        preferences.aiTagDefinitions,
+        preferences.aiTagSystemPrompt
+      ),
+    }
   );
 
+  const parsed = parseStructuredArticleSummary(result.summary, allowedVariables);
+
+  if (url) {
+    await updateArticleAiSummary(authKey, url, result.summary);
+    if (parsed?.tags?.length) {
+      await updateArticleAiTags(authKey, url, parsed.tags);
+    }
+  }
+
   return {
-    data: result,
+    data: {
+      summary: result.summary,
+      model: result.model,
+      cached: false,
+      tags: parsed?.tags || [],
+      rating: parsed?.rating || '',
+      summaryText: parsed?.summary || '',
+      highlights: parsed?.highlights || [],
+    },
   };
 });

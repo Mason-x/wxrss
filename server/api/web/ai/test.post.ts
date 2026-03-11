@@ -1,4 +1,4 @@
-import { requestAiSummary } from '~/server/utils/ai-summary';
+import { requestAiCompletionText } from '~/server/utils/ai-summary';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface AiTestRequestBody {
@@ -18,7 +18,7 @@ export default defineEventHandler(async event => {
   }
 
   const body = await readBody<AiTestRequestBody>(event);
-  const result = await requestAiSummary(
+  const result = await requestAiCompletionText(
     {
       baseUrl: body?.baseUrl,
       apiKey: body?.apiKey,
@@ -31,7 +31,7 @@ export default defineEventHandler(async event => {
   return {
     data: {
       ok: true,
-      text: result.summary,
+      text: result.text,
     },
   };
 });
