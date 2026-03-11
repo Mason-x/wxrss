@@ -324,6 +324,14 @@ function normalizeCategory(account: MpAccount): string {
   return value.length > 0 ? value : '未分类';
 }
 
+function accountSourceLabel(account?: MpAccount | null): string {
+  return account && isRssAccount(account) ? 'RSS' : '公众号';
+}
+
+function accountSourceMetaLabel(account?: MpAccount | null): string {
+  return account && isRssAccount(account) ? 'RSS' : '公众号';
+}
+
 function articleKey(article: ReaderArticle) {
   return buildArticleStorageKey(article.fakeid, article);
 }
@@ -733,12 +741,12 @@ const syncHeaderTooltip = computed(() => {
     return 'AI 日报页不支持同步';
   }
   if (selectedAccount.value) {
-    return '同步当前公众号';
+    return `同步当前${accountSourceLabel(selectedAccountInfo.value)}`;
   }
   if (selectedCategory.value === '__all__') {
-    return '同步全部公众号';
+    return '同步全部订阅源';
   }
-  return '请选择公众号后同步';
+  return '请选择订阅源后同步';
 });
 
 const showDailyReportEntryButton = computed(() => !selectedAccount.value && selectedCategory.value === '__all__');
@@ -3114,7 +3122,7 @@ function deleteCurrentAccount() {
 
   const account = findAccount(fakeid);
   modal.open(ConfirmModal, {
-    title: '确定删除当前公众号吗？',
+    title: `确定删除当前${accountSourceLabel(account)}吗？`,
     description: `将删除【${account?.nickname || fakeid}】的全部缓存数据（文章、留言和资源）。`,
     async onConfirm() {
       try {
@@ -3903,7 +3911,8 @@ onUnmounted(() => {
                       color="gray"
                       variant="ghost"
                       :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                      class="icon-btn mobile-favorite-toggle"
+                      label="只看收藏"
+                      class="toolbar-text-btn mobile-favorite-toggle"
                       :class="favoriteOnly ? 'is-active' : ''"
                       @click="favoriteOnly = !favoriteOnly"
                     />
@@ -3914,9 +3923,10 @@ onUnmounted(() => {
                       color="gray"
                       variant="ghost"
                       icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                      label="同步"
                       :disabled="!canSyncFromHeader"
                       :loading="isSyncing"
-                      class="icon-btn"
+                      class="toolbar-text-btn"
                       @click="onHeaderSyncClick"
                     />
                   </UTooltip>
@@ -4129,6 +4139,17 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex items-center gap-2">
+                  <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      class="icon-btn article-star-btn"
+                      :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
+                      @click="toggleArticleFavorite(selectedArticle)"
+                    />
+                  </UTooltip>
                   <UTooltip text="查看原文">
                     <UButton
                       size="2xs"
@@ -4419,6 +4440,16 @@ onUnmounted(() => {
                             class="mt-1 text-xs"
                             :class="selectedAccount === account.fakeid ? 'text-slate-200 dark:text-slate-700' : 'text-slate-500 dark:text-slate-400'"
                           >
+                            <span
+                              class="mr-1.5 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                              :class="
+                                selectedAccount === account.fakeid
+                                  ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                              "
+                            >
+                              {{ accountSourceMetaLabel(account) }}
+                            </span>
                             {{ normalizeCategory(account) }}
                             <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                             <span> · {{ account.articles || 0 }} 篇</span>
@@ -4568,6 +4599,9 @@ onUnmounted(() => {
                   />
                 </div>
                 <p class="text-xs text-slate-500 mt-1">
+                  <span class="mr-1.5 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {{ accountSourceMetaLabel(account) }}
+                  </span>
                   {{ normalizeCategory(account) }}
                   <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                   <span> · {{ account.articles || 0 }} 篇</span>
@@ -4602,7 +4636,10 @@ onUnmounted(() => {
             <span v-if="articlePaneMode !== 'reports' && activeAccountSyncStatus" class="text-xs text-emerald-600 shrink-0">
               {{ activeAccountSyncStatus }}
             </span>
-            <UTooltip v-if="articlePaneMode !== 'reports'" text="编辑当前公众号分类">
+            <UTooltip
+              v-if="articlePaneMode !== 'reports'"
+              :text="`编辑当前${accountSourceLabel(selectedAccountInfo)}分类`"
+            >
               <UButton
                 size="2xs"
                 color="gray"
@@ -4658,9 +4695,10 @@ onUnmounted(() => {
                 color="gray"
                 variant="ghost"
                 icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                label="同步"
                 :disabled="!canSyncFromHeader"
                 :loading="isSyncing"
-                class="icon-btn"
+                class="toolbar-text-btn"
                 @click="onHeaderSyncClick"
               />
             </UTooltip>
@@ -4901,12 +4939,27 @@ onUnmounted(() => {
     <main class="app-shell-panel flex-1 overflow-hidden rounded-[30px] flex flex-col">
       <div class="app-shell-glass border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
         <template v-if="selectedDailyReport || selectedArticle">
-          <h1 class="text-[30px] leading-tight font-bold">{{ selectedContentTitle }}</h1>
-          <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
-            <span>{{ selectedContentMeta }}</span>
-            <button v-if="selectedArticle" type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
-              查看原文
-            </button>
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0 flex-1">
+              <h1 class="text-[30px] leading-tight font-bold">{{ selectedContentTitle }}</h1>
+              <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
+                <span>{{ selectedContentMeta }}</span>
+                <button v-if="selectedArticle" type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
+                  查看原文
+                </button>
+              </div>
+            </div>
+            <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                class="icon-btn article-star-btn shrink-0"
+                :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
+                @click="toggleArticleFavorite(selectedArticle)"
+              />
+            </UTooltip>
           </div>
         </template>
         <template v-else>
@@ -5045,7 +5098,7 @@ onUnmounted(() => {
 
         <div class="space-y-4">
           <p class="text-sm text-slate-500 truncate">
-            当前公众号：{{ categoryEditorAccount?.nickname || categoryEditorAccount?.fakeid || '-' }}
+            当前{{ accountSourceLabel(categoryEditorAccount) }}：{{ categoryEditorAccount?.nickname || categoryEditorAccount?.fakeid || '-' }}
           </p>
 
           <div class="space-y-2">

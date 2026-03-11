@@ -123,21 +123,7 @@
         ]"
       >
         <template v-if="mode === 'mp'">
-          <div v-if="showMpRecommendations" class="flex h-full min-h-0 flex-col space-y-3 px-3 py-4">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <p class="text-sm font-semibold text-slate-900 dark:text-white">新榜月榜推荐</p>
-                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                  {{ newrankLatestMonthLabel || '按分类查看新榜公众号指数月榜' }}
-                </p>
-              </div>
-              <span
-                class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-              >
-                需新榜登录态
-              </span>
-            </div>
-
+          <div v-if="showMpRecommendations" class="flex h-full min-h-0 flex-col px-3 py-4">
             <div class="min-h-[24rem] flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm md:min-h-[30rem] dark:border-slate-800 dark:bg-slate-900">
               <div class="grid h-full min-h-full overflow-hidden grid-cols-[5.75rem_minmax(0,1fr)] md:grid-cols-[10rem_minmax(0,1fr)]">
                 <aside class="min-h-0 overflow-hidden border-r border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
@@ -163,16 +149,6 @@
                         @click="loadNewrankRecommendations(category.id)"
                       >
                         <p class="truncate text-xs font-semibold md:text-sm">{{ category.label }}</p>
-                        <p
-                          class="mt-1 line-clamp-2 text-[10px] leading-4 md:text-[11px]"
-                          :class="
-                            selectedNewrankCategoryId === category.id
-                              ? 'text-white/85'
-                              : 'text-slate-400 dark:text-slate-500'
-                          "
-                        >
-                          {{ category.description }}
-                        </p>
                       </button>
                     </div>
                   </div>
@@ -237,13 +213,13 @@
                               <p class="truncate text-[11px] text-slate-400 dark:text-slate-500">{{ item.sourceLabel }}</p>
                               <UButton
                                 size="2xs"
-                                color="gray"
+                                :color="isSubscribedNewrankItem(item) ? 'emerald' : 'gray'"
                                 variant="soft"
                                 :loading="pendingRecommendedAccountKey === item.id"
-                                :disabled="Boolean(pendingRecommendedAccountKey)"
+                                :disabled="Boolean(pendingRecommendedAccountKey) || isSubscribedNewrankItem(item)"
                                 @click.stop="addRecommendedAccount(item)"
                               >
-                                一键添加
+                                {{ isSubscribedNewrankItem(item) ? '已订阅' : '一键添加' }}
                               </UButton>
                             </div>
                           </div>
@@ -260,16 +236,25 @@
             <li
               v-for="account in accountList"
               :key="account.fakeid"
-              class="flex cursor-pointer items-center gap-3 px-3 py-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900"
-              @click="selectAccount(account)"
+              class="flex items-center gap-3 px-3 py-4 transition-colors dark:hover:bg-slate-900"
+              :class="isSubscribedMpAccount(account) ? 'cursor-default bg-slate-50/60 dark:bg-slate-900/40' : 'cursor-pointer hover:bg-slate-50'"
+              @click="!isSubscribedMpAccount(account) && selectAccount(account)"
             >
               <img class="size-16 shrink-0 rounded-2xl object-cover" :src="account.round_head_img" alt="" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-start justify-between gap-3">
                   <p class="truncate font-semibold">{{ account.nickname }}</p>
-                  <p class="shrink-0 text-sm font-medium text-sky-500">
-                    {{ ACCOUNT_TYPE[account.service_type] }}
-                  </p>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span
+                      v-if="isSubscribedMpAccount(account)"
+                      class="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300"
+                    >
+                      已订阅
+                    </span>
+                    <p class="text-sm font-medium text-sky-500">
+                      {{ ACCOUNT_TYPE[account.service_type] }}
+                    </p>
+                  </div>
                 </div>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   微信号 {{ account.alias || '未设置' }}
@@ -713,7 +698,7 @@ import {
   type RsshubDiscoverItem,
 } from '~/apis';
 import { ACCOUNT_LIST_PAGE_SIZE, ACCOUNT_TYPE } from '~/config';
-import type { MpAccount } from '~/store/v2/info';
+import { getAllInfo, type MpAccount } from '~/store/v2/info';
 import type { Preferences } from '~/types/preferences';
 import type { AccountInfo } from '~/types/types';
 
@@ -846,6 +831,7 @@ const newrankCategories = ref<NewrankMpCategoryItem[]>([]);
 const newrankItems = ref<NewrankMpRecommendationItem[]>([]);
 const selectedNewrankCategoryId = ref('');
 const pendingRecommendedAccountKey = ref('');
+const existingAccounts = ref<MpAccount[]>([]);
 let begin = 0;
 const DIALOG_EDGE_BACK_DIRECTION_RATIO = 1.15;
 const DIALOG_ANYWHERE_BACK_TRIGGER_PX = 56;
@@ -859,6 +845,24 @@ const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuer
 const selectedNewrankCategory = computed(
   () => newrankCategories.value.find(category => category.id === selectedNewrankCategoryId.value) || newrankCategories.value[0] || null
 );
+const existingMpAccountIndex = computed(() => {
+  const fakeids = new Set<string>();
+  const nicknames = new Set<string>();
+
+  for (const account of existingAccounts.value) {
+    const fakeid = normalizeSubscriptionLookupValue(account.fakeid);
+    if (fakeid) {
+      fakeids.add(fakeid);
+    }
+
+    const nickname = normalizeSubscriptionLookupValue(account.nickname || '');
+    if (nickname) {
+      nicknames.add(nickname);
+    }
+  }
+
+  return { fakeids, nicknames };
+});
 
 const canSwipeBackInsideRssPage = computed(
   () =>
@@ -891,6 +895,45 @@ function encodeRouteValue(value: string): string {
 
 function describeRequestError(error: any): string {
   return String(error?.data?.statusMessage || error?.statusMessage || error?.data?.message || error?.message || '未知错误');
+}
+
+function normalizeSubscriptionLookupValue(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+async function loadExistingSubscriptions(force = false) {
+  if (!force && existingAccounts.value.length > 0) {
+    return;
+  }
+
+  try {
+    existingAccounts.value = await getAllInfo();
+  } catch {
+    existingAccounts.value = [];
+  }
+}
+
+function isSubscribedMpAccount(account?: Partial<AccountInfo> | Partial<MpAccount> | null): boolean {
+  if (!account) {
+    return false;
+  }
+
+  const fakeid = normalizeSubscriptionLookupValue(String(account.fakeid || ''));
+  if (fakeid && existingMpAccountIndex.value.fakeids.has(fakeid)) {
+    return true;
+  }
+
+  const nickname = normalizeSubscriptionLookupValue(String(account.nickname || ''));
+  return Boolean(nickname && existingMpAccountIndex.value.nicknames.has(nickname));
+}
+
+function isSubscribedNewrankItem(item?: NewrankMpRecommendationItem | null): boolean {
+  if (!item) {
+    return false;
+  }
+
+  const nickname = normalizeSubscriptionLookupValue(item.nickname);
+  return Boolean(nickname && existingMpAccountIndex.value.nicknames.has(nickname));
 }
 
 function buildRsshubRouteUrl(item: RsshubDiscoverItem, values: Record<string, string>): string {
@@ -951,6 +994,7 @@ function openRsshubRouteEditor(item: RsshubDiscoverItem) {
 }
 
 function openSwitcher() {
+  void loadExistingSubscriptions(true);
   if (mode.value === 'mp' && !accountQuery.value.trim()) {
     void ensureNewrankRecommendationsLoaded();
   }
@@ -1187,7 +1231,7 @@ function pickRecommendedAccountMatch(
 }
 
 async function addRecommendedAccount(item: NewrankMpRecommendationItem) {
-  if (!item.searchKeyword || pendingRecommendedAccountKey.value) {
+  if (!item.searchKeyword || pendingRecommendedAccountKey.value || isSubscribedNewrankItem(item)) {
     return;
   }
 
@@ -1401,6 +1445,9 @@ async function submitSelectedRsshubRoute() {
 }
 
 function selectAccount(account: AccountInfo | MpAccount) {
+  if (mode.value === 'mp' && isSubscribedMpAccount(account)) {
+    return;
+  }
   isOpen.value = false;
   emit('select:account', account);
 }
