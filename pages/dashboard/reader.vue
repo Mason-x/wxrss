@@ -230,6 +230,12 @@ const route = useRoute();
 const { navigateToLogin } = useMpAuth();
 const loginAccount = useLoginAccount();
 const preferences = usePreferences();
+const {
+  preference: themeModePreference,
+  effective: themeModeEffective,
+  options: themeModeOptions,
+  setThemeMode,
+} = useAppThemeMode();
 const { getSyncTimestamp } = useSyncDeadline();
 const FOCUS_CATEGORY_ID = '__focus__';
 const FOCUS_CATEGORY_LABEL = '重点关注';
@@ -4272,6 +4278,7 @@ onUnmounted(() => {
               <IframeHtmlRenderer
                 :html="selectedContentHtml"
                 :content-kind="selectedContentKind"
+                :theme="themeModeEffective"
               />
             </div>
           </motion.div>
@@ -4332,6 +4339,22 @@ onUnmounted(() => {
                             <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                             <span>设置</span>
                           </button>
+                          <div class="desktop-avatar-menu-section">
+                            <p class="desktop-avatar-menu-label">模式切换</p>
+                            <div class="desktop-avatar-menu-theme-grid">
+                              <button
+                                v-for="option in themeModeOptions"
+                                :key="`mobile-theme-${option.key}`"
+                                type="button"
+                                class="desktop-avatar-theme-option"
+                                :class="themeModePreference === option.key ? 'is-active' : ''"
+                                @click="setThemeMode(option.key)"
+                              >
+                                <UIcon :name="option.icon" class="size-4 shrink-0" />
+                                <span>{{ option.label }}</span>
+                              </button>
+                            </div>
+                          </div>
                           <button
                             type="button"
                             class="desktop-avatar-menu-item is-danger"
@@ -4451,7 +4474,6 @@ onUnmounted(() => {
                               {{ accountSourceMetaLabel(account) }}
                             </span>
                             {{ normalizeCategory(account) }}
-                            <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                             <span> · {{ account.articles || 0 }} 篇</span>
                           </p>
                           <p
@@ -4516,6 +4538,22 @@ onUnmounted(() => {
                       <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                       <span>设置</span>
                     </button>
+                    <div class="desktop-avatar-menu-section">
+                      <p class="desktop-avatar-menu-label">模式切换</p>
+                      <div class="desktop-avatar-menu-theme-grid">
+                        <button
+                          v-for="option in themeModeOptions"
+                          :key="`desktop-theme-${option.key}`"
+                          type="button"
+                          class="desktop-avatar-theme-option"
+                          :class="themeModePreference === option.key ? 'is-active' : ''"
+                          @click="setThemeMode(option.key)"
+                        >
+                          <UIcon :name="option.icon" class="size-4 shrink-0" />
+                          <span>{{ option.label }}</span>
+                        </button>
+                      </div>
+                    </div>
                     <button
                       type="button"
                       class="desktop-avatar-menu-item is-danger"
@@ -4603,7 +4641,6 @@ onUnmounted(() => {
                     {{ accountSourceMetaLabel(account) }}
                   </span>
                   {{ normalizeCategory(account) }}
-                  <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                   <span> · {{ account.articles || 0 }} 篇</span>
                 </p>
                 <p v-if="getAccountSyncStatusText(account.fakeid)" class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
@@ -5072,6 +5109,7 @@ onUnmounted(() => {
           <IframeHtmlRenderer
             :html="selectedContentHtml"
             :content-kind="selectedContentKind"
+            :theme="themeModeEffective"
           />
         </div>
       </div>
@@ -5198,7 +5236,7 @@ onUnmounted(() => {
         <Transition name="mobile-menu-drop">
           <section
             v-if="systemMenuOpen && !isDesktopViewport"
-            class="fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/70 bg-[rgba(248,248,246,0.98)] shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70 dark:bg-[rgba(2,6,23,0.98)]"
+            class="settings-mobile-sheet app-shell-panel fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/70 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
           >
             <div class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70">
               <div class="min-w-0">
@@ -5300,6 +5338,27 @@ onUnmounted(() => {
     hover:bg-slate-100/80 dark:text-slate-200 dark:hover:bg-slate-900/80;
 }
 
+.desktop-avatar-menu-section {
+  @apply border-t border-slate-200/70 px-4 py-3 dark:border-slate-800/70;
+}
+
+.desktop-avatar-menu-label {
+  @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500;
+}
+
+.desktop-avatar-menu-theme-grid {
+  @apply mt-3 grid grid-cols-3 gap-2;
+}
+
+.desktop-avatar-theme-option {
+  @apply inline-flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] border border-slate-200/80 bg-slate-50/80 px-2 py-2 text-[11px] font-medium text-slate-600 transition-all duration-150
+    hover:-translate-y-px hover:border-slate-300 hover:bg-white hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white;
+}
+
+.desktop-avatar-theme-option.is-active {
+  @apply border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900;
+}
+
 .desktop-avatar-menu-item.is-danger {
   @apply text-rose-600 dark:text-rose-300;
 }
@@ -5321,8 +5380,8 @@ onUnmounted(() => {
 
 .settings-dialog-shell {
   @apply border border-slate-200/80 dark:border-slate-800/80;
-  background: rgba(246, 246, 244, 0.98);
-  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.18);
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-strong);
 }
 
 .settings-dialog-content {
@@ -5347,11 +5406,16 @@ onUnmounted(() => {
 }
 
 :global(html.dark) .settings-dialog-shell {
-  background: rgba(2, 6, 23, 0.96);
+  background: var(--app-surface-strong);
 }
 
 :global(html.dark) .settings-dialog-content {
   background: rgba(2, 6, 23, 0.94);
+}
+
+.settings-mobile-sheet {
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-strong);
 }
 
 .article-star-btn.is-active {

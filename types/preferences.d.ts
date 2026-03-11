@@ -7,6 +7,7 @@ export interface AiTagDefinition {
 
 export interface Preferences {
   hideDeleted: boolean;
+  themeMode: 'system' | 'light' | 'dark';
 
   privateProxyList: string[];
   privateProxyAuthorization: string;

@@ -1,5 +1,4 @@
-import { StorageSerializers } from '@vueuse/core';
-import { clonePreferences, isDefaultPreferences, normalizePreferences } from '#shared/utils/preferences';
+import { clonePreferences, normalizePreferences } from '#shared/utils/preferences';
 import { request } from '#shared/utils/request';
 import type { Preferences } from '~/types/preferences';
 import type { LoginAccount } from '~/types/types';
@@ -16,11 +15,7 @@ function getLoginOwnerKey(account: LoginAccount | null | undefined): string {
 }
 
 export default () => {
-  const storage = useLocalStorage<Preferences>('preferences', clonePreferences(), {
-    serializer: StorageSerializers.object,
-    mergeDefaults: true,
-  });
-  const preferences = useState<Preferences>('preferences-state', () => normalizePreferences(storage.value));
+  const preferences = useState<Preferences>('preferences-state', () => normalizePreferences());
   const loginAccount = useLoginAccount();
 
   const initialized = useState<boolean>('preferences-sync-initialized', () => false);
@@ -29,9 +24,10 @@ export default () => {
   const lastPersisted = useState<string>('preferences-sync-last-persisted', () => '');
   const loadSequence = useState<number>('preferences-sync-load-sequence', () => 0);
   const saveTimer = useState<number | null>('preferences-sync-save-timer', () => null);
+  const listenersBound = useState<boolean>('preferences-sync-listeners-bound', () => false);
 
   if (!initialized.value) {
-    preferences.value = normalizePreferences(storage.value);
+    preferences.value = normalizePreferences(preferences.value);
 
     if (import.meta.client) {
       async function persistRemote(next: Preferences): Promise<void> {
@@ -47,6 +43,52 @@ export default () => {
         lastPersisted.value = JSON.stringify(normalized);
       }
 
+      async function loadRemotePreferences(currentSequence: number, options?: { seedDefaults?: boolean }) {
+        const ownerKey = activeOwnerKey.value;
+        if (!ownerKey) {
+          return;
+        }
+
+        const response = await request<PreferencesResponse>('/api/web/preferences');
+        if (currentSequence !== loadSequence.value || ownerKey !== activeOwnerKey.value) {
+          return;
+        }
+
+        const remotePreferences = normalizePreferences(response?.data);
+        if (response?.exists) {
+          preferences.value = remotePreferences;
+          lastPersisted.value = JSON.stringify(remotePreferences);
+          return;
+        }
+
+        const seedPreferences = clonePreferences();
+        preferences.value = seedPreferences;
+        lastPersisted.value = '';
+
+        if (options?.seedDefaults !== false) {
+          await persistRemote(seedPreferences);
+        }
+      }
+
+      async function refreshRemotePreferencesOnFocus() {
+        if (!activeOwnerKey.value || hydrating.value) {
+          return;
+        }
+
+        const refreshSequence = ++loadSequence.value;
+        hydrating.value = true;
+
+        try {
+          await loadRemotePreferences(refreshSequence, { seedDefaults: false });
+        } catch {
+          // keep current in-memory settings when remote refresh fails
+        } finally {
+          if (refreshSequence === loadSequence.value) {
+            hydrating.value = false;
+          }
+        }
+      }
+
       watch(
         () => getLoginOwnerKey(loginAccount.value),
         async ownerKey => {
@@ -60,42 +102,24 @@ export default () => {
           }
 
           if (!ownerKey) {
-            const localPreferences = normalizePreferences(storage.value);
-            preferences.value = localPreferences;
-            lastPersisted.value = JSON.stringify(localPreferences);
+            const defaultPreferences = clonePreferences();
+            preferences.value = defaultPreferences;
+            lastPersisted.value = JSON.stringify(defaultPreferences);
             hydrating.value = false;
             return;
           }
 
-          const localPreferences = normalizePreferences(storage.value);
           hydrating.value = true;
 
           try {
-            const resp = await request<PreferencesResponse>('/api/web/preferences');
-            if (currentSequence !== loadSequence.value) {
-              return;
-            }
-
-            const remotePreferences = normalizePreferences(resp?.data);
-            if (resp?.exists) {
-              preferences.value = remotePreferences;
-              storage.value = clonePreferences(remotePreferences);
-              lastPersisted.value = JSON.stringify(remotePreferences);
-              return;
-            }
-
-            const seedPreferences = isDefaultPreferences(localPreferences) ? remotePreferences : localPreferences;
-            preferences.value = seedPreferences;
-            storage.value = clonePreferences(seedPreferences);
-            lastPersisted.value = '';
-            await persistRemote(seedPreferences);
+            await loadRemotePreferences(currentSequence, { seedDefaults: true });
           } catch {
             if (currentSequence !== loadSequence.value) {
               return;
             }
-            preferences.value = localPreferences;
-            storage.value = clonePreferences(localPreferences);
-            lastPersisted.value = JSON.stringify(localPreferences);
+            const fallbackPreferences = clonePreferences(preferences.value);
+            preferences.value = fallbackPreferences;
+            lastPersisted.value = JSON.stringify(fallbackPreferences);
           } finally {
             if (currentSequence === loadSequence.value) {
               hydrating.value = false;
@@ -110,13 +134,13 @@ export default () => {
         nextValue => {
           const normalized = normalizePreferences(nextValue);
           const serialized = JSON.stringify(normalized);
-          storage.value = clonePreferences(normalized);
 
           if (hydrating.value || serialized === lastPersisted.value) {
             return;
           }
 
           if (!activeOwnerKey.value) {
+            preferences.value = normalized;
             lastPersisted.value = serialized;
             return;
           }
@@ -135,6 +159,21 @@ export default () => {
         },
         { deep: true }
       );
+
+      if (!listenersBound.value) {
+        const onWindowFocus = () => {
+          void refreshRemotePreferencesOnFocus();
+        };
+        const onVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            void refreshRemotePreferencesOnFocus();
+          }
+        };
+
+        window.addEventListener('focus', onWindowFocus);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+        listenersBound.value = true;
+      }
     }
 
     initialized.value = true;

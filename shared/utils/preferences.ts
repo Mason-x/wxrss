@@ -295,6 +295,7 @@ const LEGACY_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT = [
 
 export const DEFAULT_PREFERENCES: Preferences = {
   hideDeleted: true,
+  themeMode: 'system',
   privateProxyList: [],
   privateProxyAuthorization: '',
   rsshubBaseUrl: '',
@@ -341,6 +342,14 @@ function normalizeSyncDateRange(value?: string): Preferences['syncDateRange'] {
     return value as Preferences['syncDateRange'];
   }
   return DEFAULT_PREFERENCES.syncDateRange;
+}
+
+function normalizeThemeMode(value?: string): Preferences['themeMode'] {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'light' || normalized === 'dark' || normalized === 'system') {
+    return normalized;
+  }
+  return DEFAULT_PREFERENCES.themeMode;
 }
 
 function normalizeDailySyncTime(value?: string): string {
@@ -597,6 +606,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
 
   return {
     hideDeleted: source.hideDeleted ?? DEFAULT_PREFERENCES.hideDeleted,
+    themeMode: normalizeThemeMode(source.themeMode),
     privateProxyList: normalizeProxyList(source.privateProxyList),
     privateProxyAuthorization: String(source.privateProxyAuthorization || '').trim(),
     rsshubBaseUrl: String(source.rsshubBaseUrl || '').trim(),

@@ -177,8 +177,8 @@ onMounted(async () => {
 <style scoped>
 .settings-anchor-panel {
   @apply rounded-[28px] border border-slate-200/80 p-3 dark:border-slate-800/80;
-  background: rgba(244, 244, 242, 0.96);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  background: var(--app-surface-strong);
+  box-shadow: inset 0 1px 0 var(--app-border-strong), var(--app-shadow-soft);
 }
 
 .settings-content-shell {
@@ -213,8 +213,9 @@ onMounted(async () => {
 
 @media (min-width: 768px) {
   .settings-content-shell {
-    @apply rounded-[30px] border border-slate-200/80 bg-white dark:border-slate-800/80 dark:bg-slate-950;
-    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+    @apply rounded-[30px] border border-slate-200/80 dark:border-slate-800/80;
+    background: var(--app-surface-strong);
+    box-shadow: var(--app-shadow-soft);
   }
 
   .settings-section {
@@ -231,7 +232,7 @@ onMounted(async () => {
 }
 
 :global(html.dark) .settings-anchor-panel {
-  background: rgba(15, 23, 42, 0.8);
-  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.06);
+  background: var(--app-surface-strong);
+  box-shadow: inset 0 1px 0 var(--app-border-strong), var(--app-shadow-soft);
 }
 </style>

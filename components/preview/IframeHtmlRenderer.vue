@@ -24,6 +24,7 @@ import type { Preferences } from '~/types/preferences';
 interface Props {
   html: string;
   contentKind?: 'default' | 'rss' | 'report';
+  theme?: 'light' | 'dark';
 }
 
 interface MpVideoInfoResponse {
@@ -96,6 +97,7 @@ function buildSrcdoc(html: string): string {
         max-width: 100%;
         -webkit-text-size-adjust: 100%;
         overflow-wrap: break-word;
+        color: #0f172a;
       }
       body > * {
         max-width: 100%;
@@ -107,6 +109,24 @@ function buildSrcdoc(html: string): string {
         padding: 0 clamp(16px, 3.8vw, 32px) 2rem;
         color: #0f172a;
       }
+      body[data-renderer-theme="dark"] {
+        color: #e2e8f0;
+      }
+      body[data-renderer-theme="dark"] a {
+        color: #7dd3fc;
+      }
+      body[data-renderer-theme="dark"] :is(article, main, .rich_media_content, .rich_media_area_primary_inner, .weui-article, #img-content) {
+        background: transparent !important;
+        color: inherit;
+      }
+      body[data-renderer-theme="dark"] :is(p, li, blockquote, figcaption, h1, h2, h3, h4, h5, h6, td, th) {
+        color: inherit;
+      }
+      body[data-renderer-theme="dark"] table,
+      body[data-renderer-theme="dark"] td,
+      body[data-renderer-theme="dark"] th {
+        border-color: rgba(148, 163, 184, 0.28);
+      }
       .ai-daily-report {
         width: min(100%, 920px);
         margin: 0 auto;
@@ -117,9 +137,18 @@ function buildSrcdoc(html: string): string {
         box-shadow: 0 24px 48px rgba(15, 23, 42, 0.08);
         color: #0f172a;
       }
+      body[data-renderer-theme="dark"] .ai-daily-report {
+        border-color: rgba(148, 163, 184, 0.16);
+        background: rgba(2, 6, 23, 0.92);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3);
+        color: #e2e8f0;
+      }
       .ai-daily-report-empty {
         margin: 0;
         color: #64748b;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-empty {
+        color: #94a3b8;
       }
       .ai-daily-report > :first-child {
         margin-top: 0;
@@ -158,6 +187,10 @@ function buildSrcdoc(html: string): string {
         font-size: 15px;
         line-height: 1.85;
       }
+      body[data-renderer-theme="dark"] .ai-daily-report p,
+      body[data-renderer-theme="dark"] .ai-daily-report li {
+        color: #cbd5e1;
+      }
       .ai-daily-report p {
         margin: 0.9rem 0;
       }
@@ -173,6 +206,13 @@ function buildSrcdoc(html: string): string {
         color: #0f172a;
         font-weight: 700;
       }
+      body[data-renderer-theme="dark"] .ai-daily-report strong,
+      body[data-renderer-theme="dark"] .ai-daily-report h1,
+      body[data-renderer-theme="dark"] .ai-daily-report h2,
+      body[data-renderer-theme="dark"] .ai-daily-report h3,
+      body[data-renderer-theme="dark"] .ai-daily-report h4 {
+        color: #f8fafc;
+      }
       .ai-daily-report blockquote {
         margin: 1rem 0;
         padding: 0.9rem 1rem;
@@ -181,14 +221,28 @@ function buildSrcdoc(html: string): string {
         background: #f8fafc;
         color: #475569;
       }
+      body[data-renderer-theme="dark"] .ai-daily-report blockquote {
+        border-left-color: #38bdf8;
+        background: rgba(15, 23, 42, 0.92);
+        color: #cbd5e1;
+      }
       .ai-daily-report hr {
         margin: 1.4rem 0;
         border: 0;
         border-top: 1px solid rgba(226, 232, 240, 0.9);
       }
+      body[data-renderer-theme="dark"] .ai-daily-report hr,
+      body[data-renderer-theme="dark"] .ai-daily-report section + section,
+      body[data-renderer-theme="dark"] .ai-daily-report article + article,
+      body[data-renderer-theme="dark"] .ai-daily-report .section + .section {
+        border-color: rgba(148, 163, 184, 0.16);
+      }
       .ai-daily-report a {
         color: #2563eb;
         text-decoration: none;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report a {
+        color: #7dd3fc;
       }
       .ai-daily-report a:hover {
         text-decoration: underline;
@@ -199,6 +253,10 @@ function buildSrcdoc(html: string): string {
         background: #eff6ff;
         color: #1d4ed8;
         font-size: 0.92em;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report code {
+        background: rgba(30, 41, 59, 0.92);
+        color: #93c5fd;
       }
       .ai-daily-report pre {
         margin: 1rem 0;
@@ -288,17 +346,20 @@ function buildSrcdoc(html: string): string {
     </style>
   `;
 
+  const bodyThemeAttr = ` data-renderer-theme="${props.theme === 'dark' ? 'dark' : 'light'}"`;
+  const bodyKindAttr = props.contentKind !== 'default' ? ` data-renderer-kind="${props.contentKind}"` : '';
+  const bodyAttrs = `${bodyThemeAttr}${bodyKindAttr}`;
+
   if (hasHead) {
     const withHead = sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}${styleMarkup}`);
-    if (props.contentKind === 'default' || !hasBody) {
+    if (!hasBody) {
       return withHead;
     }
 
-    return withHead.replace(/<body([^>]*)>/i, `<body$1 data-renderer-kind="${props.contentKind}">`);
+    return withHead.replace(/<body([^>]*)>/i, `<body$1${bodyAttrs}>`);
   }
 
-  const bodyAttr = props.contentKind !== 'default' ? ` data-renderer-kind="${props.contentKind}"` : '';
-  return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttr}>${sanitized}</body></html>`;
+  return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttrs}>${sanitized}</body></html>`;
 }
 
 function getActivePrivateProxy() {
@@ -775,7 +836,7 @@ watch(preparedHtml, async () => {
 });
 
 watch(
-  [() => props.html, () => preferences.value.privateProxyAuthorization, () => preferences.value.privateProxyList],
+  [() => props.html, () => props.theme, () => preferences.value.privateProxyAuthorization, () => preferences.value.privateProxyList],
   () => {
     void refreshPreparedHtml();
   },
