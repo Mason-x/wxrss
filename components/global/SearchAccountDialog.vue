@@ -465,7 +465,7 @@
           container: 'flex min-h-full items-end justify-center sm:items-center',
         }"
       >
-        <UCard v-if="selectedRsshubRoute" class="w-full">
+        <UCard v-if="selectedRsshubRoute" class="rss-route-editor-card w-full">
           <template #header>
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -1208,5 +1208,21 @@ watch(rssRouteEditorOpen, open => {
   overflow-x: hidden;
   will-change: transform;
   touch-action: pan-y;
+}
+
+.rss-route-editor-card :deep(input),
+.rss-route-editor-card :deep(button[role='combobox']),
+.rss-route-editor-card :deep([role='combobox']),
+.rss-route-editor-card :deep(.ui-select-menu-input) {
+  font-size: 16px;
+}
+
+@media (min-width: 768px) {
+  .rss-route-editor-card :deep(input),
+  .rss-route-editor-card :deep(button[role='combobox']),
+  .rss-route-editor-card :deep([role='combobox']),
+  .rss-route-editor-card :deep(.ui-select-menu-input) {
+    font-size: 14px;
+  }
 }
 </style>

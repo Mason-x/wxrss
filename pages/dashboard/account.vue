@@ -76,6 +76,7 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
       await loadAccountArticle(account, false);
     }
     await refresh();
+    await runAiRefreshAfterSync();
     toast.success(
       isRssAccount(account) ? 'RSS 添加成功' : '公众号添加成功',
       isRssAccount(account)

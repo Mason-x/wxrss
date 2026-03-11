@@ -3062,6 +3062,7 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
       );
     }
     await refreshData();
+    await runAiRefreshAfterSync();
     rememberMobileArticlesUnderlaySnapshot();
     articlePaneMode.value = 'articles';
     selectedDailyReport.value = null;
