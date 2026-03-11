@@ -7,6 +7,7 @@ import type { AiTagDefinition } from '~/types/preferences';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import {
   getAiDailyReport,
+  listAccountAiProcessingArticles,
   listAiProcessingArticles,
   type ReaderAiProcessingArticle,
   updateArticleAiSummary,
@@ -38,6 +39,14 @@ export interface AiDailyProcessResult {
   taggedCount: number;
   reportUpdated: boolean;
   summarizedCount?: number;
+  reason?: string;
+}
+
+export interface AiAccountBootstrapResult {
+  processed: boolean;
+  fakeid: string;
+  taggedCount: number;
+  summarizedCount: number;
   reason?: string;
 }
 
@@ -257,13 +266,71 @@ async function ensureArticleSummaries(
   };
 }
 
-async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Promise<AiDailyProcessResult> {
+async function resolveAiPreferences(authKey: string) {
   const { preferences } = await getStoredPreferencesByAuthKey(authKey);
   const apiKey = String(preferences.aiSummaryApiKey || '').trim();
   const model = String(preferences.aiSummaryModel || '').trim();
   const baseUrl = String(preferences.aiSummaryBaseUrl || '').trim();
 
-  if (!apiKey || !model || !baseUrl) {
+  return {
+    preferences,
+    configured: Boolean(apiKey && model && baseUrl),
+  };
+}
+
+export async function runAiAccountBootstrap(
+  authKey: string,
+  fakeid: string,
+  limit = 10
+): Promise<AiAccountBootstrapResult> {
+  const normalizedFakeid = String(fakeid || '').trim();
+  if (!normalizedFakeid) {
+    return {
+      processed: false,
+      fakeid: '',
+      summarizedCount: 0,
+      taggedCount: 0,
+      reason: 'missing-fakeid',
+    };
+  }
+
+  const { preferences, configured } = await resolveAiPreferences(authKey);
+  if (!configured) {
+    return {
+      processed: false,
+      fakeid: normalizedFakeid,
+      summarizedCount: 0,
+      taggedCount: 0,
+      reason: 'not-configured',
+    };
+  }
+
+  const articles = await listAccountAiProcessingArticles(authKey, normalizedFakeid, { limit });
+  if (articles.length === 0) {
+    return {
+      processed: false,
+      fakeid: normalizedFakeid,
+      summarizedCount: 0,
+      taggedCount: 0,
+      reason: 'no-articles',
+    };
+  }
+
+  const tagDefinitions = Array.isArray(preferences.aiTagDefinitions) ? preferences.aiTagDefinitions : [];
+  const { summarizedCount, taggedCount } = await ensureArticleSummaries(authKey, preferences, tagDefinitions, articles);
+
+  return {
+    processed: summarizedCount > 0 || taggedCount > 0,
+    fakeid: normalizedFakeid,
+    summarizedCount,
+    taggedCount,
+    reason: summarizedCount > 0 || taggedCount > 0 ? undefined : 'up-to-date',
+  };
+}
+
+async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Promise<AiDailyProcessResult> {
+  const { preferences, configured } = await resolveAiPreferences(authKey);
+  if (!configured) {
     return {
       processed: false,
       reportDate: getShanghaiDateKey(),

@@ -96,10 +96,12 @@ function buildDynamicTagDefinitionBlock(tagDefinitions: AiTagDefinition[]): stri
       ? `互斥规则：${exclusiveReadingTags.join('、')} 最多只能出现一个。`
       : '',
     hasSponsoredTag && exclusiveReadingTags.length > 0
-      ? `${SPONSORED_TAG} 可以和其中一个同时出现。`
+      ? `${SPONSORED_TAG} 可以与其中一个主标签同时出现。`
       : '',
     ...tagDefinitions.map(definition => `- ${definition.label} -> ${definition.variable}：${definition.description}`),
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function buildRuntimeSummarySystemPrompt(

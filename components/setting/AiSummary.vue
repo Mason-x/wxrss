@@ -2,10 +2,12 @@
   <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">AI 功能</h3>
-      <p class="text-sm text-slate-500">同步时会先为当天新文章生成结构化摘要，再基于摘要内容自动打标签并生成 AI 日报。</p>
+      <p class="text-sm text-slate-500">
+        同步时会先为当天新文章生成结构化摘要，再基于摘要内容自动打标签并生成 AI 日报。
+      </p>
     </template>
 
-    <div class="space-y-5">
+    <div class="ai-settings-form space-y-5">
       <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="mb-3">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">接口连接</p>
@@ -70,7 +72,7 @@
         <div class="mb-3">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">文章摘要系统提示词</p>
           <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            摘要模型必须只返回 JSON。当前标签定义会在服务端自动拼接进这段提示词，所以修改标签变量或解释后，摘要判定也会自动跟着更新。
+            摘要模型必须只返回 JSON。当前标签定义会在服务端自动拼接进这段提示词，所以修改标签变量或解释后，摘要判定也会自动更新。
           </p>
         </div>
 
@@ -88,7 +90,7 @@
           <div>
             <p class="text-sm font-medium text-slate-900 dark:text-slate-100">AI 标签定义</p>
             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              摘要 JSON 的 <code>tags</code> 会直接写入文章标签。默认是阅读价值四档，也可以继续扩展成你自己的标签池。
+              摘要 JSON 的 <code>tags</code> 会直接写入文章标签。默认是阅读价值四档，你也可以继续扩展自己的标签池。
             </p>
           </div>
           <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" @click="addTagDefinition">
@@ -97,7 +99,9 @@
         </div>
 
         <div class="space-y-3">
-          <div class="hidden gap-3 px-1 text-xs font-medium text-slate-500 md:grid md:grid-cols-[minmax(0,0.72fr)_minmax(0,0.82fr)_84px_minmax(0,1.46fr)_36px]">
+          <div
+            class="hidden gap-3 px-1 text-xs font-medium text-slate-500 md:grid md:grid-cols-[minmax(0,0.76fr)_minmax(0,0.9fr)_84px_minmax(0,1.4fr)_36px]"
+          >
             <span>标签名</span>
             <span>变量名</span>
             <span>颜色</span>
@@ -108,7 +112,7 @@
           <div
             v-for="(item, index) in preferences.aiTagDefinitions"
             :key="`tag-definition-${index}`"
-            class="grid gap-3 rounded-[22px] bg-white/75 p-3 ring-1 ring-slate-200/70 dark:bg-slate-950/40 dark:ring-slate-800/70 md:grid-cols-[minmax(0,0.72fr)_minmax(0,0.82fr)_84px_minmax(0,1.46fr)_36px]"
+            class="grid gap-3 rounded-[22px] bg-white/75 p-3 ring-1 ring-slate-200/70 dark:bg-slate-950/40 dark:ring-slate-800/70 md:grid-cols-[minmax(0,0.76fr)_minmax(0,0.9fr)_84px_minmax(0,1.4fr)_36px]"
           >
             <label class="min-w-0 space-y-1.5">
               <span class="text-[11px] font-medium text-slate-500 md:hidden">标签名</span>
@@ -169,7 +173,7 @@
         <div class="mb-3">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">标签判定补充提示词</p>
           <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            这段内容会拼接到摘要提示词后面，用来补充“tags 应该如何判断”，不会额外触发一次模型调用。
+            这段内容会拼接到摘要提示词后面，用来补充 “tags 应该如何判断”，不会额外触发一次模型调用。
           </p>
         </div>
 
@@ -186,7 +190,7 @@
         <div class="mb-3">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">AI 日报系统提示词</p>
           <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            AI 日报只消费当天文章的结构化摘要字段，不再把原文整篇发给模型。
+            AI 日报只消费当天文章的结构化摘要字段，不会再次把原文整篇发给模型。
           </p>
         </div>
 
@@ -313,3 +317,19 @@ async function testAiApi() {
   }
 }
 </script>
+
+<style scoped>
+.ai-settings-form :deep(input),
+.ai-settings-form :deep(textarea),
+.ai-settings-form :deep(button[role='combobox']) {
+  font-size: 16px !important;
+}
+
+@media (min-width: 768px) {
+  .ai-settings-form :deep(input),
+  .ai-settings-form :deep(textarea),
+  .ai-settings-form :deep(button[role='combobox']) {
+    font-size: 14px !important;
+  }
+}
+</style>

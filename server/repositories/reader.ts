@@ -1337,3 +1337,65 @@ export async function listAiProcessingArticles(
         : String(row.html_blob || ''),
   }));
 }
+
+export async function listAccountAiProcessingArticles(
+  authKey: string,
+  fakeid: string,
+  options: { limit?: number } = {}
+): Promise<ReaderAiProcessingArticle[]> {
+  const db = await getSqliteDb();
+  const normalizedFakeid = String(fakeid || '').trim();
+  const limit = normalizeLimit(options.limit, 10, 40);
+
+  if (!normalizedFakeid) {
+    return [];
+  }
+
+  const rows = await db.all<any>(
+    `
+    SELECT
+      a.fakeid,
+      a.link,
+      a.title,
+      a.digest,
+      a.author_name,
+      a.create_time,
+      a.update_time,
+      a.ai_summary,
+      a.ai_tags_json,
+      a.ai_tagged_at,
+      ac.nickname AS account_nickname,
+      ch.content_blob AS html_blob
+    FROM reader_articles a
+    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
+    WHERE a.auth_key = ?
+      AND a.fakeid = ?
+      AND a.is_deleted = 0
+    ORDER BY COALESCE(NULLIF(a.update_time, 0), a.create_time) DESC, a.create_time DESC
+    LIMIT ?
+    `,
+    authKey,
+    normalizedFakeid,
+    limit
+  );
+
+  return rows.map(row => ({
+    fakeid: String(row.fakeid || ''),
+    link: String(row.link || ''),
+    title: String(row.title || ''),
+    digest: String(row.digest || ''),
+    authorName: String(row.author_name || ''),
+    accountName: String(row.account_nickname || row.fakeid || ''),
+    createTime: Number(row.create_time) || 0,
+    updateTime: Number(row.update_time) || 0,
+    aiTags: parseAiTagsJson(row.ai_tags_json),
+    aiTaggedAt: Number(row.ai_tagged_at) || 0,
+    aiSummary: String(row.ai_summary || ''),
+    cachedHtml: Buffer.isBuffer(row.html_blob)
+      ? row.html_blob.toString('utf8')
+      : row.html_blob instanceof Uint8Array
+        ? Buffer.from(row.html_blob).toString('utf8')
+        : String(row.html_blob || ''),
+  }));
+}

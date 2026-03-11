@@ -34,6 +34,38 @@ export interface RssSyncResult {
   sourceUrl: string;
 }
 
+export interface NewrankMpCategoryItem {
+  id: string;
+  label: string;
+  description: string;
+  rankName: string;
+  rankGroup: string;
+  accentFrom: string;
+  accentTo: string;
+}
+
+export interface NewrankMpRecommendationItem {
+  id: string;
+  nickname: string;
+  alias: string;
+  avatar: string;
+  uuid: string;
+  score: number | null;
+  rank: number;
+  sourceLabel: string;
+  searchKeyword: string;
+}
+
+export interface NewrankMpRecommendationsResult {
+  state: 'ready' | 'missing_cookie' | 'empty' | 'error';
+  message: string;
+  selectedCategory: string;
+  latestMonth: string;
+  latestMonthLabel: string;
+  categories: NewrankMpCategoryItem[];
+  items: NewrankMpRecommendationItem[];
+}
+
 export interface RsshubDiscoverParamOption {
   label: string;
   value: string;
@@ -89,6 +121,15 @@ export interface AiDailyProcessResult {
   reportUpdated: boolean;
   summarizedCount?: number;
   reason?: string;
+}
+
+export interface AiAccountBootstrapResult {
+  processed: boolean;
+  fakeid: string;
+  taggedCount: number;
+  summarizedCount: number;
+  reason?: string;
+  daily?: AiDailyProcessResult;
 }
 
 export interface AiDailyReportItem {
@@ -335,6 +376,17 @@ export async function refreshAiDailyDigest(): Promise<AiDailyProcessResult> {
   return resp.data;
 }
 
+export async function bootstrapAccountAi(fakeid: string, limit = 10): Promise<AiAccountBootstrapResult> {
+  const resp = await request<{ data: AiAccountBootstrapResult }>('/api/web/ai/bootstrap-account', {
+    method: 'POST',
+    body: {
+      fakeid,
+      limit,
+    },
+  });
+  return resp.data;
+}
+
 export async function listAiDailyReports(
   offset = 0,
   limit = 60
@@ -382,6 +434,18 @@ export async function getAccountList(begin = 0, keyword = ''): Promise<[AccountI
     throw new Error(`${resp.base_resp.ret}:${resp.base_resp.err_msg}`);
   }
   throw new Error('failed to load account list');
+}
+
+export async function getNewrankMpRecommendations(options?: {
+  category?: string;
+  limit?: number;
+}): Promise<NewrankMpRecommendationsResult> {
+  return await request<NewrankMpRecommendationsResult>('/api/web/mp/newrank-recommendations', {
+    query: {
+      category: String(options?.category || '').trim(),
+      limit: Number(options?.limit) || 8,
+    },
+  });
 }
 
 /**

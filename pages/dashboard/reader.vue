@@ -6,6 +6,7 @@ import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import {
+  bootstrapAccountAi,
   generateArticleSummary,
   getAiDailyReport,
   listAiDailyReports,
@@ -589,6 +590,18 @@ const activeAccountSyncStatus = computed(() => {
   const total = progress.totalMessages > 0 ? String(progress.totalMessages) : '--';
   return `同步中 ${progress.syncedMessages}/${total} · 文章 ${progress.syncedArticles}`;
 });
+function getAccountSyncStatusText(fakeid?: string | null) {
+  const key = String(fakeid || '').trim();
+  if (!key) {
+    return '';
+  }
+  const progress = syncProgressByFakeid.value[key];
+  if (!progress || !progress.running) {
+    return '';
+  }
+  const total = progress.totalMessages > 0 ? String(progress.totalMessages) : '--';
+  return `同步中 ${progress.syncedMessages}/${total} · 文章 ${progress.syncedArticles}`;
+}
 const headerBatchSyncProgressText = computed(() => {
   if (selectedAccount.value || selectedCategory.value !== '__all__') {
     return '';
@@ -599,6 +612,7 @@ const headerBatchSyncProgressText = computed(() => {
   }
   return `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源`;
 });
+const syncStatusBannerText = computed(() => activeAccountSyncStatus.value || headerBatchSyncProgressText.value);
 
 const accountsInSelectedCategory = computed(() => {
   let targets: MpAccount[] = [];
@@ -2720,6 +2734,19 @@ async function runAiRefreshAfterSync() {
   }
 }
 
+async function bootstrapAiAfterAddingAccount(fakeid: string) {
+  const normalizedFakeid = String(fakeid || '').trim();
+  if (!normalizedFakeid) {
+    return;
+  }
+
+  try {
+    await bootstrapAccountAi(normalizedFakeid, 10);
+  } catch (error) {
+    console.error('AI bootstrap after add failed:', error);
+  }
+}
+
 async function generateSelectedArticleSummary() {
   if (!selectedArticle.value) {
     return;
@@ -3062,6 +3089,7 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
       );
     }
     await refreshData();
+    await bootstrapAiAfterAddingAccount(account.fakeid);
     await runAiRefreshAfterSync();
     rememberMobileArticlesUnderlaySnapshot();
     articlePaneMode.value = 'articles';
@@ -3897,6 +3925,12 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <div v-if="syncStatusBannerText" class="px-3 pt-3">
+            <div class="rounded-[18px] border border-emerald-200/80 bg-emerald-50/90 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+              {{ syncStatusBannerText }}
+            </div>
+          </div>
+
           <div v-if="loading" class="px-3 py-3">
             <LoadingCards />
           </div>
@@ -4389,6 +4423,12 @@ onUnmounted(() => {
                             <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                             <span> · {{ account.articles || 0 }} 篇</span>
                           </p>
+                          <p
+                            v-if="getAccountSyncStatusText(account.fakeid)"
+                            class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400"
+                          >
+                            {{ getAccountSyncStatusText(account.fakeid) }}
+                          </p>
                         </div>
                       </button>
                       <UButton
@@ -4532,6 +4572,9 @@ onUnmounted(() => {
                   <span v-if="isFocusedAccount(account)"> · 重点关注</span>
                   <span> · {{ account.articles || 0 }} 篇</span>
                 </p>
+                <p v-if="getAccountSyncStatusText(account.fakeid)" class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  {{ getAccountSyncStatusText(account.fakeid) }}
+                </p>
               </div>
             </div>
             <UTooltip :text="isFocusedAccount(account) ? '取消重点关注' : '设为重点关注'">
@@ -4621,6 +4664,12 @@ onUnmounted(() => {
                 @click="onHeaderSyncClick"
               />
             </UTooltip>
+          </div>
+        </div>
+
+        <div v-if="syncStatusBannerText" class="pb-2">
+          <div class="rounded-[18px] border border-emerald-200/80 bg-emerald-50/90 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+            {{ syncStatusBannerText }}
           </div>
         </div>
 
@@ -5039,7 +5088,7 @@ onUnmounted(() => {
                 v-model="categoryEditorNewValue"
                 size="sm"
                 placeholder="输入分类名称后新增"
-                class="flex-1"
+                class="mobile-safe-input flex-1"
                 @keyup.enter="addCategoryForEditor"
               />
               <UButton
@@ -5318,6 +5367,20 @@ onUnmounted(() => {
   -webkit-overflow-scrolling: touch;
   will-change: transform, scroll-position;
   transform: translateZ(0);
+}
+
+.mobile-safe-input :deep(input),
+.mobile-safe-input :deep(textarea),
+.mobile-safe-input :deep(button[role='combobox']) {
+  font-size: 16px !important;
+}
+
+@media (min-width: 768px) {
+  .mobile-safe-input :deep(input),
+  .mobile-safe-input :deep(textarea),
+  .mobile-safe-input :deep(button[role='combobox']) {
+    font-size: 14px !important;
+  }
 }
 
 .mobile-underlay-layer {

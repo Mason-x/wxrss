@@ -12,6 +12,7 @@ export interface Preferences {
   privateProxyAuthorization: string;
 
   rsshubBaseUrl: string;
+  newrankCookie: string;
 
   aiSummaryBaseUrl: string;
   aiSummaryApiKey: string;

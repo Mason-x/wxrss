@@ -118,7 +118,106 @@
 
       <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain overscroll-x-none rss-dialog-scroll">
         <template v-if="mode === 'mp'">
-          <ul class="divide-y divide-slate-100 antialiased dark:divide-slate-800">
+          <div v-if="showMpRecommendations" class="space-y-3 px-3 py-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">新榜月榜推荐</p>
+                <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  {{ newrankLatestMonthLabel || '按分类查看新榜公众号指数月榜' }}
+                </p>
+              </div>
+              <span
+                class="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+              >
+                需新榜登录态
+              </span>
+            </div>
+
+            <div class="flex gap-2 overflow-x-auto pb-1">
+              <button
+                v-for="category in newrankCategories"
+                :key="category.id"
+                type="button"
+                class="shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition"
+                :class="
+                  selectedNewrankCategoryId === category.id
+                    ? 'border-transparent text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
+                "
+                :style="
+                  selectedNewrankCategoryId === category.id
+                    ? {
+                        background: `linear-gradient(145deg, ${category.accentFrom}, ${category.accentTo})`,
+                      }
+                    : undefined
+                "
+                @click="loadNewrankRecommendations(category.id)"
+              >
+                {{ category.label }}
+              </button>
+            </div>
+
+            <div
+              v-if="newrankLoading"
+              class="flex items-center justify-center rounded-3xl border border-slate-200 bg-white px-4 py-10 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <Loader :size="26" class="animate-spin text-slate-500" />
+            </div>
+
+            <div
+              v-else-if="newrankState !== 'ready'"
+              class="rounded-3xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+            >
+              {{ newrankMessage || '暂无推荐内容' }}
+            </div>
+
+            <ul v-else class="space-y-3">
+              <li
+                v-for="item in newrankItems"
+                :key="item.id"
+                class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <img
+                  class="size-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-800"
+                  :src="item.avatar || 'https://res.wx.qq.com/op_res/HTxA4g4wK3k3wGgOQ3r8wO8Vf0z3mJ9x0VqT4n0A4Xw0QYv3h2uX3Q==/0'"
+                  alt=""
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ item.nickname }}</p>
+                      <p class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                        微信号 {{ item.alias || '未显示' }}
+                      </p>
+                    </div>
+                    <div class="shrink-0 text-right">
+                      <p class="text-xs font-semibold text-sky-500">
+                        #{{ item.rank }}
+                      </p>
+                      <p v-if="item.score !== null" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        指数 {{ item.score }}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between gap-3">
+                    <p class="truncate text-[11px] text-slate-400 dark:text-slate-500">{{ item.sourceLabel }}</p>
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="soft"
+                      :loading="pendingRecommendedAccountKey === item.id"
+                      :disabled="Boolean(pendingRecommendedAccountKey)"
+                      @click.stop="addRecommendedAccount(item)"
+                    >
+                      一键添加
+                    </UButton>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <ul v-if="accountList.length > 0" class="divide-y divide-slate-100 antialiased dark:divide-slate-800">
             <li
               v-for="account in accountList"
               :key="account.fakeid"
@@ -566,8 +665,11 @@
 import { Loader } from 'lucide-vue-next';
 import {
   getAccountList,
+  getNewrankMpRecommendations,
   searchRsshubRoutes,
   subscribeRssFeed,
+  type NewrankMpCategoryItem,
+  type NewrankMpRecommendationItem,
   type RsshubCategoryItem,
   type RsshubDiscoverItem,
 } from '~/apis';
@@ -697,12 +799,24 @@ const accountQuery = ref('');
 const accountList = reactive<AccountInfo[]>([]);
 const loading = ref(false);
 const noMoreData = ref(false);
+const newrankLoading = ref(false);
+const newrankState = ref<'ready' | 'missing_cookie' | 'empty' | 'error'>('empty');
+const newrankMessage = ref('');
+const newrankLatestMonthLabel = ref('');
+const newrankCategories = ref<NewrankMpCategoryItem[]>([]);
+const newrankItems = ref<NewrankMpRecommendationItem[]>([]);
+const selectedNewrankCategoryId = ref('');
+const pendingRecommendedAccountKey = ref('');
 let begin = 0;
 const DIALOG_EDGE_BACK_DIRECTION_RATIO = 1.15;
 const DIALOG_ANYWHERE_BACK_TRIGGER_PX = 56;
 const DIALOG_BACK_MAX_OFFSET_RATIO = 0.9;
 const DIALOG_BACK_RESET_MS = 180;
 let dialogBackResetTimer: ReturnType<typeof setTimeout> | null = null;
+let newrankLoadedOnce = false;
+
+const hasNewrankCookie = computed(() => Boolean(String(preferences.value.newrankCookie || '').trim()));
+const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuery.value.trim());
 
 const canSwipeBackInsideRssPage = computed(
   () =>
@@ -795,6 +909,9 @@ function openRsshubRouteEditor(item: RsshubDiscoverItem) {
 }
 
 function openSwitcher() {
+  if (mode.value === 'mp' && !accountQuery.value.trim()) {
+    void ensureNewrankRecommendationsLoaded();
+  }
   isOpen.value = true;
   if (mode.value === 'rss') {
     void ensureRsshubCategoriesLoaded();
@@ -952,6 +1069,108 @@ function switchMode(nextMode: 'mp' | 'rss') {
       rssDiscoverResults.value = [];
     }
     void ensureRsshubCategoriesLoaded();
+    return;
+  }
+
+  if (!accountQuery.value.trim()) {
+    void ensureNewrankRecommendationsLoaded();
+  }
+}
+
+async function loadNewrankRecommendations(categoryId?: string) {
+  if (newrankLoading.value) {
+    return;
+  }
+
+  newrankLoading.value = true;
+  try {
+    const result = await getNewrankMpRecommendations({
+      category: String(categoryId || selectedNewrankCategoryId.value || '').trim(),
+      limit: 8,
+    });
+    newrankLoadedOnce = true;
+    newrankState.value = result.state;
+    newrankMessage.value = result.message || '';
+    newrankLatestMonthLabel.value = result.latestMonthLabel || '';
+    newrankCategories.value = result.categories || [];
+    newrankItems.value = result.items || [];
+    selectedNewrankCategoryId.value =
+      result.selectedCategory || result.categories?.[0]?.id || selectedNewrankCategoryId.value || '';
+  } catch (e: any) {
+    if (Number(e?.statusCode || e?.status) === 401) {
+      void navigateToLogin(route.fullPath);
+      return;
+    }
+    const message = describeRequestError(e);
+    newrankLoadedOnce = true;
+    newrankState.value = 'error';
+    newrankMessage.value = message;
+    toast.add({
+      color: 'rose',
+      title: '加载推荐失败',
+      description: message,
+      icon: 'i-octicon:bell-24',
+    });
+  } finally {
+    newrankLoading.value = false;
+  }
+}
+
+async function ensureNewrankRecommendationsLoaded() {
+  if (newrankLoading.value || newrankLoadedOnce) {
+    return;
+  }
+  await loadNewrankRecommendations(selectedNewrankCategoryId.value);
+}
+
+function pickRecommendedAccountMatch(
+  accounts: AccountInfo[],
+  target: NewrankMpRecommendationItem
+): AccountInfo | null {
+  if (accounts.length === 0) {
+    return null;
+  }
+
+  const alias = String(target.alias || '').trim().toLowerCase();
+  const nickname = String(target.nickname || '').trim().toLowerCase();
+
+  return (
+    accounts.find(item => alias && String(item.alias || '').trim().toLowerCase() === alias) ||
+    accounts.find(item => nickname && String(item.nickname || '').trim().toLowerCase() === nickname) ||
+    accounts.find(item => alias && String(item.alias || '').trim().toLowerCase().includes(alias)) ||
+    accounts.find(item => nickname && String(item.nickname || '').trim().toLowerCase().includes(nickname)) ||
+    accounts[0] ||
+    null
+  );
+}
+
+async function addRecommendedAccount(item: NewrankMpRecommendationItem) {
+  if (!item.searchKeyword || pendingRecommendedAccountKey.value) {
+    return;
+  }
+
+  pendingRecommendedAccountKey.value = item.id;
+  try {
+    const [accounts] = await getAccountList(0, item.searchKeyword);
+    const matched = pickRecommendedAccountMatch(accounts, item);
+    if (!matched) {
+      throw new Error('未在微信搜索结果中找到可添加的公众号');
+    }
+    selectAccount(matched);
+  } catch (e: any) {
+    if (e.message === 'session expired') {
+      void navigateToLogin(route.fullPath);
+      return;
+    }
+
+    toast.add({
+      color: 'rose',
+      title: '添加失败',
+      description: describeRequestError(e),
+      icon: 'i-octicon:bell-24',
+    });
+  } finally {
+    pendingRecommendedAccountKey.value = '';
   }
 }
 
@@ -1152,10 +1371,49 @@ defineExpose({
 watch(
   () => [isOpen.value, mode.value] as const,
   ([open, currentMode]) => {
-    if (open && currentMode === 'rss') {
+    if (!open) {
+      return;
+    }
+
+    if (currentMode === 'rss') {
       void ensureRsshubCategoriesLoaded();
+      return;
+    }
+
+    if (!accountQuery.value.trim()) {
+      void ensureNewrankRecommendationsLoaded();
     }
   }
+);
+
+watch(accountQuery, value => {
+  if (value.trim()) {
+    return;
+  }
+  accountList.length = 0;
+  begin = 0;
+  noMoreData.value = false;
+  if (isOpen.value && mode.value === 'mp') {
+    void ensureNewrankRecommendationsLoaded();
+  }
+});
+
+watch(
+  () => preferences.value.newrankCookie,
+  () => {
+    newrankLoadedOnce = false;
+    newrankState.value = hasNewrankCookie.value ? 'empty' : 'missing_cookie';
+    newrankMessage.value = hasNewrankCookie.value ? '' : '请先在设置里填写新榜 Cookie，才能加载公众号月榜推荐。';
+    newrankLatestMonthLabel.value = '';
+    newrankItems.value = [];
+    if (!selectedNewrankCategoryId.value && newrankCategories.value[0]?.id) {
+      selectedNewrankCategoryId.value = newrankCategories.value[0].id;
+    }
+    if (isOpen.value && mode.value === 'mp' && !accountQuery.value.trim()) {
+      void ensureNewrankRecommendationsLoaded();
+    }
+  },
+  { immediate: true }
 );
 
 watch(rssQuery, value => {

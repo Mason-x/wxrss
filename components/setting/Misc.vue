@@ -131,6 +131,28 @@
       </section>
 
       <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
+        <div class="mb-4">
+          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">新榜推荐</p>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            用于“添加订阅 → 公众号”里的新榜月榜推荐。填写你在新榜官网登录后的完整 Cookie 后，系统会按分类拉取公众号指数榜月榜并支持一键添加。
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          <UTextarea
+            v-model="preferences.newrankCookie"
+            :rows="3"
+            autoresize
+            placeholder="示例：acw_tc=...; Hm_lvt_xxx=...; token=...;"
+            class="font-mono"
+          />
+          <p class="text-sm text-slate-500 dark:text-slate-400">
+            建议直接粘贴浏览器里复制出的完整 Cookie。Cookie 过期后，新榜推荐会返回空榜单或提示重新配置。
+          </p>
+        </div>
+      </section>
+
+      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p class="text-sm font-medium text-slate-900 dark:text-slate-100">同步时间范围</p>

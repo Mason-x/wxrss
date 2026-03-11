@@ -51,22 +51,25 @@ export default defineEventHandler(async event => {
     const cachedSummary = String(existing?.ai_summary || '').trim();
     if (cachedSummary) {
       const parsedCached = parseStructuredArticleSummary(cachedSummary, allowedVariables);
-      const currentTags = Array.isArray(existing?.ai_tags) ? existing.ai_tags : [];
-      const cachedTags = parsedCached?.tags || [];
-      if (cachedTags.length > 0 && JSON.stringify(currentTags) !== JSON.stringify(cachedTags)) {
-        await updateArticleAiTags(authKey, url, cachedTags);
+      if (parsedCached) {
+        const currentTags = Array.isArray(existing?.ai_tags) ? existing.ai_tags : [];
+        const cachedTags = parsedCached.tags || [];
+        if (cachedTags.length > 0 && JSON.stringify(currentTags) !== JSON.stringify(cachedTags)) {
+          await updateArticleAiTags(authKey, url, cachedTags);
+        }
+
+        return {
+          data: {
+            summary: cachedSummary,
+            model: 'cached',
+            cached: true,
+            tags: parsedCached.tags || [],
+            rating: parsedCached.rating || '',
+            summaryText: parsedCached.summary || '',
+            highlights: parsedCached.highlights || [],
+          },
+        };
       }
-      return {
-        data: {
-          summary: cachedSummary,
-          model: 'cached',
-          cached: true,
-          tags: parsedCached?.tags || [],
-          rating: parsedCached?.rating || '',
-          summaryText: parsedCached?.summary || '',
-          highlights: parsedCached?.highlights || [],
-        },
-      };
     }
   }
 

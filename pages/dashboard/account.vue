@@ -14,7 +14,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { getArticleList, refreshAiDailyDigest, syncRssFeed } from '~/apis';
+import { bootstrapAccountAi, getArticleList, refreshAiDailyDigest, syncRssFeed } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
@@ -76,6 +76,7 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
       await loadAccountArticle(account, false);
     }
     await refresh();
+    await bootstrapAiAfterAddingAccount(account.fakeid);
     await runAiRefreshAfterSync();
     toast.success(
       isRssAccount(account) ? 'RSS 添加成功' : '公众号添加成功',
@@ -523,6 +524,19 @@ async function runAiRefreshAfterSync() {
     await refreshAiDailyDigest();
   } catch (error) {
     console.error('AI daily refresh failed:', error);
+  }
+}
+
+async function bootstrapAiAfterAddingAccount(fakeid: string) {
+  const normalizedFakeid = String(fakeid || '').trim();
+  if (!normalizedFakeid) {
+    return;
+  }
+
+  try {
+    await bootstrapAccountAi(normalizedFakeid, 10);
+  } catch (error) {
+    console.error('AI bootstrap after add failed:', error);
   }
 }
 
