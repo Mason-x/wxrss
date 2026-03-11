@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <USlideover
     v-model="isOpen"
     side="left"
@@ -116,9 +116,14 @@
         </form>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain overscroll-x-none rss-dialog-scroll">
+      <div
+        :class="[
+          'min-h-0 flex-1 overflow-x-hidden overscroll-x-none',
+          showMpRecommendations ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain rss-dialog-scroll',
+        ]"
+      >
         <template v-if="mode === 'mp'">
-          <div v-if="showMpRecommendations" class="space-y-3 px-3 py-4">
+          <div v-if="showMpRecommendations" class="flex h-full min-h-0 flex-col space-y-3 px-3 py-4">
             <div class="flex items-center justify-between gap-3">
               <div>
                 <p class="text-sm font-semibold text-slate-900 dark:text-white">新榜月榜推荐</p>
@@ -133,88 +138,122 @@
               </span>
             </div>
 
-            <div class="flex gap-2 overflow-x-auto pb-1">
-              <button
-                v-for="category in newrankCategories"
-                :key="category.id"
-                type="button"
-                class="shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition"
-                :class="
-                  selectedNewrankCategoryId === category.id
-                    ? 'border-transparent text-white shadow-sm'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
-                "
-                :style="
-                  selectedNewrankCategoryId === category.id
-                    ? {
-                        background: `linear-gradient(145deg, ${category.accentFrom}, ${category.accentTo})`,
-                      }
-                    : undefined
-                "
-                @click="loadNewrankRecommendations(category.id)"
-              >
-                {{ category.label }}
-              </button>
-            </div>
-
-            <div
-              v-if="newrankLoading"
-              class="flex items-center justify-center rounded-3xl border border-slate-200 bg-white px-4 py-10 dark:border-slate-800 dark:bg-slate-900"
-            >
-              <Loader :size="26" class="animate-spin text-slate-500" />
-            </div>
-
-            <div
-              v-else-if="newrankState !== 'ready'"
-              class="rounded-3xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
-            >
-              {{ newrankMessage || '暂无推荐内容' }}
-            </div>
-
-            <ul v-else class="space-y-3">
-              <li
-                v-for="item in newrankItems"
-                :key="item.id"
-                class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-              >
-                <img
-                  class="size-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-800"
-                  :src="item.avatar || 'https://res.wx.qq.com/op_res/HTxA4g4wK3k3wGgOQ3r8wO8Vf0z3mJ9x0VqT4n0A4Xw0QYv3h2uX3Q==/0'"
-                  alt=""
-                />
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ item.nickname }}</p>
-                      <p class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
-                        微信号 {{ item.alias || '未显示' }}
-                      </p>
-                    </div>
-                    <div class="shrink-0 text-right">
-                      <p class="text-xs font-semibold text-sky-500">
-                        #{{ item.rank }}
-                      </p>
-                      <p v-if="item.score !== null" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        指数 {{ item.score }}
-                      </p>
+            <div class="min-h-[24rem] flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm md:min-h-[30rem] dark:border-slate-800 dark:bg-slate-900">
+              <div class="grid h-full min-h-full overflow-hidden grid-cols-[5.75rem_minmax(0,1fr)] md:grid-cols-[10rem_minmax(0,1fr)]">
+                <aside class="min-h-0 overflow-hidden border-r border-slate-200/80 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
+                  <div class="h-full overflow-y-auto overscroll-y-contain touch-pan-y px-2 py-2 md:px-3">
+                    <div class="space-y-2">
+                      <button
+                        v-for="category in newrankCategories"
+                        :key="category.id"
+                        type="button"
+                        class="w-full rounded-2xl px-2 py-2.5 text-left transition md:px-3"
+                        :class="
+                          selectedNewrankCategoryId === category.id
+                            ? 'text-white shadow-sm'
+                            : 'bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
+                        "
+                        :style="
+                          selectedNewrankCategoryId === category.id
+                            ? {
+                                background: `linear-gradient(145deg, ${category.accentFrom}, ${category.accentTo})`,
+                              }
+                            : undefined
+                        "
+                        @click="loadNewrankRecommendations(category.id)"
+                      >
+                        <p class="truncate text-xs font-semibold md:text-sm">{{ category.label }}</p>
+                        <p
+                          class="mt-1 line-clamp-2 text-[10px] leading-4 md:text-[11px]"
+                          :class="
+                            selectedNewrankCategoryId === category.id
+                              ? 'text-white/85'
+                              : 'text-slate-400 dark:text-slate-500'
+                          "
+                        >
+                          {{ category.description }}
+                        </p>
+                      </button>
                     </div>
                   </div>
-                  <div class="mt-2 flex items-center justify-between gap-3">
-                    <p class="truncate text-[11px] text-slate-400 dark:text-slate-500">{{ item.sourceLabel }}</p>
-                    <UButton
-                      size="2xs"
-                      color="gray"
-                      variant="soft"
-                      :loading="pendingRecommendedAccountKey === item.id"
-                      :disabled="Boolean(pendingRecommendedAccountKey)"
-                      @click.stop="addRecommendedAccount(item)"
-                    >
-                      一键添加
-                    </UButton>
+                </aside>
+
+                <section class="min-h-0 min-w-0 overflow-hidden">
+                  <div class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+                    <div class="border-b border-slate-200/80 px-4 py-3 dark:border-slate-800 md:px-5">
+                      <p class="truncate text-sm font-semibold text-slate-900 dark:text-white md:text-base">
+                        {{ selectedNewrankCategory?.label || '新榜推荐' }}
+                      </p>
+                      <p class="mt-1 line-clamp-2 text-[11px] text-slate-500 dark:text-slate-400 md:text-xs">
+                        {{ selectedNewrankCategory?.description || '按分类查看新榜公众号指数月榜' }}
+                      </p>
+                      <p v-if="newrankLatestMonthLabel" class="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+                        {{ newrankLatestMonthLabel }}
+                      </p>
+                    </div>
+
+                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y px-3 py-3 md:px-4">
+                      <div
+                        v-if="newrankLoading"
+                        class="flex h-full min-h-[12rem] items-center justify-center rounded-3xl border border-slate-200 bg-slate-50/70 px-4 py-10 dark:border-slate-800 dark:bg-slate-950/30"
+                      >
+                        <Loader :size="26" class="animate-spin text-slate-500" />
+                      </div>
+
+                      <div
+                        v-else-if="newrankState !== 'ready'"
+                        class="flex h-full min-h-[12rem] items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-400"
+                      >
+                        {{ newrankMessage || '暂无推荐内容' }}
+                      </div>
+
+                      <ul v-else class="space-y-3">
+                        <li
+                          v-for="item in newrankItems"
+                          :key="item.id"
+                          class="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white px-3 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:px-4"
+                        >
+                          <img
+                            class="size-12 shrink-0 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-800 md:size-14"
+                            :src="item.avatar || 'https://res.wx.qq.com/op_res/HTxA4g4wK3k3wGgOQ3r8wO8Vf0z3mJ9x0VqT4n0A4Xw0QYv3h2uX3Q==/0'"
+                            alt=""
+                          />
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-start justify-between gap-3">
+                              <div class="min-w-0">
+                                <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ item.nickname }}</p>
+                                <p class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">
+                                  微信号 {{ item.alias || '未显示' }}
+                                </p>
+                              </div>
+                              <div class="shrink-0 text-right">
+                                <p class="text-xs font-semibold text-sky-500">#{{ item.rank }}</p>
+                                <p v-if="item.score !== null" class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                  指数 {{ item.score }}
+                                </p>
+                              </div>
+                            </div>
+                            <div class="mt-2 flex items-center justify-between gap-3">
+                              <p class="truncate text-[11px] text-slate-400 dark:text-slate-500">{{ item.sourceLabel }}</p>
+                              <UButton
+                                size="2xs"
+                                color="gray"
+                                variant="soft"
+                                :loading="pendingRecommendedAccountKey === item.id"
+                                :disabled="Boolean(pendingRecommendedAccountKey)"
+                                @click.stop="addRecommendedAccount(item)"
+                              >
+                                一键添加
+                              </UButton>
+                            </div>
+                          </div>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
-                </div>
-              </li>
-            </ul>
+                </section>
+              </div>
+            </div>
           </div>
 
           <ul v-if="accountList.length > 0" class="divide-y divide-slate-100 antialiased dark:divide-slate-800">
@@ -817,6 +856,9 @@ let newrankLoadedOnce = false;
 
 const hasNewrankCookie = computed(() => Boolean(String(preferences.value.newrankCookie || '').trim()));
 const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuery.value.trim());
+const selectedNewrankCategory = computed(
+  () => newrankCategories.value.find(category => category.id === selectedNewrankCategoryId.value) || newrankCategories.value[0] || null
+);
 
 const canSwipeBackInsideRssPage = computed(
   () =>
@@ -1086,7 +1128,7 @@ async function loadNewrankRecommendations(categoryId?: string) {
   try {
     const result = await getNewrankMpRecommendations({
       category: String(categoryId || selectedNewrankCategoryId.value || '').trim(),
-      limit: 8,
+      limit: 30,
     });
     newrankLoadedOnce = true;
     newrankState.value = result.state;
