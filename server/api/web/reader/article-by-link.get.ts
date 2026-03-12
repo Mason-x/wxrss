@@ -23,6 +23,9 @@ export default defineEventHandler(async event => {
   }
 
   const article = await getArticleByLink(authKey, query.url);
+  if (article) {
+    delete (article as any).cachedHtml;
+  }
   return {
     article,
   };

@@ -22,7 +22,8 @@ export default defineEventHandler(async event => {
   if (!fakeid) {
     throw createError({
       statusCode: 400,
-      statusMessage: '缺少订阅源 fakeid',
+      statusMessage: 'Bad Request',
+      message: '缺少订阅源 fakeid',
     });
   }
 

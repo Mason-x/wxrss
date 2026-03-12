@@ -462,7 +462,12 @@ export function getAuthKeyFromRequest(event: H3Event): string {
     authKey = cookies['auth-key'];
   }
 
-  return authKey;
+  const normalized = String(authKey || '').trim();
+  if (!normalized || normalized === 'EXPIRED' || normalized === 'undefined' || normalized === 'null') {
+    return '';
+  }
+
+  return normalized;
 }
 
 // function updateCookies(event: H3Event, cookies: string[]): void {

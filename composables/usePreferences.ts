@@ -25,6 +25,7 @@ export default () => {
   const loadSequence = useState<number>('preferences-sync-load-sequence', () => 0);
   const saveTimer = useState<number | null>('preferences-sync-save-timer', () => null);
   const listenersBound = useState<boolean>('preferences-sync-listeners-bound', () => false);
+  const hasUnsavedChanges = useState<boolean>('preferences-sync-dirty', () => false);
 
   if (!initialized.value) {
     preferences.value = normalizePreferences(preferences.value);
@@ -58,12 +59,14 @@ export default () => {
         if (response?.exists) {
           preferences.value = remotePreferences;
           lastPersisted.value = JSON.stringify(remotePreferences);
+          hasUnsavedChanges.value = false;
           return;
         }
 
         const seedPreferences = clonePreferences();
         preferences.value = seedPreferences;
         lastPersisted.value = '';
+        hasUnsavedChanges.value = false;
 
         if (options?.seedDefaults !== false) {
           await persistRemote(seedPreferences);
@@ -71,7 +74,7 @@ export default () => {
       }
 
       async function refreshRemotePreferencesOnFocus() {
-        if (!activeOwnerKey.value || hydrating.value) {
+        if (!activeOwnerKey.value || hydrating.value || hasUnsavedChanges.value) {
           return;
         }
 
@@ -106,6 +109,7 @@ export default () => {
             preferences.value = defaultPreferences;
             lastPersisted.value = JSON.stringify(defaultPreferences);
             hydrating.value = false;
+            hasUnsavedChanges.value = false;
             return;
           }
 
@@ -120,6 +124,7 @@ export default () => {
             const fallbackPreferences = clonePreferences(preferences.value);
             preferences.value = fallbackPreferences;
             lastPersisted.value = JSON.stringify(fallbackPreferences);
+            hasUnsavedChanges.value = false;
           } finally {
             if (currentSequence === loadSequence.value) {
               hydrating.value = false;
@@ -131,31 +136,13 @@ export default () => {
 
       watch(
         preferences,
-        nextValue => {
-          const normalized = normalizePreferences(nextValue);
-          const serialized = JSON.stringify(normalized);
-
-          if (hydrating.value || serialized === lastPersisted.value) {
+        () => {
+          if (hydrating.value) {
             return;
           }
-
-          if (!activeOwnerKey.value) {
-            preferences.value = normalized;
-            lastPersisted.value = serialized;
-            return;
-          }
-
-          if (saveTimer.value) {
-            window.clearTimeout(saveTimer.value);
-          }
-
-          saveTimer.value = window.setTimeout(async () => {
-            saveTimer.value = null;
-            if (hydrating.value || !activeOwnerKey.value) {
-              return;
-            }
-            await persistRemote(normalized);
-          }, 400);
+          hasUnsavedChanges.value = activeOwnerKey.value
+            ? JSON.stringify(preferences.value) !== lastPersisted.value
+            : false;
         },
         { deep: true }
       );

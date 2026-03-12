@@ -22,6 +22,7 @@ export interface Preferences {
   aiTagDefinitions: AiTagDefinition[];
   aiTagSystemPrompt: string;
   aiDailyReportSystemPrompt: string;
+  aiDailyReportIncludedLabels: string[];
 
   exportConfig: ExportConfig;
   downloadConfig: DownloadConfig;

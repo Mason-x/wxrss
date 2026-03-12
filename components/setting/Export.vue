@@ -83,14 +83,21 @@
           label="导出 HTML 时包含留言数据"
         />
       </div>
+      <div class="flex justify-end">
+        <UButton color="black" icon="i-lucide:save" :loading="savingPreferences" @click="saveExportSettings">
+          保存
+        </UButton>
+      </div>
     </div>
   </UCard>
 </template>
 
 <script setup lang="ts">
+import useSavePreferences from '~/composables/useSavePreferences';
 import type { Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const { saveNow, saving: savingPreferences } = useSavePreferences();
 const cardUi = {
   ring: '',
   divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
@@ -114,6 +121,10 @@ const variables = Array.from({ length: Math.ceil(_variables.length / 2) }, (_, i
   _variables[i * 2] ?? {},
   _variables[i * 2 + 1] ?? {},
 ]);
+
+async function saveExportSettings() {
+  await saveNow();
+}
 </script>
 
 <style scoped>

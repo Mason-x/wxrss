@@ -38,14 +38,21 @@
           <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">无需持续打开</p>
         </div>
       </div>
+      <div class="flex justify-end">
+        <UButton color="black" icon="i-lucide:save" :loading="savingPreferences" @click="saveSchedulerSettings">
+          保存
+        </UButton>
+      </div>
     </div>
   </UCard>
 </template>
 
 <script setup lang="ts">
+import useSavePreferences from '~/composables/useSavePreferences';
 import type { Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const { saveNow, saving: savingPreferences } = useSavePreferences();
 
 const cardUi = {
   ring: '',
@@ -58,5 +65,10 @@ function normalizeDailySyncTime() {
   const raw = String(preferences.value.dailySyncTime || '').trim();
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(raw);
   preferences.value.dailySyncTime = match ? `${match[1]}:${match[2]}` : '03:00';
+}
+
+async function saveSchedulerSettings() {
+  normalizeDailySyncTime();
+  await saveNow();
 }
 </script>

@@ -17,6 +17,7 @@ import { isDev } from '~/config';
 const runtimeConfig = useRuntimeConfig();
 const route = useRoute();
 const { loginAccount, isLoginExpired, isPublicRoute, navigateToLogin } = useMpAuth();
+useAppThemeMode();
 
 const authRedirecting = ref(false);
 

@@ -30,7 +30,8 @@ export default defineEventHandler(async event => {
   } catch (error: any) {
     throw createError({
       statusCode: 400,
-      statusMessage: String(error?.message || 'RSS subscribe failed'),
+      statusMessage: 'Bad Request',
+      message: String(error?.message || 'RSS subscribe failed'),
     });
   }
 });

@@ -32,6 +32,9 @@ interface MpVideoInfoResponse {
 }
 
 const props = defineProps<Props>();
+const emit = defineEmits<{
+  (event: 'open-article-link', link: string): void;
+}>();
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const preferences = usePreferences() as unknown as Ref<Preferences>;
@@ -246,6 +249,87 @@ function buildSrcdoc(html: string): string {
       }
       .ai-daily-report a:hover {
         text-decoration: underline;
+      }
+      .ai-daily-report-overview {
+        margin-bottom: 1.5rem;
+      }
+      .ai-daily-report-entries {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .ai-daily-report-entry {
+        padding: 1rem 1.05rem;
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 22px;
+        background: #f8fafc;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-entry {
+        border-color: rgba(148, 163, 184, 0.16);
+        background: rgba(15, 23, 42, 0.88);
+      }
+      .ai-daily-report-entry-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .ai-daily-report-entry-heading {
+        min-width: 0;
+        flex: 1;
+      }
+      .ai-daily-report-entry-title {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.45;
+      }
+      .ai-daily-report-entry-meta {
+        margin: 0.4rem 0 0;
+        color: #64748b;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-entry-meta {
+        color: #94a3b8;
+      }
+      .ai-daily-report-entry-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.6rem;
+      }
+      .ai-daily-report-entry-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        background: rgba(226, 232, 240, 0.95);
+        color: #334155;
+        font-size: 0.74rem;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-entry-tag {
+        background: rgba(30, 41, 59, 0.96);
+        color: #cbd5e1;
+      }
+      .ai-daily-report-entry-link {
+        flex-shrink: 0;
+        white-space: nowrap;
+        padding: 0.42rem 0.8rem;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.1);
+        color: #2563eb;
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-entry-link {
+        background: rgba(14, 165, 233, 0.14);
+        color: #7dd3fc;
+      }
+      .ai-daily-report-entry-summary {
+        margin: 0.9rem 0 0;
       }
       .ai-daily-report code {
         padding: 0.15rem 0.35rem;
@@ -819,6 +903,26 @@ function bindGalleryInteractions(doc: Document): void {
   });
 }
 
+function bindReaderArticleLinkInteractions(doc: Document): void {
+  const onClick = (event: MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest('a[data-reader-article-link]') as HTMLAnchorElement | null;
+    const link = String(anchor?.getAttribute('data-reader-article-link') || '').trim();
+    if (!anchor || !link) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    emit('open-article-link', link);
+  };
+
+  doc.addEventListener('click', onClick, true);
+  galleryCleanupFns.push(() => {
+    doc.removeEventListener('click', onClick, true);
+  });
+}
+
 function handleLoad(): void {
   nextTick(() => {
     updateHeight();
@@ -826,6 +930,7 @@ function handleLoad(): void {
     const doc = iframeRef.value?.contentDocument;
     if (doc) {
       bindGalleryInteractions(doc);
+      bindReaderArticleLinkInteractions(doc);
     }
   });
 }

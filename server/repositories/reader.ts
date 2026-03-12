@@ -1,4 +1,5 @@
 import { getSqliteDb } from '~/server/db/sqlite';
+import { parseStructuredArticleSummary } from '~/server/utils/ai-summary';
 
 export interface ReaderAccount {
   fakeid: string;
@@ -51,9 +52,6 @@ export interface ReaderAiProcessingArticle {
   aiSummary: string;
   cachedHtml: string;
 }
-
-const SUMMARY_READING_TIER_TAGS = new Set(['{{featured}}', '{{skim}}', '{{skip}}']);
-const SUMMARY_SPONSORED_TAG = '{{sponsored}}';
 
 const ARTICLE_STORAGE_FIELD_ALLOWLIST = new Set<string>([
   'aid',
@@ -185,30 +183,8 @@ function mapArticleLiteRow(row: any): ReaderArticle {
 }
 
 function parseStructuredSummaryTags(raw: unknown): string[] {
-  const source = String(raw || '').trim();
-  if (!source || source[0] !== '{') {
-    return [];
-  }
-
-  try {
-    const payload = JSON.parse(source);
-    const inputTags = Array.isArray(payload?.tags)
-      ? payload.tags
-      : payload?.rating
-        ? [payload.rating]
-        : [];
-
-    const normalized = normalizeAiTags(inputTags);
-    const primaryReadingTag = normalized.find(tag => SUMMARY_READING_TIER_TAGS.has(tag)) || '';
-    const firstNonSponsoredTag = normalized.find(tag => !SUMMARY_READING_TIER_TAGS.has(tag) && tag !== SUMMARY_SPONSORED_TAG) || '';
-    const sponsoredTag = normalized.includes(SUMMARY_SPONSORED_TAG) ? SUMMARY_SPONSORED_TAG : '';
-
-    return [primaryReadingTag || firstNonSponsoredTag, sponsoredTag || (primaryReadingTag ? firstNonSponsoredTag : '')]
-      .filter(Boolean)
-      .slice(0, 2);
-  } catch {
-    return [];
-  }
+  const parsed = parseStructuredArticleSummary(String(raw || '').trim());
+  return Array.isArray(parsed?.tags) ? normalizeAiTags(parsed.tags) : [];
 }
 
 function parseAiTagsJson(raw: unknown): string[] {
@@ -246,7 +222,7 @@ function normalizeAiTags(input: unknown): string[] {
         })
         .filter(Boolean)
     )
-  ).slice(0, 3);
+  );
 }
 
 function resolveArticleAiTags(rawTags: unknown, rawSummary: unknown): string[] {
@@ -991,30 +967,47 @@ export async function getArticleByLink(authKey: string, link: string): Promise<R
   const row = await db.get<any>(
     `
     SELECT
-      fakeid,
-      link,
-      aid,
-      appmsgid,
-      itemidx,
-      title,
-      digest,
-      author_name,
-      create_time,
-      update_time,
-      favorite,
-      ai_summary,
-      ai_tags_json,
-      is_deleted,
-      status
-    FROM reader_articles
-    WHERE auth_key = ? AND link = ?
-    ORDER BY update_time DESC, create_time DESC
+      a.fakeid,
+      a.link,
+      a.aid,
+      a.appmsgid,
+      a.itemidx,
+      a.title,
+      a.digest,
+      a.author_name,
+      a.create_time,
+      a.update_time,
+      a.favorite,
+      a.ai_summary,
+      a.ai_tags_json,
+      a.is_deleted,
+      a.status,
+      ac.nickname AS account_nickname,
+      ac.category AS account_category,
+      ac.round_head_img AS account_round_head_img,
+      ch.content_blob AS html_blob
+    FROM reader_articles a
+    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
+    WHERE a.auth_key = ? AND a.link = ?
+    ORDER BY a.update_time DESC, a.create_time DESC
     LIMIT 1
     `,
     authKey,
     link
   );
-  return row ? mapArticleLiteRow(row) : null;
+  if (!row) {
+    return null;
+  }
+  const article = mapArticleLiteRow(row);
+  article.accountName = row.account_nickname || row.fakeid;
+  article.category = row.account_category || '';
+  article.cachedHtml = Buffer.isBuffer(row.html_blob)
+    ? row.html_blob.toString('utf8')
+    : row.html_blob instanceof Uint8Array
+      ? Buffer.from(row.html_blob).toString('utf8')
+      : String(row.html_blob || '');
+  return article;
 }
 
 export async function updateArticleStatus(authKey: string, link: string, status: string): Promise<void> {

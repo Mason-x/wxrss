@@ -36,7 +36,8 @@ export default defineEventHandler(async event => {
   if (!body?.account?.fakeid) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'account.fakeid is required',
+      statusMessage: 'Bad Request',
+      message: 'account.fakeid is required',
     });
   }
 
@@ -59,7 +60,8 @@ export default defineEventHandler(async event => {
   if (sourceArticles.length > MAX_ARTICLES_PER_REQUEST) {
     throw createError({
       statusCode: 400,
-      statusMessage: `articles size exceeds limit(${MAX_ARTICLES_PER_REQUEST})`,
+      statusMessage: 'Bad Request',
+      message: `articles size exceeds limit(${MAX_ARTICLES_PER_REQUEST})`,
     });
   }
 

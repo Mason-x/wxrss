@@ -14,7 +14,13 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { bootstrapAccountAi, getArticleList, refreshAiDailyDigest, syncRssFeed } from '~/apis';
+import {
+  INITIAL_SUBSCRIBE_PAGE_SIZE,
+  bootstrapAccountAi,
+  getArticleList,
+  refreshAiDailyDigest,
+  syncRssFeed,
+} from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
@@ -73,7 +79,7 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
   addBtnLoading.value = true;
   try {
     if (!isRssAccount(account)) {
-      await loadAccountArticle(account, false);
+      await loadAccountArticle(account, false, INITIAL_SUBSCRIBE_PAGE_SIZE);
     }
     await refresh();
     await bootstrapAiAfterAddingAccount(account.fakeid);
@@ -82,7 +88,7 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
       isRssAccount(account) ? 'RSS 添加成功' : '公众号添加成功',
       isRssAccount(account)
         ? `已成功添加订阅【${account.nickname}】`
-        : `已成功添加公众号【${account.nickname}】，并同步了第一页的文章数据`
+        : `已成功添加公众号【${account.nickname}】，并同步了最近 ${INITIAL_SUBSCRIBE_PAGE_SIZE} 篇文章`
     );
     accountEventBus.emit('account-added', { fakeid: account.fakeid });
   } catch (error: any) {
@@ -102,7 +108,13 @@ const syncingRowId = ref<string | null>(null);
 
 const syncTimer = ref<number | null>(null);
 
-async function _load(account: MpAccount, begin: number, loadMore: boolean, promise: PromiseInstance) {
+async function _load(
+  account: MpAccount,
+  begin: number,
+  loadMore: boolean,
+  promise: PromiseInstance,
+  initialPageSize = 0
+) {
   if (isCanceled.value) {
     isCanceled.value = false; // 这里需要将状态复位
     promise.reject(new Error('已取消同步'));
@@ -112,7 +124,12 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
   syncingRowId.value = account.fakeid;
   isSyncing.value = true;
 
-  const [articles, completed, _totalCount, pageMessageCount, inserted] = await getArticleList(account, begin);
+  const [articles, completed, _totalCount, pageMessageCount, inserted] = await getArticleList(
+    account,
+    begin,
+    '',
+    begin === 0 && initialPageSize > 0 ? { initialPageSize } : {}
+  );
   if (isCanceled.value) {
     isCanceled.value = false;
     promise.reject(new Error('已取消同步'));
@@ -164,7 +181,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
           promise.reject(new Error('已取消同步'));
           return;
         }
-        _load(account, begin, true, promise);
+        _load(account, begin, true, promise, 0);
       },
       pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
     );
@@ -176,7 +193,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
 }
 
 // 同步指定公众号
-async function loadAccountArticle(account: MpAccount, loadMore = true) {
+async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0) {
   if (isRssAccount(account)) {
     syncingRowId.value = account.fakeid;
     isSyncing.value = true;
@@ -193,7 +210,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true) {
   return new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
 
-    _load(account, 0, loadMore, promise).catch(e => {
+    _load(account, 0, loadMore, promise, initialPageSize).catch(e => {
       syncingRowId.value = null;
       isSyncing.value = false;
 

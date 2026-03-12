@@ -52,6 +52,7 @@
 
 <script setup lang="ts">
 import ExternalLink from '~/components/base/ExternalLink.vue';
+import useSavePreferences from '~/composables/useSavePreferences';
 import toastFactory from '~/composables/toast';
 import { docsWebSite } from '~/config';
 import { validatePrivateProxyList } from '~/config/proxy';
@@ -59,6 +60,7 @@ import type { Preferences } from '~/types/preferences';
 
 const toast = toastFactory();
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const { saveNow } = useSavePreferences();
 const cardUi = {
   ring: '',
   divide: 'divide-y divide-slate-200/70 dark:divide-slate-800/80',
@@ -97,10 +99,11 @@ async function pasteProxyList() {
   }
 }
 
-function save() {
+async function save() {
   const result = validatePrivateProxyList(textareaValue.value.split('\n'));
   preferences.value.privateProxyList = result.proxies;
   textareaValue.value = result.proxies.join('\n');
+  await saveNow();
 
   if (result.rejectedLegacy.length > 0) {
     toast.warning('已过滤旧公共代理地址', `共过滤 ${result.rejectedLegacy.length} 个旧公共节点。`);
@@ -119,9 +122,10 @@ function save() {
   setSaveButtonState('已清空');
 }
 
-function clear() {
+async function clear() {
   preferences.value.privateProxyList = [];
   textareaValue.value = '';
+  await saveNow();
   toast.info('已清空代理配置', '未配置代理时，抓取和导出不会启动。');
   setSaveButtonState('已清空');
 }

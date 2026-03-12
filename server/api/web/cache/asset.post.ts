@@ -19,7 +19,7 @@ export default defineEventHandler(async event => {
 
   const parts = await readMultipartFormData(event);
   if (!parts || parts.length === 0) {
-    throw createError({ statusCode: 400, statusMessage: 'multipart form data is required' });
+    throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'multipart form data is required' });
   }
 
   const filePart = parts.find(item => item.name === 'file');

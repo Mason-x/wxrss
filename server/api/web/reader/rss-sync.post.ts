@@ -21,7 +21,8 @@ export default defineEventHandler(async event => {
   if (!fakeid && !url) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'fakeid or url is required',
+      statusMessage: 'Bad Request',
+      message: 'fakeid or url is required',
     });
   }
 
@@ -32,7 +33,8 @@ export default defineEventHandler(async event => {
   } catch (error: any) {
     throw createError({
       statusCode: 400,
-      statusMessage: String(error?.message || 'RSS sync failed'),
+      statusMessage: 'Bad Request',
+      message: String(error?.message || 'RSS sync failed'),
     });
   }
 });

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">其他选项</h3>
@@ -216,6 +216,11 @@
           </UPopover>
         </div>
       </section>
+      <div class="flex justify-end">
+        <UButton color="black" icon="i-lucide:save" :loading="savingPreferences" @click="saveMiscSettings">
+          保存
+        </UButton>
+      </div>
     </div>
   </UCard>
 </template>
@@ -223,12 +228,14 @@
 <script setup lang="ts">
 import dayjs from 'dayjs';
 import { testNewrankCookie } from '~/apis';
+import useSavePreferences from '~/composables/useSavePreferences';
 import toastFactory from '~/composables/toast';
 import type { Preferences } from '~/types/preferences';
 
 const { getActualDateRange, getSelectOptions } = useSyncDeadline();
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const { saveNow, saving: savingPreferences } = useSavePreferences();
 const toast = toastFactory();
 const testingNewrankCookie = ref(false);
 const newrankCookieStatus = ref<'idle' | 'success' | 'error'>('idle');
@@ -262,6 +269,17 @@ function clearNewrankCookie() {
   toast.info('已清空 Cookie', '新榜 Cookie 已清空。');
 }
 
+async function saveMiscSettings() {
+  try {
+    await saveNow();
+    toast.success('已保存');
+  } catch (error: any) {
+    toast.error(String(
+      error?.data?.statusMessage || error?.statusMessage || error?.message || '保存失败'
+    ));
+  }
+}
+
 async function verifyNewrankCookie() {
   if (testingNewrankCookie.value) {
     return;
@@ -293,3 +311,5 @@ watch(
   }
 );
 </script>
+
+
