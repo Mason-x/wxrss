@@ -5403,7 +5403,15 @@ onUnmounted(() => {
 
     <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
 
-    <UModal v-model="articleSummaryDialogOpen" :ui="{ width: 'sm:max-w-[720px]' }">
+    <UModal
+      v-model="articleSummaryDialogOpen"
+      :ui="{
+        width: 'w-full sm:max-w-[720px]',
+        container: 'flex min-h-full items-center justify-center text-center p-4',
+        margin: 'my-0',
+        rounded: 'rounded-[28px]',
+      }"
+    >
       <UCard class="overflow-hidden rounded-none border-0 shadow-none">
         <template #header>
           <div class="flex items-start justify-between gap-3">
