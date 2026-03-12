@@ -265,6 +265,7 @@ const batchSyncProgress = ref<BatchSyncProgress>({
 });
 const batchSyncFailedAccounts = ref<RemoteBatchSyncAccountSnapshot[]>([]);
 const batchSyncNoticeText = ref('');
+const batchSyncNoticeTimer = ref<number | null>(null);
 const realtimeBatchRefreshPendingFakeids = new Set<string>();
 let realtimeBatchRefreshTimer: number | null = null;
 let realtimeBatchRefreshRunning = false;
@@ -413,6 +414,27 @@ function upsertSyncProgress(fakeid: string, patch: Partial<AccountSyncProgress>)
   };
 }
 
+function clearBatchSyncNoticeTimer() {
+  if (batchSyncNoticeTimer.value !== null) {
+    window.clearTimeout(batchSyncNoticeTimer.value);
+    batchSyncNoticeTimer.value = null;
+  }
+}
+
+function setBatchSyncNotice(text: string, autoDismissMs = 0) {
+  batchSyncNoticeText.value = text;
+  clearBatchSyncNoticeTimer();
+
+  if (!text || autoDismissMs <= 0) {
+    return;
+  }
+
+  batchSyncNoticeTimer.value = window.setTimeout(() => {
+    setBatchSyncNotice('');
+    batchSyncNoticeTimer.value = null;
+  }, autoDismissMs);
+}
+
 async function refreshAccountSnapshot(fakeid: string, running = true) {
   const latest = await getInfoCache(fakeid);
   if (!latest) {
@@ -518,7 +540,7 @@ async function flushRealtimeBatchRefresh() {
         realtimeBatchRefreshQueued = true;
         return;
       }
-      await loadArticlePage(true);
+      await loadArticlePage(true, { preserveRowsOnReset: true });
       clearSelectionOutOfScope();
     }
   } finally {
@@ -745,7 +767,7 @@ const headerBatchSyncProgressText = computed(() => {
     ? `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源 · 失败：${failedNames}`
     : `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源`;
 });
-const syncStatusBannerText = computed(
+const syncStatusLineText = computed(
   () => activeAccountSyncStatus.value || headerBatchSyncProgressText.value || batchSyncNoticeText.value
 );
 
@@ -1421,7 +1443,7 @@ const mobileArticlesHeaderState = computed<MobileHeaderLayerState>(() => {
   const baseMeta = selectedAccount.value
     ? `${articleTotalCount.value} 篇文章`
     : `${articleTotalCount.value} 篇文章 · ${accountsInCategory.value.length} 个订阅源`;
-  const dynamicMeta = selectedAccount.value ? activeAccountSyncStatus.value : headerBatchSyncProgressText.value;
+  const dynamicMeta = syncStatusLineText.value;
 
   return {
     kind: 'articles',
@@ -1727,14 +1749,22 @@ function syncUnreadStateByLatest(latestArticleKeys: Set<string>, fullSnapshot = 
   }
 }
 
-async function loadArticlePage(reset = false) {
+async function loadArticlePage(
+  reset = false,
+  options: {
+    preserveRowsOnReset?: boolean;
+  } = {}
+) {
   if (articlePageLoading.value) {
     return;
   }
 
+  const preserveRowsOnReset = Boolean(reset && options.preserveRowsOnReset && articleRows.value.length > 0);
   if (reset) {
-    articleRows.value = [];
-    articleTotalCount.value = 0;
+    if (!preserveRowsOnReset) {
+      articleRows.value = [];
+      articleTotalCount.value = 0;
+    }
     articlePageOffset.value = 0;
     articlePageHasMore.value = true;
   } else if (!articlePageHasMore.value) {
@@ -3855,7 +3885,7 @@ async function syncCurrentAccount() {
   if (!account) return;
 
   try {
-    batchSyncNoticeText.value = '';
+    setBatchSyncNotice('');
     isCanceled.value = false;
     await loadAccountArticle(account, true);
     await runAiRefreshAfterSync();
@@ -3869,7 +3899,7 @@ async function syncCurrentAccount() {
     toast.error('同步失败', (error as Error).message);
   } finally {
     await refreshAccountSnapshot(account.fakeid, false);
-    await loadArticlePage(true);
+    await loadArticlePage(true, { preserveRowsOnReset: true });
     clearSelectionOutOfScope();
   }
 }
@@ -3886,7 +3916,7 @@ async function syncAllAccountsInCurrentScope() {
 
   const mpTargets = targets.filter(account => !isRssAccount(account));
   const rssTargets = targets.filter(account => isRssAccount(account));
-  batchSyncNoticeText.value = '';
+  setBatchSyncNotice('');
   batchSyncFailedAccounts.value = [];
   batchSyncProgress.value = {
     running: true,
@@ -3997,34 +4027,40 @@ async function syncAllAccountsInCurrentScope() {
     const failedDetails = formatBatchFailedAccountDetails(combinedFailedAccounts);
 
     if (isCanceled.value && totalCompletedCount < targets.length) {
-      batchSyncNoticeText.value = `同步已取消：已完成 ${totalCompletedCount}/${targets.length} 个订阅源`;
+      setBatchSyncNotice(`同步已取消：已完成 ${totalCompletedCount}/${targets.length} 个订阅源`, 5000);
       toast.warning('同步已取消', `已完成 ${totalCompletedCount}/${targets.length} 个订阅源`);
       return;
     }
 
     if (totalFailedCount === 0) {
       await runAiRefreshAfterSync();
-      batchSyncNoticeText.value = `同步完成：已同步 ${totalSuccessCount} 个订阅源`;
+      setBatchSyncNotice(`同步完成：已同步 ${totalSuccessCount} 个订阅源`, 5000);
       toast.success('同步完成', `已同步 ${totalSuccessCount} 个订阅源`);
     } else if (totalSuccessCount === 0) {
       const firstMessage = rssFirstError || normalizeRuntimeErrorMessage(String(finalSnapshot?.message || '未知错误'));
       if (firstMessage === 'session expired') {
-        batchSyncNoticeText.value = '同步失败：登录状态已失效，请重新登录后重试';
+        setBatchSyncNotice('同步失败：登录状态已失效，请重新登录后重试', 5000);
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
       } else if (firstMessage === `all ${finalSnapshot?.failedCount} accounts failed` && rssFailedCount === 0) {
-        batchSyncNoticeText.value = failedNames
-          ? `同步失败：${failedNames}`
-          : `同步失败：全部 ${totalFailedCount} 个订阅源同步失败`;
+        setBatchSyncNotice(
+          failedNames
+            ? `同步失败：${failedNames}`
+            : `同步失败：全部 ${totalFailedCount} 个订阅源同步失败`,
+          5000
+        );
         toast.error('同步失败', failedDetails || `全部 ${totalFailedCount} 个订阅源同步失败`);
       } else {
-        batchSyncNoticeText.value = failedNames ? `同步失败：${failedNames}` : `同步失败：${firstMessage}`;
+        setBatchSyncNotice(failedNames ? `同步失败：${failedNames}` : `同步失败：${firstMessage}`, 5000);
         toast.error('同步失败', failedDetails || firstMessage);
       }
     } else {
       await runAiRefreshAfterSync();
-      batchSyncNoticeText.value = failedNames
-        ? `部分同步失败：${failedNames}`
-        : `部分同步失败：成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`;
+      setBatchSyncNotice(
+        failedNames
+          ? `部分同步失败：${failedNames}`
+          : `部分同步失败：成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`,
+        5000
+      );
       toast.warning(
         '部分同步失败',
         failedDetails || `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`
@@ -4133,6 +4169,7 @@ onUnmounted(() => {
     window.clearTimeout(schedulerSyncTimer.value);
     schedulerSyncTimer.value = null;
   }
+  clearBatchSyncNoticeTimer();
   document.removeEventListener('pointerdown', onAvatarMenuPointerDown);
   document.removeEventListener('keydown', onAvatarMenuKeydown);
   resetMobileDrawerEdgeSwipe();
@@ -4354,12 +4391,6 @@ onUnmounted(() => {
                   </UTooltip>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <div v-if="syncStatusBannerText" class="px-3 pt-3">
-            <div class="rounded-[18px] border border-emerald-200/80 bg-emerald-50/90 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-              {{ syncStatusBannerText }}
             </div>
           </div>
 
@@ -5103,8 +5134,8 @@ onUnmounted(() => {
           <div class="flex items-center gap-2 min-w-0">
             <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
             <span class="text-xs text-slate-500 shrink-0">{{ currentListTotalCount }} 篇</span>
-            <span v-if="articlePaneMode !== 'reports' && activeAccountSyncStatus" class="text-xs text-emerald-600 shrink-0">
-              {{ activeAccountSyncStatus }}
+            <span v-if="articlePaneMode !== 'reports' && syncStatusLineText" class="text-xs text-emerald-600 shrink-0">
+              {{ syncStatusLineText }}
             </span>
             <UTooltip
               v-if="articlePaneMode !== 'reports'"
@@ -5156,9 +5187,6 @@ onUnmounted(() => {
                 @click="openAiDailyReports()"
               />
             </UTooltip>
-            <span v-if="articlePaneMode !== 'reports' && headerBatchSyncProgressText" class="text-xs text-slate-500 shrink-0">
-              {{ headerBatchSyncProgressText }}
-            </span>
             <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
               <UButton
                 size="2xs"
@@ -5172,12 +5200,6 @@ onUnmounted(() => {
                 @click="onHeaderSyncClick"
               />
             </UTooltip>
-          </div>
-        </div>
-
-        <div v-if="syncStatusBannerText" class="pb-2">
-          <div class="rounded-[18px] border border-emerald-200/80 bg-emerald-50/90 px-3 py-2 text-xs font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-            {{ syncStatusBannerText }}
           </div>
         </div>
 
