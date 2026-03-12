@@ -1,7 +1,7 @@
 {
-  "name": "公众号文章下载",
-  "short_name": "文章下载",
-  "description": "扫码登录公众号后查看、同步和导出文章。",
+  "name": "聚心阅读",
+  "short_name": "聚心阅读",
+  "description": "扫码登录后查看、同步和导出订阅内容。",
   "lang": "zh-CN",
   "start_url": "/",
   "scope": "/",

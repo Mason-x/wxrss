@@ -39,7 +39,7 @@ export default defineNuxtConfig({
         },
         {
           name: 'application-name',
-          content: '公众号文章下载',
+          content: '聚心阅读',
         },
         {
           name: 'apple-mobile-web-app-capable',
@@ -51,7 +51,7 @@ export default defineNuxtConfig({
         },
         {
           name: 'apple-mobile-web-app-title',
-          content: '公众号文章下载',
+          content: '聚心阅读',
         },
         {
           name: 'mobile-web-app-capable',

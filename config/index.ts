@@ -8,7 +8,7 @@ export const isDev = process.env.NODE_ENV === 'development';
 /**
  * 缃戠珯鏍囬
  */
-export const websiteName = '\u805a\u5408\u9605\u8bfb';
+export const websiteName = '\u805a\u5fc3\u9605\u8bfb';
 
 /**
  * 鏂囩珷鍒楄〃姣忛〉澶у皬锛?0涓烘渶澶ф湁鏁堝€?

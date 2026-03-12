@@ -5,9 +5,12 @@ import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
+import { BUILTIN_AI_TAG_DEFINITIONS } from '#shared/utils/ai-tags';
 import {
+  INITIAL_SUBSCRIBE_PAGE_SIZE,
   bootstrapAccountAi,
   generateArticleSummary,
+  getReaderArticleByLink,
   getAiDailyReport,
   listAiDailyReports,
   refreshAiDailyDigest,
@@ -49,7 +52,7 @@ import type { Preferences } from '~/types/preferences';
 import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
 
 useHead({
-  title: '聚合阅读',
+  title: '聚心阅读',
 });
 
 interface ReaderCategory {
@@ -288,6 +291,8 @@ const selectedArticle = ref<ReaderArticle | null>(null);
 const selectedDailyReport = ref<AiDailyReportItem | null>(null);
 const selectedArticleHtml = ref('');
 const articleSummaryByKey = ref<Record<string, ArticleSummaryState>>({});
+const articleSummaryDialogOpen = ref(false);
+const articleSummaryDialogArticle = ref<ReaderArticle | null>(null);
 const articlePaneMode = ref<ArticlePaneMode>('articles');
 const dailyReportRows = ref<AiDailyReportItem[]>([]);
 const dailyReportTotalCount = ref(0);
@@ -604,18 +609,6 @@ const activeAccountSyncStatus = computed(() => {
   const total = progress.totalMessages > 0 ? String(progress.totalMessages) : '--';
   return `同步中 ${progress.syncedMessages}/${total} · 文章 ${progress.syncedArticles}`;
 });
-function getAccountSyncStatusText(fakeid?: string | null) {
-  const key = String(fakeid || '').trim();
-  if (!key) {
-    return '';
-  }
-  const progress = syncProgressByFakeid.value[key];
-  if (!progress || !progress.running) {
-    return '';
-  }
-  const total = progress.totalMessages > 0 ? String(progress.totalMessages) : '--';
-  return `同步中 ${progress.syncedMessages}/${total} · 文章 ${progress.syncedArticles}`;
-}
 const headerBatchSyncProgressText = computed(() => {
   if (selectedAccount.value || selectedCategory.value !== '__all__') {
     return '';
@@ -820,8 +813,8 @@ const selectedArticleSummaryKey = computed(() => {
   return articleKey(selectedArticle.value);
 });
 
-const selectedArticleSummaryState = computed<ArticleSummaryState>(() => {
-  const key = selectedArticleSummaryKey.value;
+function getArticleSummaryStateByArticle(article?: Partial<ReaderArticle> | null): ArticleSummaryState {
+  const key = article ? articleKey(article as ReaderArticle) : '';
   if (!key) {
     return {
       status: 'idle',
@@ -831,7 +824,7 @@ const selectedArticleSummaryState = computed<ArticleSummaryState>(() => {
     };
   }
 
-  const cachedSummary = String(selectedArticle.value?.ai_summary || '').trim();
+  const cachedSummary = String(article?.ai_summary || '').trim();
   const state = articleSummaryByKey.value[key];
   if (cachedSummary) {
     if (state?.status === 'loading') {
@@ -849,9 +842,13 @@ const selectedArticleSummaryState = computed<ArticleSummaryState>(() => {
     status: 'idle',
     summary: '',
     error: '',
-    model: '',
-  };
-});
+      model: '',
+    };
+}
+
+const selectedArticleSummaryState = computed<ArticleSummaryState>(() => getArticleSummaryStateByArticle(selectedArticle.value));
+
+const articleSummaryDialogState = computed<ArticleSummaryState>(() => getArticleSummaryStateByArticle(articleSummaryDialogArticle.value));
 
 function normalizeSummaryTagVariable(value: unknown): string {
   const raw = String(value || '').trim();
@@ -877,22 +874,43 @@ const SUMMARY_READING_TIER_TAGS = new Set(['{{featured}}', '{{skim}}', '{{skip}}
 const SUMMARY_SPONSORED_TAG = '{{sponsored}}';
 
 function normalizeSummaryTagList(input: unknown): string[] {
-  const source = Array.isArray(input) ? input : [];
-  const normalized = Array.from(
-    new Set(
-      source
-        .map(tag => normalizeSummaryTagVariable(tag))
-        .filter(Boolean)
-    )
-  );
+  if (Array.isArray(input)) {
+    return Array.from(
+      new Set(
+        input
+          .map(tag => normalizeSummaryTagVariable(tag))
+          .filter(Boolean)
+      )
+    );
+  }
 
-  const primaryReadingTag = normalized.find(tag => SUMMARY_READING_TIER_TAGS.has(tag)) || '';
-  const firstNonSponsoredTag = normalized.find(tag => !SUMMARY_READING_TIER_TAGS.has(tag) && tag !== SUMMARY_SPONSORED_TAG) || '';
-  const sponsoredTag = normalized.includes(SUMMARY_SPONSORED_TAG) ? SUMMARY_SPONSORED_TAG : '';
+  if (!input || typeof input !== 'object') {
+    return [];
+  }
 
-  return [primaryReadingTag || firstNonSponsoredTag, sponsoredTag || (primaryReadingTag ? firstNonSponsoredTag : '')]
-    .filter(Boolean)
-    .slice(0, 2);
+  const payload = input as {
+    quality?: unknown;
+    sponsored?: unknown;
+    custom?: unknown;
+  };
+
+  const quality = normalizeSummaryTagVariable(payload.quality);
+  const sponsored = normalizeSummaryTagVariable(payload.sponsored);
+  const custom = Array.isArray(payload.custom)
+    ? Array.from(
+        new Set(
+          payload.custom
+            .map(tag => normalizeSummaryTagVariable(tag))
+            .filter(Boolean)
+        )
+      ).slice(0, 3)
+    : [];
+
+  return [
+    quality && SUMMARY_READING_TIER_TAGS.has(quality) ? quality : '',
+    sponsored === SUMMARY_SPONSORED_TAG ? sponsored : '',
+    ...custom.filter(tag => !SUMMARY_READING_TIER_TAGS.has(tag) && tag !== SUMMARY_SPONSORED_TAG),
+  ].filter(Boolean);
 }
 
 function parseStructuredArticleSummaryPayload(raw: string): StructuredArticleSummaryPayload | null {
@@ -904,11 +922,15 @@ function parseStructuredArticleSummaryPayload(raw: string): StructuredArticleSum
   try {
     const payload = JSON.parse(normalized);
     const tags = normalizeSummaryTagList(
-      Array.isArray(payload?.tags)
-        ? payload.tags
-        : payload?.rating
-          ? [payload.rating]
-          : []
+      payload?.label && typeof payload.label === 'object'
+        ? payload.label
+        : Array.isArray(payload?.tags)
+          ? payload.tags
+          : payload?.rating
+            ? [payload.rating]
+            : payload?.label
+              ? [payload.label]
+              : []
     );
     const summary = String(payload?.summary || '').trim();
     const highlights = Array.isArray(payload?.highlights)
@@ -918,7 +940,7 @@ function parseStructuredArticleSummaryPayload(raw: string): StructuredArticleSum
           .slice(0, 3)
       : [];
 
-    if (tags.length === 0 || !summary || highlights.length === 0) {
+    if (tags.length === 0 || !summary) {
       return null;
     }
 
@@ -933,6 +955,63 @@ function parseStructuredArticleSummaryPayload(raw: string): StructuredArticleSum
   }
 }
 
+function escapeSummaryHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function splitSummaryIntoParagraphs(summary: string): string[] {
+  const normalized = String(summary || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  const explicitParagraphs = normalized
+    .split(/\n{2,}/)
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  if (explicitParagraphs.length >= 2) {
+    return explicitParagraphs.slice(0, 3);
+  }
+
+  const sentenceParts = normalized
+    .split(/(?<=[。！？!?；;])\s*/u)
+    .map(item => item.trim())
+    .filter(Boolean);
+
+  if (sentenceParts.length <= 2) {
+    return [normalized];
+  }
+
+  if (sentenceParts.length <= 4) {
+    return [
+      sentenceParts.slice(0, 2).join(' '),
+      sentenceParts.slice(2).join(' '),
+    ].filter(Boolean);
+  }
+
+  const chunkSize = Math.ceil(sentenceParts.length / 3);
+  return [
+    sentenceParts.slice(0, chunkSize).join(' '),
+    sentenceParts.slice(chunkSize, chunkSize * 2).join(' '),
+    sentenceParts.slice(chunkSize * 2).join(' '),
+  ].map(item => item.trim()).filter(Boolean);
+}
+
+function renderSummaryParagraphHtml(summary: string): string {
+  const escaped = escapeSummaryHtml(summary);
+  return escaped.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-slate-950 dark:text-white">$1</strong>');
+}
+
 function getStructuredSummaryTags(article?: Partial<ReaderArticle> | null): string[] {
   if (!article) {
     return [];
@@ -944,8 +1023,33 @@ const selectedArticleSummaryPayload = computed<StructuredArticleSummaryPayload |
   parseStructuredArticleSummaryPayload(selectedArticleSummaryState.value.summary)
 );
 
+const articleSummaryDialogPayload = computed<StructuredArticleSummaryPayload | null>(() =>
+  parseStructuredArticleSummaryPayload(articleSummaryDialogState.value.summary)
+);
+
+const selectedArticleSummaryParagraphs = computed(() =>
+  splitSummaryIntoParagraphs(selectedArticleSummaryPayload.value?.summary || '')
+);
+
+const articleSummaryDialogParagraphs = computed(() =>
+  splitSummaryIntoParagraphs(articleSummaryDialogPayload.value?.summary || '')
+);
+
 const selectedArticleSummaryTagDisplays = computed<ArticleTagDisplayItem[]>(() => {
   const tags = selectedArticleSummaryPayload.value?.tags || [];
+  return tags.map(tag => (
+    aiTagDisplayMap.value.get(tag)
+    || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim())
+    || {
+      key: tag,
+      label: tag,
+      color: '#94a3b8',
+    }
+  ));
+});
+
+const articleSummaryDialogTagDisplays = computed<ArticleTagDisplayItem[]>(() => {
+  const tags = articleSummaryDialogPayload.value?.tags || [];
   return tags.map(tag => (
     aiTagDisplayMap.value.get(tag)
     || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim())
@@ -2593,6 +2697,120 @@ function updateArticleSummaryState(key: string, patch: Partial<ArticleSummarySta
   };
 }
 
+async function generateArticleSummaryForArticle(
+  article: ReaderArticle,
+  options: {
+    contentHtml?: string;
+    force?: boolean;
+  } = {}
+) {
+  const key = articleKey(article);
+  if (!key) {
+    return;
+  }
+
+  const cachedSummary = String(article.ai_summary || '').trim();
+  if (cachedSummary && !options.force) {
+    updateArticleSummaryState(key, {
+      status: 'success',
+      summary: cachedSummary,
+      error: '',
+      model: 'cached',
+    });
+    return;
+  }
+
+  if (!aiSummaryConfigured.value) {
+    updateArticleSummaryState(key, {
+      status: 'error',
+      summary: '',
+      error: '请先在设置里配置 AI 摘要接口',
+      model: '',
+    });
+    openSystemMenu();
+    return;
+  }
+
+  const content = options.contentHtml ? extractArticleSummaryContent(options.contentHtml) : '';
+  updateArticleSummaryState(key, {
+    status: 'loading',
+    error: '',
+  });
+
+  try {
+    const result = await generateArticleSummary({
+      url: article.link,
+      title: articleDisplayTitle(article) || article.title || '无标题',
+      ...(content ? { content } : {}),
+      ...(options.force ? { force: true } : {}),
+    });
+
+    const summary = String(result.summary || '').trim();
+    const nextTags = Array.isArray(result.tags)
+      ? result.tags.map(tag => String(tag || '').trim()).filter(Boolean)
+      : result.rating
+        ? [String(result.rating || '').trim()].filter(Boolean)
+        : [];
+
+    patchArticleAiFields(article.link, {
+      ai_summary: summary,
+      ...(nextTags.length > 0 ? { ai_tags: nextTags } : {}),
+    });
+
+    updateArticleSummaryState(key, {
+      status: 'success',
+      summary,
+      error: '',
+      model: String(result.model || ''),
+    });
+  } catch (error: any) {
+    updateArticleSummaryState(key, {
+      status: 'error',
+      summary: '',
+      model: '',
+      error: normalizeRuntimeErrorMessage(
+        String(error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
+      ),
+    });
+  }
+}
+
+async function loadArticleSummarySourceHtml(article: ReaderArticle): Promise<string> {
+  if (!article?.link) {
+    return '';
+  }
+
+  if (selectedArticle.value?.link === article.link && String(selectedArticleHtml.value || '').trim()) {
+    return selectedArticleHtml.value;
+  }
+
+  const isRss = String(article.fakeid || '').startsWith('rss:');
+  if (isRss) {
+    try {
+      const htmlCache = await getHtmlCache(article.link);
+      if (htmlCache) {
+        const rawHtml = await htmlCache.file.text();
+        return stripWechatHeader(normalizeCachedRssHtml(rawHtml));
+      }
+    } catch {
+      return '';
+    }
+    return '';
+  }
+
+  try {
+    const html = await request<string>('/api/public/v1/download', {
+      query: {
+        url: article.link,
+        format: 'html',
+      },
+    });
+    return stripWechatHeader(html);
+  } catch {
+    return '';
+  }
+}
+
 interface ArticleTagDisplayItem {
   key: string;
   label: string;
@@ -2607,7 +2825,10 @@ function normalizeTagColor(value: string, fallback = '#94a3b8'): string {
 const aiTagDisplayMap = computed(() => {
   const map = new Map<string, ArticleTagDisplayItem>();
   const currentPreferences = preferences.value as unknown as Preferences;
-  const definitions = Array.isArray(currentPreferences.aiTagDefinitions) ? currentPreferences.aiTagDefinitions : [];
+  const definitions = [
+    ...BUILTIN_AI_TAG_DEFINITIONS,
+    ...(Array.isArray(currentPreferences.aiTagDefinitions) ? currentPreferences.aiTagDefinitions : []),
+  ];
   for (const item of definitions) {
     const variable = String(item?.variable || '').trim();
     const plainVariable = variable.replace(/^\{\{\s*|\s*\}\}$/g, '').trim();
@@ -2656,7 +2877,7 @@ function getArticleAiTags(article?: Partial<ReaderArticle> | null): ArticleTagDi
           ] as const;
         })
     ).values()
-  ).slice(0, 3);
+  );
 }
 
 function getArticleTagStyle(tag: ArticleTagDisplayItem) {
@@ -2686,6 +2907,14 @@ function patchArticleAiFields(link: string, patch: Partial<Pick<ReaderArticle, '
       ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
     };
   }
+
+  if (articleSummaryDialogArticle.value?.link === link) {
+    articleSummaryDialogArticle.value = {
+      ...articleSummaryDialogArticle.value,
+      ...(patch.ai_summary !== undefined ? { ai_summary: patch.ai_summary } : {}),
+      ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
+    };
+  }
 }
 
 async function loadDailyReports(options: { autoSelectLatest?: boolean } = {}) {
@@ -2709,6 +2938,16 @@ async function loadDailyReports(options: { autoSelectLatest?: boolean } = {}) {
 }
 
 async function openDailyReport(report: AiDailyReportItem) {
+  const todayDateKey = format(new Date(), 'yyyy-MM-dd');
+  if (String(report.reportDate || '').trim() === todayDateKey) {
+    try {
+      await refreshAiDailyDigest();
+      await loadDailyReports();
+    } catch (error) {
+      console.error('AI daily refresh before opening report failed:', error);
+    }
+  }
+
   const latest = await getAiDailyReport(report.reportDate);
   if (!latest) {
     throw new Error('AI 日报不存在');
@@ -2726,6 +2965,12 @@ async function openAiDailyReports() {
   selectedArticleHtml.value = '';
   selectedDailyReport.value = null;
   contentLoading.value = false;
+  dailyReportLoading.value = true;
+  try {
+    await refreshAiDailyDigest();
+  } catch (error) {
+    console.error('AI daily refresh before opening reports failed:', error);
+  }
   await loadDailyReports();
 }
 
@@ -2765,68 +3010,57 @@ async function generateSelectedArticleSummary() {
   if (!selectedArticle.value) {
     return;
   }
-
-  const key = selectedArticleSummaryKey.value;
-  if (!key) {
-    return;
-  }
-
-  if (!aiSummaryConfigured.value) {
-    toast.warning('请先配置 AI 摘要', '先在设置里填写 OpenAI 兼容接口配置，再生成文章摘要');
-    openSystemMenu();
-    return;
-  }
-
-  const content = extractArticleSummaryContent(selectedArticleHtml.value);
-  if (!content) {
-    updateArticleSummaryState(key, {
-      status: 'error',
-      error: '当前文章正文还未准备完成，请稍后再试',
-      summary: '',
-      model: '',
-    });
-    return;
-  }
-
-  updateArticleSummaryState(key, {
-    status: 'loading',
-    error: '',
+  await generateArticleSummaryForArticle(selectedArticle.value, {
+    contentHtml: selectedArticleHtml.value,
+    force: selectedArticleSummaryState.value.status === 'success',
   });
+}
+
+async function openArticleSummaryDialog(article: ReaderArticle) {
+  articleSummaryDialogArticle.value = article;
+  articleSummaryDialogOpen.value = true;
+
+  if (!String(article.ai_summary || '').trim()) {
+    const contentHtml = await loadArticleSummarySourceHtml(article);
+    await generateArticleSummaryForArticle(article, { contentHtml });
+  }
+}
+
+async function regenerateArticleSummaryFromDialog() {
+  if (!articleSummaryDialogArticle.value) {
+    return;
+  }
+
+  const activeArticle =
+    articleRows.value.find(item => item.link === articleSummaryDialogArticle.value?.link)
+    || (selectedArticle.value?.link === articleSummaryDialogArticle.value.link ? selectedArticle.value : null)
+    || articleSummaryDialogArticle.value;
+
+  const contentHtml = await loadArticleSummarySourceHtml(activeArticle);
+  await generateArticleSummaryForArticle(activeArticle, {
+    contentHtml,
+    force: true,
+  });
+}
+
+async function openArticleByLinkFromReport(link: string) {
+  const normalizedLink = String(link || '').trim();
+  if (!normalizedLink) {
+    return;
+  }
 
   try {
-    const result = await generateArticleSummary({
-      url: selectedArticle.value.link,
-      title: selectedArticleDisplayTitle.value || selectedArticle.value.title || '无标题',
-      content,
-    });
-
-    const summary = String(result.summary || '').trim();
-    const nextTags = Array.isArray(result.tags)
-      ? result.tags.map(tag => String(tag || '').trim()).filter(Boolean).slice(0, 2)
-      : result.rating
-        ? [String(result.rating)]
-        : [];
-    patchArticleAiFields(selectedArticle.value.link, {
-      ai_summary: summary,
-      ...(nextTags.length > 0 ? { ai_tags: nextTags } : {}),
-    });
-
-    updateArticleSummaryState(key, {
-      status: 'success',
-      summary,
-      error: '',
-      model: String(result.model || ''),
-    });
-  } catch (error: any) {
-    updateArticleSummaryState(key, {
-      status: 'error',
-      summary: '',
-      model: '',
-      error: normalizeRuntimeErrorMessage(
-        String(error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
-      ),
-    });
+    const localArticle = articleRows.value.find(article => article.link === normalizedLink);
+    const targetArticle = localArticle || await getReaderArticleByLink(normalizedLink);
+    if (targetArticle) {
+      await openArticle(targetArticle);
+      return;
+    }
+  } catch (error) {
+    console.error('Open article from report failed:', error);
   }
+
+  openOriginalArticle(normalizedLink);
 }
 
 function openOriginalArticle(link: string) {
@@ -3099,7 +3333,8 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
           total_count: 0,
           source_type: 'mp',
         },
-        false
+        false,
+        INITIAL_SUBSCRIBE_PAGE_SIZE
       );
     }
     await refreshData();
@@ -3251,7 +3486,13 @@ function deleteCategoryFromEditor(category: string) {
   });
 }
 
-async function _load(account: MpAccount, begin: number, loadMore: boolean, promise: PromiseInstance) {
+async function _load(
+  account: MpAccount,
+  begin: number,
+  loadMore: boolean,
+  promise: PromiseInstance,
+  initialPageSize = 0
+) {
   if (isCanceled.value) {
     isCanceled.value = false;
     upsertSyncProgress(account.fakeid, { running: false });
@@ -3268,7 +3509,12 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
     syncedArticles: Number(account.articles) || 0,
   });
 
-  const [articles, completed, totalCount, pageMessageCount, inserted] = await getArticleList(account, begin);
+  const [articles, completed, totalCount, pageMessageCount, inserted] = await getArticleList(
+    account,
+    begin,
+    '',
+    begin === 0 && initialPageSize > 0 ? { initialPageSize } : {}
+  );
   const fetchedArticles = Array.isArray(articles) ? [...articles] : [];
   if (inserted > 0) {
     markAccountHasNewArticles(account.fakeid);
@@ -3336,7 +3582,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
           promise.reject(new Error('已取消同步'));
           return;
         }
-        _load(account, begin, true, promise);
+        _load(account, begin, true, promise, 0);
       },
       pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
     );
@@ -3351,7 +3597,7 @@ async function _load(account: MpAccount, begin: number, loadMore: boolean, promi
   }
 }
 
-async function loadAccountArticle(account: MpAccount, loadMore = true) {
+async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0) {
   if (isRssAccount(account)) {
     syncingRowId.value = account.fakeid;
     isSyncing.value = true;
@@ -3385,7 +3631,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true) {
 
   return new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
-    _load(account, 0, loadMore, promise).catch(e => {
+    _load(account, 0, loadMore, promise, initialPageSize).catch(e => {
       syncingRowId.value = null;
       isSyncing.value = false;
       upsertSyncProgress(account.fakeid, { running: false });
@@ -4026,19 +4272,30 @@ onUnmounted(() => {
                     @change="toggleArticleSelection(article, ($event.target as HTMLInputElement).checked)"
                   />
                   <div class="min-w-0 flex-1 cursor-pointer" @click="openArticle(article)">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span
-                        v-for="tag in getArticleAiTags(article)"
-                        :key="`${articleKey(article)}:${tag.key}`"
-                        class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                        :style="getArticleTagStyle(tag)"
-                      >
-                        {{ tag.label }}
-                      </span>
-                      <p class="min-w-0 flex-1 text-sm font-medium leading-5 line-clamp-2">
-                        {{ articleDisplayTitle(article) }}
-                      </p>
+                    <div class="mb-1.5 flex items-start justify-between gap-2">
+                      <div class="min-w-0 flex flex-1 flex-wrap gap-1.5">
+                        <span
+                          v-for="tag in getArticleAiTags(article)"
+                          :key="`${articleKey(article)}:${tag.key}`"
+                          class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                          :style="getArticleTagStyle(tag)"
+                        >
+                          {{ tag.label }}
+                        </span>
+                      </div>
+                      <UButton
+                        size="2xs"
+                        color="gray"
+                        variant="ghost"
+                        icon="i-lucide:sparkles"
+                        label="AI摘要"
+                        class="toolbar-text-btn shrink-0"
+                        @click.stop="openArticleSummaryDialog(article)"
+                      />
                     </div>
+                    <p class="min-w-0 text-sm font-medium leading-5 line-clamp-2">
+                      {{ articleDisplayTitle(article) }}
+                    </p>
                     <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <span class="min-w-0 flex items-center gap-2 truncate">
                         <span class="article-account-avatar">
@@ -4217,7 +4474,7 @@ onUnmounted(() => {
                 </div>
 
                 <div
-                  v-if="!aiSummaryConfigured"
+                  v-if="!aiSummaryConfigured && selectedArticleSummaryState.status === 'idle'"
                   class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
                 >
                   <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
@@ -4245,20 +4502,30 @@ onUnmounted(() => {
                   class="mt-3 rounded-[18px] border border-sky-100/80 bg-white/85 px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
                 >
                   <template v-if="selectedArticleSummaryPayload">
-                    <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
-                      <div
-                        v-for="tag in selectedArticleSummaryTagDisplays"
-                        :key="`mobile-summary-tag-${tag.key}`"
-                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                        :style="getArticleTagStyle(tag)"
-                      >
-                        {{ tag.label }}
+                    <div class="mx-auto max-w-[760px]">
+                      <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                        <div
+                          v-for="tag in selectedArticleSummaryTagDisplays"
+                          :key="`mobile-summary-tag-${tag.key}`"
+                          class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                          :style="getArticleTagStyle(tag)"
+                        >
+                          {{ tag.label }}
+                        </div>
+                      </div>
+                      <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
+                        <p
+                          v-for="(paragraph, index) in selectedArticleSummaryParagraphs"
+                          :key="`mobile-summary-paragraph-${index}`"
+                          class="rounded-[16px] bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-slate-900/60"
+                          v-html="renderSummaryParagraphHtml(paragraph)"
+                        />
                       </div>
                     </div>
-                    <p class="mt-3 text-sm font-semibold leading-6 text-slate-900 dark:text-slate-100">
-                      {{ selectedArticleSummaryPayload.summary }}
-                    </p>
-                    <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    <ul
+                      v-if="selectedArticleSummaryPayload.highlights.length > 0"
+                      class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
+                    >
                       <li
                         v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
                         :key="`mobile-summary-highlight-${index}`"
@@ -4279,6 +4546,7 @@ onUnmounted(() => {
                 :html="selectedContentHtml"
                 :content-kind="selectedContentKind"
                 :theme="themeModeEffective"
+                @open-article-link="openArticleByLinkFromReport"
               />
             </div>
           </motion.div>
@@ -4315,8 +4583,13 @@ onUnmounted(() => {
           >
               <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
-                  <div v-if="loginAccount" class="min-w-0 flex flex-1 items-center gap-3">
-                    <div ref="mobileAvatarMenuRef" class="relative shrink-0">
+                  <div
+                    v-if="loginAccount"
+                    ref="mobileAvatarMenuRef"
+                    class="relative z-10 min-w-0 flex flex-1 items-center gap-3"
+                    :class="mobileAvatarMenuOpen ? 'z-[160]' : ''"
+                  >
+                    <div class="shrink-0">
                       <button
                         type="button"
                         class="avatar-btn flex size-10 items-center justify-center"
@@ -4475,12 +4748,6 @@ onUnmounted(() => {
                             </span>
                             {{ normalizeCategory(account) }}
                             <span> · {{ account.articles || 0 }} 篇</span>
-                          </p>
-                          <p
-                            v-if="getAccountSyncStatusText(account.fakeid)"
-                            class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400"
-                          >
-                            {{ getAccountSyncStatusText(account.fakeid) }}
                           </p>
                         </div>
                       </button>
@@ -4642,9 +4909,6 @@ onUnmounted(() => {
                   </span>
                   {{ normalizeCategory(account) }}
                   <span> · {{ account.articles || 0 }} 篇</span>
-                </p>
-                <p v-if="getAccountSyncStatusText(account.fakeid)" class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                  {{ getAccountSyncStatusText(account.fakeid) }}
                 </p>
               </div>
             </div>
@@ -4908,19 +5172,30 @@ onUnmounted(() => {
               @change="toggleArticleSelection(row.data, ($event.target as HTMLInputElement).checked)"
             />
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span
-                  v-for="tag in getArticleAiTags(row.data)"
-                  :key="`${articleKey(row.data)}:${tag.key}`"
-                  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                  :style="getArticleTagStyle(tag)"
-                >
-                  {{ tag.label }}
-                </span>
-                <p class="min-w-0 flex-1 text-sm font-medium line-clamp-2 leading-5">
-                  {{ articleDisplayTitle(row.data) }}
-                </p>
+              <div class="mb-1.5 flex items-start justify-between gap-2">
+                <div class="min-w-0 flex flex-1 flex-wrap gap-1.5">
+                  <span
+                    v-for="tag in getArticleAiTags(row.data)"
+                    :key="`${articleKey(row.data)}:${tag.key}`"
+                    class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                    :style="getArticleTagStyle(tag)"
+                  >
+                    {{ tag.label }}
+                  </span>
+                </div>
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:sparkles"
+                  label="AI摘要"
+                  class="toolbar-text-btn shrink-0"
+                  @click.stop="openArticleSummaryDialog(row.data)"
+                />
               </div>
+              <p class="min-w-0 text-sm font-medium line-clamp-2 leading-5">
+                {{ articleDisplayTitle(row.data) }}
+              </p>
               <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
                 <span class="min-w-0 flex items-center gap-2 truncate">
                   <span class="article-account-avatar">
@@ -5050,7 +5325,7 @@ onUnmounted(() => {
             </div>
 
             <div
-              v-if="!aiSummaryConfigured"
+              v-if="!aiSummaryConfigured && selectedArticleSummaryState.status === 'idle'"
               class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
             >
               <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
@@ -5076,20 +5351,30 @@ onUnmounted(() => {
               class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
             >
               <template v-if="selectedArticleSummaryPayload">
-                <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
-                  <div
-                    v-for="tag in selectedArticleSummaryTagDisplays"
-                    :key="`desktop-summary-tag-${tag.key}`"
-                    class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                    :style="getArticleTagStyle(tag)"
-                  >
-                    {{ tag.label }}
+                <div class="mx-auto max-w-[760px]">
+                  <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                    <div
+                      v-for="tag in selectedArticleSummaryTagDisplays"
+                      :key="`desktop-summary-tag-${tag.key}`"
+                      class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                      :style="getArticleTagStyle(tag)"
+                    >
+                      {{ tag.label }}
+                    </div>
+                  </div>
+                  <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
+                    <p
+                      v-for="(paragraph, index) in selectedArticleSummaryParagraphs"
+                      :key="`desktop-summary-paragraph-${index}`"
+                      class="rounded-[16px] bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-slate-900/60"
+                      v-html="renderSummaryParagraphHtml(paragraph)"
+                    />
                   </div>
                 </div>
-                <p class="mt-3 text-sm font-semibold leading-6 text-slate-900 dark:text-slate-100">
-                  {{ selectedArticleSummaryPayload.summary }}
-                </p>
-                <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
+                <ul
+                  v-if="selectedArticleSummaryPayload.highlights.length > 0"
+                  class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
+                >
                   <li
                     v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
                     :key="`desktop-summary-highlight-${index}`"
@@ -5110,6 +5395,7 @@ onUnmounted(() => {
             :html="selectedContentHtml"
             :content-kind="selectedContentKind"
             :theme="themeModeEffective"
+            @open-article-link="openArticleByLinkFromReport"
           />
         </div>
       </div>
@@ -5117,6 +5403,125 @@ onUnmounted(() => {
     </div>
 
     <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
+
+    <UModal v-model="articleSummaryDialogOpen" :ui="{ width: 'sm:max-w-[720px]' }">
+      <UCard class="overflow-hidden rounded-none border-0 shadow-none">
+        <template #header>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <h3 class="text-base font-semibold">AI 摘要</h3>
+              <p class="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
+                {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
+              </p>
+            </div>
+            <UButton
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:x"
+              class="icon-btn"
+              @click="articleSummaryDialogOpen = false"
+            />
+          </div>
+        </template>
+
+        <div
+          v-if="!aiSummaryConfigured && articleSummaryDialogState.status === 'idle'"
+          class="rounded-[20px] border border-amber-200/80 bg-amber-50/90 px-4 py-4 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          <p>请先在设置里配置 AI 摘要接口。</p>
+          <UButton size="2xs" color="gray" variant="soft" class="mt-3" @click="openSystemMenu">打开设置</UButton>
+        </div>
+
+        <div
+          v-else-if="articleSummaryDialogState.status === 'loading'"
+          class="rounded-[20px] border border-sky-100/80 bg-white px-4 py-4 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
+        >
+          正在生成摘要，请稍候……
+        </div>
+
+        <div
+          v-else-if="articleSummaryDialogState.status === 'error'"
+          class="rounded-[20px] border border-rose-200/80 bg-rose-50/90 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+        >
+          <p>{{ articleSummaryDialogState.error }}</p>
+          <UButton
+            v-if="articleSummaryDialogArticle"
+            size="2xs"
+            color="gray"
+            variant="soft"
+            class="mt-3"
+            @click="regenerateArticleSummaryFromDialog"
+          >
+            重试生成
+          </UButton>
+        </div>
+
+        <div
+          v-else-if="articleSummaryDialogState.status === 'success'"
+          class="rounded-[20px] border border-sky-100/80 bg-white px-4 py-4 dark:border-sky-500/20 dark:bg-slate-950/70"
+        >
+          <template v-if="articleSummaryDialogPayload">
+            <div class="mx-auto max-w-[760px]">
+              <div v-if="articleSummaryDialogTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                <div
+                  v-for="tag in articleSummaryDialogTagDisplays"
+                  :key="`dialog-summary-tag-${tag.key}`"
+                  class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                  :style="getArticleTagStyle(tag)"
+                >
+                  {{ tag.label }}
+                </div>
+              </div>
+              <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
+                <p
+                  v-for="(paragraph, index) in articleSummaryDialogParagraphs"
+                  :key="`dialog-summary-paragraph-${index}`"
+                  class="rounded-[16px] bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-slate-900/60"
+                  v-html="renderSummaryParagraphHtml(paragraph)"
+                />
+              </div>
+            </div>
+            <ul
+              v-if="articleSummaryDialogPayload.highlights.length > 0"
+              class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
+            >
+              <li
+                v-for="(highlight, index) in articleSummaryDialogPayload.highlights"
+                :key="`dialog-summary-highlight-${index}`"
+                class="flex gap-2"
+              >
+                <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky-400" />
+                <span>{{ highlight }}</span>
+              </li>
+            </ul>
+          </template>
+          <pre v-else class="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 dark:text-slate-200">{{
+            articleSummaryDialogState.summary
+          }}</pre>
+        </div>
+
+        <div v-else class="rounded-[20px] border border-slate-200/80 bg-white px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-400">
+          暂无摘要，点击下方按钮生成。
+        </div>
+
+        <template #footer>
+          <div class="flex items-center justify-between gap-3">
+            <UButton size="xs" color="gray" variant="ghost" @click="articleSummaryDialogOpen = false">关闭</UButton>
+            <UButton
+              v-if="articleSummaryDialogArticle"
+              size="xs"
+              color="primary"
+              variant="soft"
+              :loading="articleSummaryDialogState.status === 'loading'"
+              @click="regenerateArticleSummaryFromDialog"
+            >
+              {{ articleSummaryDialogState.status === 'success' ? '重新生成' : '生成摘要' }}
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
 
     <UModal v-model="categoryEditorOpen" :ui="{ width: 'sm:max-w-[720px]' }">
       <UCard>
@@ -5325,7 +5730,7 @@ onUnmounted(() => {
 }
 
 .mobile-avatar-menu {
-  @apply absolute left-0 top-[calc(100%+0.55rem)] z-[120] isolate w-[188px] overflow-hidden rounded-[24px] border border-slate-200/90
+  @apply absolute left-0 top-[calc(100%+0.55rem)] z-[180] isolate pointer-events-auto w-[188px] overflow-hidden rounded-[24px] border border-slate-200/90
     bg-white shadow-[0_18px_40px_rgba(15,23,42,0.14)] dark:border-slate-800/90 dark:bg-slate-950;
 }
 
