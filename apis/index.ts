@@ -1,5 +1,6 @@
 ﻿import { request } from '#shared/utils/request';
 import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE } from '~/config';
+import type { ReaderArticle } from '~/server/repositories/reader';
 import { upsertArticlePage } from '~/store/v2/article';
 import { type MpAccount, updateLastUpdateTime } from '~/store/v2/info';
 import type { CommentResponse } from '~/types/comment';
@@ -147,6 +148,7 @@ export interface AiDailyReportItem {
 }
 
 const FIRST_PAGE_PROBE_SIZE = 1;
+export const INITIAL_SUBSCRIBE_PAGE_SIZE = 20;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 const MAX_OOM_RETRY_TIMES = 3;
 
@@ -260,9 +262,15 @@ async function handleMpSessionError() {
 export async function getArticleList(
   account: MpAccount,
   begin = 0,
-  keyword = ''
+  keyword = '',
+  options: {
+    initialPageSize?: number;
+  } = {}
 ): Promise<[AppMsgEx[], boolean, number, number, number]> {
-  const pageSizeHint = begin === 0 && !keyword ? FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE;
+  const initialPageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Number(options.initialPageSize) || 0);
+  const pageSizeHint = begin === 0 && !keyword
+    ? (initialPageSize || FIRST_PAGE_PROBE_SIZE)
+    : ARTICLE_LIST_PAGE_SIZE;
   const resp = await requestArticleListPage(account, begin, keyword, pageSizeHint);
 
   if (resp.base_resp.ret === 0) {
@@ -361,17 +369,28 @@ export async function searchRsshubRoutes(options: {
 export async function generateArticleSummary(payload: {
   url?: string;
   title: string;
-  content: string;
+  content?: string;
+  force?: boolean;
 }): Promise<ArticleSummaryResult> {
   const resp = await request<{ data: ArticleSummaryResult }>('/api/web/ai/article-summary', {
     method: 'POST',
     body: {
       url: payload.url,
       title: payload.title,
-      content: payload.content,
+      ...(payload.content ? { content: payload.content } : {}),
+      ...(payload.force ? { force: true } : {}),
     },
   });
   return resp.data;
+}
+
+export async function getReaderArticleByLink(url: string): Promise<ReaderArticle | null> {
+  const resp = await request<{ article: ReaderArticle | null }>('/api/web/reader/article-by-link', {
+    query: {
+      url,
+    },
+  });
+  return resp.article || null;
 }
 
 export async function refreshAiDailyDigest(): Promise<AiDailyProcessResult> {
