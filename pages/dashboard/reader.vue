@@ -213,6 +213,7 @@ interface RemoteBatchSyncJobSnapshot {
   updatedAt: number;
   finishedAt: number;
   currentAccount: RemoteBatchSyncAccountSnapshot | null;
+  failedAccounts: RemoteBatchSyncAccountSnapshot[];
   heapUsedMb: number;
   pollAfterMs: number;
 }
@@ -262,6 +263,12 @@ const batchSyncProgress = ref<BatchSyncProgress>({
   completedAccounts: 0,
   totalAccounts: 0,
 });
+const batchSyncFailedAccounts = ref<RemoteBatchSyncAccountSnapshot[]>([]);
+const batchSyncNoticeText = ref('');
+const realtimeBatchRefreshPendingFakeids = new Set<string>();
+let realtimeBatchRefreshTimer: number | null = null;
+let realtimeBatchRefreshRunning = false;
+let realtimeBatchRefreshQueued = false;
 
 const accounts = ref<MpAccount[]>([]);
 const articleRows = ref<ReaderArticle[]>([]);
@@ -425,6 +432,122 @@ async function refreshAccountSnapshot(fakeid: string, running = true) {
     totalMessages: Number(latest.total_count) || 0,
     syncedArticles: Number(latest.articles) || 0,
   });
+}
+
+function formatBatchFailedAccountNames(
+  accounts: Array<Pick<RemoteBatchSyncAccountSnapshot, 'nickname' | 'fakeid'>>,
+  limit = 3
+) {
+  const uniqueNames = Array.from(
+    new Set(
+      accounts
+        .map(account => String(account.nickname || account.fakeid || '').trim())
+        .filter(Boolean)
+    )
+  );
+  if (uniqueNames.length === 0) {
+    return '';
+  }
+  const visible = uniqueNames.slice(0, limit).join('、');
+  return uniqueNames.length > limit ? `${visible} 等 ${uniqueNames.length} 个` : visible;
+}
+
+function formatBatchFailedAccountDetails(
+  accounts: Array<Pick<RemoteBatchSyncAccountSnapshot, 'nickname' | 'fakeid' | 'message'>>,
+  limit = 3
+) {
+  const items = accounts
+    .map(account => {
+      const name = String(account.nickname || account.fakeid || '').trim();
+      const message = normalizeRuntimeErrorMessage(String(account.message || '').trim());
+      if (!name) {
+        return '';
+      }
+      return message ? `${name}：${message}` : name;
+    })
+    .filter(Boolean);
+
+  if (items.length === 0) {
+    return '';
+  }
+
+  const visible = items.slice(0, limit).join('；');
+  return items.length > limit ? `${visible}；等 ${items.length} 个` : visible;
+}
+
+function getBatchSyncVisibleScopeMatches(fakeids: string[]) {
+  if (articlePaneMode.value !== 'articles') {
+    return false;
+  }
+  if (selectedAccount.value) {
+    return fakeids.includes(selectedAccount.value);
+  }
+  if (selectedCategory.value === '__all__') {
+    return true;
+  }
+
+  return fakeids.some(fakeid => {
+    const account = findAccount(fakeid);
+    if (!account) {
+      return false;
+    }
+    return isAccountVisibleInCurrentScope(account);
+  });
+}
+
+async function flushRealtimeBatchRefresh() {
+  if (realtimeBatchRefreshRunning) {
+    realtimeBatchRefreshQueued = true;
+    return;
+  }
+
+  const fakeids = Array.from(realtimeBatchRefreshPendingFakeids);
+  if (fakeids.length === 0) {
+    return;
+  }
+
+  realtimeBatchRefreshPendingFakeids.clear();
+  realtimeBatchRefreshRunning = true;
+  try {
+    for (const fakeid of fakeids) {
+      await refreshAccountSnapshot(fakeid, true);
+    }
+
+    if (getBatchSyncVisibleScopeMatches(fakeids)) {
+      if (articlePageLoading.value) {
+        realtimeBatchRefreshQueued = true;
+        return;
+      }
+      await loadArticlePage(true);
+      clearSelectionOutOfScope();
+    }
+  } finally {
+    realtimeBatchRefreshRunning = false;
+    if (realtimeBatchRefreshPendingFakeids.size > 0 || realtimeBatchRefreshQueued) {
+      realtimeBatchRefreshQueued = false;
+      scheduleRealtimeBatchRefresh();
+    }
+  }
+}
+
+function scheduleRealtimeBatchRefresh(fakeid?: string) {
+  if (fakeid) {
+    realtimeBatchRefreshPendingFakeids.add(fakeid);
+  }
+
+  if (realtimeBatchRefreshRunning) {
+    realtimeBatchRefreshQueued = true;
+    return;
+  }
+
+  if (realtimeBatchRefreshTimer !== null) {
+    return;
+  }
+
+  realtimeBatchRefreshTimer = window.setTimeout(() => {
+    realtimeBatchRefreshTimer = null;
+    void flushRealtimeBatchRefresh();
+  }, 1200);
 }
 
 function isAccountVisibleInCurrentScope(account: MpAccount): boolean {
@@ -617,9 +740,14 @@ const headerBatchSyncProgressText = computed(() => {
   if (!progress.running || progress.totalAccounts <= 0) {
     return '';
   }
-  return `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源`;
+  const failedNames = formatBatchFailedAccountNames(batchSyncFailedAccounts.value);
+  return failedNames
+    ? `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源 · 失败：${failedNames}`
+    : `已完成 ${progress.completedAccounts}/${progress.totalAccounts} 个订阅源`;
 });
-const syncStatusBannerText = computed(() => activeAccountSyncStatus.value || headerBatchSyncProgressText.value);
+const syncStatusBannerText = computed(
+  () => activeAccountSyncStatus.value || headerBatchSyncProgressText.value || batchSyncNoticeText.value
+);
 
 const accountsInSelectedCategory = computed(() => {
   let targets: MpAccount[] = [];
@@ -3648,6 +3776,8 @@ function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | nul
     return;
   }
 
+  batchSyncFailedAccounts.value = Array.isArray(snapshot.failedAccounts) ? [...snapshot.failedAccounts] : [];
+
   if (snapshot.currentAccount) {
     const account = snapshot.currentAccount;
     const previousSyncedArticles =
@@ -3656,6 +3786,7 @@ function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | nul
       ) || 0;
     if ((Number(account.syncedArticles) || 0) > previousSyncedArticles) {
       markAccountHasNewArticles(account.fakeid);
+      scheduleRealtimeBatchRefresh(account.fakeid);
     }
     syncProgressByFakeid.value = {
       ...syncProgressByFakeid.value,
@@ -3724,6 +3855,7 @@ async function syncCurrentAccount() {
   if (!account) return;
 
   try {
+    batchSyncNoticeText.value = '';
     isCanceled.value = false;
     await loadAccountArticle(account, true);
     await runAiRefreshAfterSync();
@@ -3754,6 +3886,8 @@ async function syncAllAccountsInCurrentScope() {
 
   const mpTargets = targets.filter(account => !isRssAccount(account));
   const rssTargets = targets.filter(account => isRssAccount(account));
+  batchSyncNoticeText.value = '';
+  batchSyncFailedAccounts.value = [];
   batchSyncProgress.value = {
     running: true,
     completedAccounts: 0,
@@ -3766,6 +3900,7 @@ async function syncAllAccountsInCurrentScope() {
   let rssFailedCount = 0;
   let rssCompletedCount = 0;
   let rssFirstError = '';
+  const rssFailedAccounts: RemoteBatchSyncAccountSnapshot[] = [];
 
   try {
     if (mpTargets.length > 0) {
@@ -3823,8 +3958,20 @@ async function syncAllAccountsInCurrentScope() {
         try {
           await loadAccountArticle(account, false);
           rssSuccessCount += 1;
+          markAccountHasNewArticles(account.fakeid);
+          scheduleRealtimeBatchRefresh(account.fakeid);
         } catch (error: any) {
           rssFailedCount += 1;
+          rssFailedAccounts.push({
+            fakeid: account.fakeid,
+            nickname: account.nickname || account.fakeid,
+            status: 'error',
+            syncedMessages: Number(account.count) || 0,
+            totalMessages: Number(account.total_count) || 0,
+            syncedArticles: Number(account.articles) || 0,
+            updatedAt: Date.now(),
+            message: normalizeRuntimeErrorMessage(String(error?.message || '未知错误')),
+          });
           if (!rssFirstError) {
             rssFirstError = normalizeRuntimeErrorMessage(String(error?.message || '未知错误'));
           }
@@ -3842,27 +3989,46 @@ async function syncAllAccountsInCurrentScope() {
     const totalSuccessCount = Number(finalSnapshot?.successCount || 0) + rssSuccessCount;
     const totalFailedCount = Number(finalSnapshot?.failedCount || 0) + rssFailedCount;
     const totalCompletedCount = Number(finalSnapshot?.completedAccounts || 0) + rssCompletedCount;
+    const combinedFailedAccounts = [
+      ...(Array.isArray(finalSnapshot?.failedAccounts) ? finalSnapshot.failedAccounts : []),
+      ...rssFailedAccounts,
+    ];
+    const failedNames = formatBatchFailedAccountNames(combinedFailedAccounts);
+    const failedDetails = formatBatchFailedAccountDetails(combinedFailedAccounts);
 
     if (isCanceled.value && totalCompletedCount < targets.length) {
+      batchSyncNoticeText.value = `同步已取消：已完成 ${totalCompletedCount}/${targets.length} 个订阅源`;
       toast.warning('同步已取消', `已完成 ${totalCompletedCount}/${targets.length} 个订阅源`);
       return;
     }
 
     if (totalFailedCount === 0) {
       await runAiRefreshAfterSync();
+      batchSyncNoticeText.value = `同步完成：已同步 ${totalSuccessCount} 个订阅源`;
       toast.success('同步完成', `已同步 ${totalSuccessCount} 个订阅源`);
     } else if (totalSuccessCount === 0) {
       const firstMessage = rssFirstError || normalizeRuntimeErrorMessage(String(finalSnapshot?.message || '未知错误'));
       if (firstMessage === 'session expired') {
+        batchSyncNoticeText.value = '同步失败：登录状态已失效，请重新登录后重试';
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
       } else if (firstMessage === `all ${finalSnapshot?.failedCount} accounts failed` && rssFailedCount === 0) {
-        toast.error('同步失败', `全部 ${totalFailedCount} 个订阅源同步失败`);
+        batchSyncNoticeText.value = failedNames
+          ? `同步失败：${failedNames}`
+          : `同步失败：全部 ${totalFailedCount} 个订阅源同步失败`;
+        toast.error('同步失败', failedDetails || `全部 ${totalFailedCount} 个订阅源同步失败`);
       } else {
-        toast.error('同步失败', firstMessage);
+        batchSyncNoticeText.value = failedNames ? `同步失败：${failedNames}` : `同步失败：${firstMessage}`;
+        toast.error('同步失败', failedDetails || firstMessage);
       }
     } else {
       await runAiRefreshAfterSync();
-      toast.warning('部分同步失败', `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`);
+      batchSyncNoticeText.value = failedNames
+        ? `部分同步失败：${failedNames}`
+        : `部分同步失败：成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`;
+      toast.warning(
+        '部分同步失败',
+        failedDetails || `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`
+      );
     }
   } finally {
     batchSyncProgress.value = {
@@ -3958,6 +4124,10 @@ onUnmounted(() => {
   if (cookieTimer) {
     window.clearInterval(cookieTimer);
     cookieTimer = null;
+  }
+  if (realtimeBatchRefreshTimer !== null) {
+    window.clearTimeout(realtimeBatchRefreshTimer);
+    realtimeBatchRefreshTimer = null;
   }
   if (schedulerSyncTimer.value) {
     window.clearTimeout(schedulerSyncTimer.value);

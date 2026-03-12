@@ -83,6 +83,7 @@ export interface BatchSyncJobStatusView {
   updatedAt: number;
   finishedAt: number;
   currentAccount: BatchSyncAccountSnapshot | null;
+  failedAccounts: BatchSyncAccountSnapshot[];
   heapUsedMb: number;
   pollAfterMs: number;
 }
@@ -175,6 +176,7 @@ function cloneJobSnapshot(job: BatchJobRuntime): BatchSyncJobSnapshot {
 
 function buildJobStatusView(job: BatchJobRuntime): BatchSyncJobStatusView {
   const currentAccount = job.currentAccount ? { ...job.currentAccount } : null;
+  const failedAccounts = job.failedAccounts.map(account => ({ ...account }));
   const heapUsedMb = toMb(process.memoryUsage().heapUsed);
   const pollAfterMs = job.status !== 'running' ? 0 : heapUsedMb >= 2500 ? 5000 : 3000;
 
@@ -192,6 +194,7 @@ function buildJobStatusView(job: BatchJobRuntime): BatchSyncJobStatusView {
     updatedAt: job.updatedAt,
     finishedAt: job.finishedAt,
     currentAccount: currentAccount ? { ...currentAccount } : null,
+    failedAccounts,
     heapUsedMb,
     pollAfterMs,
   };
