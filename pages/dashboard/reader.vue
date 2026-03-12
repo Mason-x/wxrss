@@ -5412,7 +5412,7 @@ onUnmounted(() => {
         rounded: 'rounded-[28px]',
       }"
     >
-      <UCard class="overflow-hidden rounded-none border-0 shadow-none">
+      <UCard class="overflow-hidden rounded-[28px] border-0 shadow-none">
         <template #header>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
