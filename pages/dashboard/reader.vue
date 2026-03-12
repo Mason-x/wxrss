@@ -4581,13 +4581,13 @@ onUnmounted(() => {
             :onDragEnd="onDrawerDragEnd"
             @pointerdown="beginMobileDrag('drawer', $event)"
           >
-              <div class="app-shell-glass border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
+              <div class="app-shell-glass relative z-[220] isolate overflow-visible border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
                 <div class="flex items-start justify-between gap-3">
                   <div
                     v-if="loginAccount"
                     ref="mobileAvatarMenuRef"
                     class="relative z-10 min-w-0 flex flex-1 items-center gap-3"
-                    :class="mobileAvatarMenuOpen ? 'z-[160]' : ''"
+                    :class="mobileAvatarMenuOpen ? 'z-[240]' : ''"
                   >
                     <div class="shrink-0">
                       <button
@@ -4605,44 +4605,6 @@ onUnmounted(() => {
                         />
                         <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
                       </button>
-
-                      <Transition name="desktop-avatar-menu-fade">
-                        <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
-                          <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
-                            <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
-                            <span>设置</span>
-                          </button>
-                          <div class="desktop-avatar-menu-section">
-                            <p class="desktop-avatar-menu-label">模式切换</p>
-                            <div class="desktop-avatar-menu-theme-grid">
-                              <button
-                                v-for="option in themeModeOptions"
-                                :key="`mobile-theme-${option.key}`"
-                                type="button"
-                                class="desktop-avatar-theme-option"
-                                :class="themeModePreference === option.key ? 'is-active' : ''"
-                                @click="setThemeMode(option.key)"
-                              >
-                                <UIcon :name="option.icon" class="size-4 shrink-0" />
-                                <span>{{ option.label }}</span>
-                              </button>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            class="desktop-avatar-menu-item is-danger"
-                            :disabled="logoutBtnLoading"
-                            @click="logoutFromMobileAvatarMenu"
-                          >
-                            <UIcon
-                              :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
-                              class="size-4 shrink-0"
-                              :class="logoutBtnLoading ? 'animate-spin' : ''"
-                            />
-                            <span>退出登录</span>
-                          </button>
-                        </div>
-                      </Transition>
                     </div>
                     <div class="min-w-0 flex-1">
                       <p class="min-w-0 truncate text-sm font-semibold">
@@ -4650,6 +4612,43 @@ onUnmounted(() => {
                       </p>
                       <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
                     </div>
+                    <Transition name="desktop-avatar-menu-fade">
+                      <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
+                        <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
+                          <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
+                          <span>设置</span>
+                        </button>
+                        <div class="desktop-avatar-menu-section">
+                          <p class="desktop-avatar-menu-label">模式切换</p>
+                          <div class="desktop-avatar-menu-theme-grid">
+                            <button
+                              v-for="option in themeModeOptions"
+                              :key="`mobile-theme-${option.key}`"
+                              type="button"
+                              class="desktop-avatar-theme-option"
+                              :class="themeModePreference === option.key ? 'is-active' : ''"
+                              @click="setThemeMode(option.key)"
+                            >
+                              <UIcon :name="option.icon" class="size-4 shrink-0" />
+                              <span>{{ option.label }}</span>
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="desktop-avatar-menu-item is-danger"
+                          :disabled="logoutBtnLoading"
+                          @click="logoutFromMobileAvatarMenu"
+                        >
+                          <UIcon
+                            :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
+                            class="size-4 shrink-0"
+                            :class="logoutBtnLoading ? 'animate-spin' : ''"
+                          />
+                          <span>退出登录</span>
+                        </button>
+                      </div>
+                    </Transition>
                   </div>
                   <div v-else class="min-w-0 flex-1">
                     <UButton
@@ -4699,7 +4698,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div ref="mobileAccountsListRef" class="flex-1 overflow-y-auto px-3 py-3">
+              <div ref="mobileAccountsListRef" class="relative z-0 flex-1 overflow-y-auto px-3 py-3">
                 <ul class="space-y-3">
                   <li
                     v-for="account in accountsInCategory"
