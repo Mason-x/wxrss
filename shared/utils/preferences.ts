@@ -1,4 +1,16 @@
-import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
+﻿import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
+import {
+  BUILTIN_AI_QUALITY_TAG_DEFINITIONS,
+  BUILTIN_AI_SPONSORED_TAG_DEFINITION,
+  BUILTIN_AI_TAG_DEFINITIONS,
+  DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS as BUILTIN_DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS,
+} from '#shared/utils/ai-tags';
+import {
+  DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
+  FIXED_AI_SUMMARY_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT,
+  FIXED_AI_SUMMARY_PROMPT_NOTE as CLEAN_FIXED_AI_SUMMARY_PROMPT_NOTE,
+  FIXED_AI_TAG_PROMPT_NOTE as CLEAN_FIXED_AI_TAG_PROMPT_NOTE,
+} from '#shared/utils/ai-prompts';
 import { MP_ORIGIN_TIMESTAMP } from '~/config';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
@@ -16,282 +28,59 @@ const SYNC_DATE_RANGE_VALUES: Preferences['syncDateRange'][] = [
 
 const LEGACY_READING_TAGS = new Set(['{{featured}}', '{{low_signal}}', '{{sponsored}}']);
 
-export const DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] = [
-  {
-    label: '精华',
-    variable: '{{featured}}',
-    description: '信息密度高、论证充分或细节重要，值得优先读原文并进入日报。',
-    color: '#ef4444',
-  },
-  {
-    label: '略读',
-    variable: '{{skim}}',
-    description: '有一定信息量，但摘要已覆盖主要价值，可快速浏览原文，无需精读。',
-    color: '#3b82f6',
-  },
-  {
-    label: '不读',
-    variable: '{{skip}}',
-    description: '信息密度低、观点重复或标题大于内容，继续读原文的收益较低。',
-    color: '#64748b',
-  },
-  {
-    label: '软广',
-    variable: '{{sponsored}}',
-    description: '存在明显推广、导流、品牌植入或商业转化意图，应单独标记。',
-    color: '#f59e0b',
-  },
-];
+export const SYSTEM_AI_QUALITY_TAG_DEFINITIONS: AiTagDefinition[] =
+  BUILTIN_AI_QUALITY_TAG_DEFINITIONS.map(item => ({ ...item }));
 
-export const DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = [
-  '你是一名高信噪比的信息摘要编辑，擅长从公众号文章、博客、网文、评论文、教程文、资讯文、观点文中，快速提炼“这篇文章到底讲了什么”以及“值不值得读原文”。',
-  '',
-  '你的任务不是机械压缩原文，而是做高质量的信息筛选、观点提炼与阅读优先级判断。',
-  '',
-  '## 核心目标',
-  '请基于用户提供的文章内容，输出一份短、准、清晰、可结构化处理、便于 30 秒判断阅读价值的摘要，帮助用户：',
-  '1. 快速了解文章在讲什么；',
-  '2. 抓住真正的核心观点，而不是表面铺陈；',
-  '3. 判断这篇文章是否值得读原文；',
-  '4. 提炼可传播的信息价值；',
-  '5. 识别低信息密度内容与伪装成内容的宣传性内容。',
-  '',
-  '## 工作原则',
-  '### 1) 先识别文章类型，再决定摘要重点',
-  '- 观点文 / 评论文：重点提炼作者的核心判断、立场、关键论据。',
-  '- 资讯文 / 新闻整合文：重点提炼核心事实、主要变化、真正重要的信息点。',
-  '- 教程文 / 方法文：重点提炼问题、方法、步骤逻辑、适用场景。',
-  '- 叙事文 / 故事型文章：重点提炼故事主线、作者真正想表达的主题或观点，而不是流水账。',
-  '- 知识科普文：重点提炼核心概念、关键解释、结论与实际意义。',
-  '- 商业 / 行业分析文：重点提炼核心结论、判断依据、对谁有影响。',
-  '',
-  '### 2) 摘要不是复述',
-  '不要按原文顺序机械缩写，不要照搬段落结构，不要把细枝末节堆成摘要。',
-  '要优先回答：',
-  '- 这篇文章核心在讲什么？',
-  '- 作者真正的观点或结论是什么？',
-  '- 支撑这个观点的关键信息是什么？',
-  '- 用户还有没有必要去读原文？',
-  '',
-  '### 3) 阅读价值必须输出为固定变量标签',
-  '你需要明确给出阅读价值判断，但必须基于文章的信息密度、观点独特性、论据质量、细节含量、案例价值、原文必要性与宣传意图来判断，不能空泛评价。',
-  'tags 数组必须满足：',
-  '- 至少 1 个，最多 2 个；',
-  '- 主阅读价值标签与宣传标签分离；',
-  '- 阅读价值标签只能保留一个；',
-  '- 如果商业转化意图明显，可叠加宣传标签；',
-  '- 不要输出中文标签名，只输出变量标签。',
-  '',
-  '### 4) 判断时要识别“内容价值”与“商业意图”',
-  '请特别区分：',
-  '- 这是在提供信息，还是在借信息包装推广？',
-  '- 这是在真分析，还是在为某产品 / 服务建立购买理由？',
-  '- 这是内容中顺带提到品牌，还是全文叙事本身就在服务转化？',
-  '如果商业转化意图明显，应叠加宣传标签。',
-  '',
-  '### 5) 保持客观、知识型、条理强',
-  '整体语气要求：客观中性、表达简洁、结构清晰、有判断、有洞察、不夸张、不鸡汤、不卖弄、不替作者过度脑补。',
-  '',
-  '### 6) 尽量短，但不能丢核心信息',
-  '优先高信息密度表达。宁可删掉修饰，也不要漏掉核心观点。避免输出过长内容。',
-  '',
-  '## 输出格式',
-  '你必须只输出一个合法 JSON 对象，不得输出任何前言、解释、Markdown 代码块、注释或额外文字。',
-  '',
-  '{',
-  '  "tags": ["{{featured}}"],',
-  '  "summary": "一句话总述",',
-  '  "highlights": [',
-  '    "要点 1",',
-  '    "要点 2",',
-  '    "要点 3"',
-  '  ]',
-  '}',
-  '',
-  '## 字段要求',
-  '- tags：数组类型，包含 1 到 2 个变量标签；主阅读价值标签只能有一个，如有明显宣传意图可额外附加宣传标签。',
-  '- summary：用 1 句话概括这篇文章到底在讲什么，必须直击主题，不能空泛。',
-  '- highlights：数组类型，包含 1 到 3 条核心要点；如果文章信息量低，可少于 3 条，但不得为空。',
-  '- 每条 highlights 都应只保留真正重要的信息，不要写废话，不要重复 summary。',
-  '- 如果标题党明显，要以正文真实重点为准，不要被标题带偏。',
-  '- 如果作者真正观点隐藏在大量铺垫之后，要直接提炼出来。',
-  '- 如果文章主要是情绪表达、观点重复、信息增量很低，要如实反映。',
-  '- 若存在明显推广、导流、品牌植入、产品转化、课程销售、社群引流、付费订阅转化等倾向，应叠加宣传标签。',
-  '',
-  '## 严格约束',
-  '- 只输出合法 JSON。',
-  '- 不要输出判断理由。',
-  '- 不要输出字段说明。',
-  '- 不要输出 Markdown。',
-  '- 不要输出多余无关内容。',
-  '- 不要使用未定义字段。',
-  '- 不要把 JSON 包在代码块中。',
-  '- 不要输出 null。',
-  '- 不要输出空数组。',
-  '',
-  '## 质量自检',
-  '在输出前，请默默检查：',
-  '1. 是否抓住了真正核心，而不是表层内容？',
-  '2. 用户能否在 30 秒内看完并判断要不要读原文？',
-  '3. tags 是否只使用了允许的标签且主阅读价值标签唯一？',
-  '4. JSON 是否语法合法？',
-  '5. highlights 是否精炼且不重复？',
-  '6. 输出是否足够短？',
-  '',
-  '## 现在开始',
-  '下面是需要总结的文章内容：',
-  '[把文章粘贴在这里]',
-].join('\n');
+export const SYSTEM_AI_SPONSORED_TAG_DEFINITION: AiTagDefinition = {
+  ...BUILTIN_AI_SPONSORED_TAG_DEFINITION,
+};
 
-export const DEFAULT_AI_TAG_SYSTEM_PROMPT = [
-  '这是对标签判定的补充规则，会和摘要系统提示词一起发送给模型。',
-  'tags 最多输出两个。',
-  '{{featured}}、{{skim}}、{{skip}} 三者互斥，只能保留一个主阅读价值标签。',
-  '如果商业转化意图足够明显，可以在主标签之外追加 {{sponsored}}。',
-  '不要为了凑双标签而强行输出两个标签；如果没有明显商业意图，只输出一个主标签即可。',
-  '判断 {{featured}} 时，要优先看是否存在独特洞察、一手经验、重要细节、关键数据、强论证与不可被摘要替代的价值。',
-  '判断 {{skim}} 时，要确认原文仍有少量补充价值，但摘要已经覆盖大部分信息。',
-  '判断 {{skip}} 时，要确认原文信息增量低、结构松散、标题大于内容或继续阅读收益很低。',
-  '判断 {{sponsored}} 时，要优先识别推广、导流、品牌植入、社群转化、课程销售、产品转化等商业目的。',
-].join('\n');
+export const SYSTEM_AI_TAG_DEFINITIONS: AiTagDefinition[] =
+  BUILTIN_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
 
-export const DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT = [
-  '你是一名中文内容编辑，负责基于当天文章的结构化摘要生成 AI 日报。',
-  '日报只参考文章标题、来源信息、tags、summary 和 highlights，不要假设你看过原文。',
-  '优先使用带 {{featured}} 的内容作为主线，可少量引用 {{skim}} 做背景补充。',
-  '默认不要把 {{skip}} 写成重点，也不要把纯 {{sponsored}} 内容写成日报主线。',
-  '如果某篇内容同时带有主阅读价值标签和 {{sponsored}}，可以引用其信息价值，但不要写成推荐口吻。',
-  '日报目标是帮助用户快速了解当天最值得读的内容、值得跟进的话题、关键观点和可执行信息。',
-  '输出内容要克制、清晰、有主题分组，不要写成流水账，也不要有夸张措辞或广告腔。',
-  'report_html 请使用简洁的 HTML 片段，不要输出 markdown，也不要包含 html/body 标签。',
-  '如果当天没有足够值得整理的内容，可以返回简短日报，但不要杜撰观点或细节。',
-].join('\n');
+export const DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS = [...BUILTIN_DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS];
 
-const LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = `你是一名高信噪比的信息摘要编辑，擅长从公众号文章、博客、网文、评论文、教程文、资讯文、观点文中，快速提炼“这篇文章到底讲了什么”以及“值不值得读原文”。
+const SYSTEM_AI_TAG_VARIABLES = new Set(SYSTEM_AI_TAG_DEFINITIONS.map(item => item.variable));
 
-你的任务不是机械压缩原文，而是做高质量的信息筛选、观点提炼与阅读优先级判断。
+export const DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] =
+  SYSTEM_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
 
-## 核心目标
-请基于用户提供的文章内容，输出一份短、准、清晰、可结构化处理、便于 30 秒判断阅读价值的摘要，帮助用户：
-1. 快速了解文章在讲什么；
-2. 抓住真正的核心观点，而不是表面铺陈；
-3. 判断这篇文章是否值得读原文；
-4. 提炼可传播的信息价值；
-5. 识别低信息密度内容与伪装成内容的宣传性内容。
+export const DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = CLEAN_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT;
 
-## 工作原则
-### 1) 先识别文章类型，再决定摘要重点
-自动判断文章更接近哪一类，并据此调整提炼方式：
-- 观点文/评论文：重点提炼作者的核心判断、立场、关键论据。
-- 资讯文/新闻整合文：重点提炼核心事实、主要变化、真正重要的信息点。
-- 教程文/方法文：重点提炼问题、方法、步骤逻辑、适用场景。
-- 叙事文/故事型文章：重点提炼故事主线、作者真正想表达的主题或观点，而不是流水账。
-- 知识科普文：重点提炼核心概念、关键解释、结论与实际意义。
-- 商业/行业分析文：重点提炼核心结论、判断依据、对谁有影响。
+export const DEFAULT_AI_TAG_SYSTEM_PROMPT = CLEAN_FIXED_AI_TAG_PROMPT_NOTE;
 
-### 2) 摘要不是复述
-不要按原文顺序机械缩写，不要照搬段落结构，不要把细枝末节堆成摘要。
-要优先回答：
-- 这篇文章核心在讲什么？
-- 作者真正的观点或结论是什么？
-- 支撑这个观点的关键信息是什么？
-- 用户还有没有必要去读原文？
+export const DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT = CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT;
 
-### 3) 阅读价值必须输出为变量标签
-你需要明确给出阅读价值判断，但必须基于文章的信息密度、观点独特性、论据质量、细节含量、案例价值、原文必要性与宣传意图来判断，不能空泛评价。
+const LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = '';
 
-标签只允许使用当前设置允许的变量标签。
-输出的 tags 数组必须满足：
-- 至少 1 个，最多 2 个；
-- {{featured}}、{{skim}}、{{skip}} 三者互斥，只能出现一个；
-- {{sponsored}} 可以和其中一个同时出现；
-- 不要输出中文标签名。
+const LEGACY_DEFAULT_AI_TAG_SYSTEM_PROMPT = '';
 
-### 4) 判断时要识别“内容价值”与“商业意图”
-请特别区分：
-- 这是在提供信息，还是在借信息包装推广？
-- 这是在真分析，还是在为某产品/服务建立购买理由？
-- 这是内容中顺带提到品牌，还是全文叙事本身就在服务转化？
+const LEGACY_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT = '';
 
-若商业转化意图明显，优先加入 {{sponsored}}。
-不要因为文章写得流畅、案例真实或形式像干货，就忽略其宣传本质。
+const RUNTIME_DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] = [];
 
-### 5) 保持客观、知识型、条理强
-整体语气要求：
-- 客观中性
-- 表达简洁
-- 结构清晰
-- 有判断、有洞察
-- 不夸张、不鸡汤、不卖弄
-- 不替作者过度脑补
+/*
 
-### 6) 尽量短，但不能丢核心信息
-优先高信息密度表达。
-宁可删掉修饰，也不要漏掉核心观点。
-避免输出过长内容。
-
-## 输出格式
-你必须只输出一个合法 JSON 对象，不得输出任何前言、解释、Markdown 代码块、注释或额外文字。
-
-JSON 结构如下：
-{
-  "tags": ["{{featured}}"],
-  "summary": "一句话总述",
-  "highlights": [
-    "要点1",
-    "要点2",
-    "要点3"
-  ]
-}
-
-## 字段要求
-- tags：数组类型，包含 1 到 2 个变量标签；若存在商业转化意图，可输出类似 ["{{featured}}", "{{sponsored}}"]。
-- summary：用 1 句话概括这篇文章到底在讲什么，必须直击主题，不能空泛。
-- highlights：数组类型，包含 1 到 3 条核心要点；如果文章信息量低，可少于 3 条，但不得为空。
-- 每条 highlights 都应只保留真正重要的信息，不要写废话，不要重复 summary。
-- 如果标题党明显，要以正文真实重点为准，不要被标题带偏。
-- 如果作者真正观点隐藏在大量铺垫之后，要直接提炼出来。
-- 如果文章主要是情绪表达、观点重复、信息增量很低，要如实反映。
-- 若文章存在明显推广、导流、品牌植入、产品转化、课程销售、社群引流、付费订阅转化等倾向，要优先加入 {{sponsored}}。
-
-## 严格约束
-- 只输出合法 JSON。
-- 不要输出判断理由。
-- 不要输出字段说明。
-- 不要输出 Markdown。
-- 不要输出多余无关内容。
-- 不要使用未定义字段。
-- 不要把 JSON 包在代码块中。
-- 不要输出 null。
-- 不要输出空数组。
-
-## 质量自检
-在输出前，请默默检查：
-1. 是否抓住了真正核心，而不是表层内容？
-2. 用户能否在 30 秒内看完并判断要不要读原文？
-3. tags 是否只使用了允许的变量标签，且满足 1 到 2 个与互斥规则？
-4. JSON 是否语法合法？
-5. highlights 是否精炼且不重复？
-6. 输出是否足够短？`;
+const LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = `浣犳槸涓€鍚嶉珮淇″櫔姣旂殑淇℃伅鎽樿缂栬緫锛屾搮闀夸粠鍏紬鍙锋枃绔犮€佸崥瀹€佺綉鏂囥€佽瘎璁烘枃銆佹暀绋嬫枃銆佽祫璁枃銆佽鐐规枃涓紝蹇€熸彁鐐尖€滆繖绡囨枃绔犲埌搴曡浜嗕粈涔堚€濅互鍙娾€滃€间笉鍊煎緱璇诲師鏂団€濄€備綘鐨勪换鍔′笉鏄満姊板帇缂╁師鏂囷紝鑰屾槸鍋氶珮璐ㄩ噺鐨勪俊鎭瓫閫夈€佽鐐规彁鐐间笌闃呰浼樺厛绾у垽鏂€俙;
 
 const LEGACY_DEFAULT_AI_TAG_SYSTEM_PROMPT = [
-  '这是对标签判定的补充规则，会和摘要系统提示词一起发送给模型。',
-  '标签最多输出两个。',
-  '{{featured}}、{{skim}}、{{skip}} 三者互斥，只能保留一个最合适的阅读价值标签。',
-  '如果商业转化意图足够明显，可在主阅读价值标签之外再追加 {{sponsored}}。',
-  '不要为了凑双标签而强行输出两个标签；若没有明显商业意图，只输出一个主标签即可。',
+  '杩欐槸瀵规爣绛惧垽瀹氱殑琛ュ厖瑙勫垯銆?,
+  '鏃у崗璁渶澶氳緭鍑轰袱涓爣绛俱€?,
+  '{{featured}}銆亄{skim}}銆亄{skip}} 涓夎€呬簰鏂ワ紝鍙兘淇濈暀涓€涓富闃呰浠峰€兼爣绛俱€?,
+  '濡傛灉鍟嗕笟杞寲鎰忓浘瓒冲鏄庢樉锛屽彲鍦ㄤ富鏍囩涔嬪鍐嶈拷鍔?{{sponsored}}銆?,
 ].join('\n');
 
 const LEGACY_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT = [
-  '你是一名中文内容编辑，负责基于当天文章的结构化摘要生成 AI 日报。',
-  '日报只参考文章标题、来源信息、tags、summary 和 highlights，不要假设你看过原文。',
-  '优先使用带 {{featured}} 的内容作为主线，可少量引用 {{skim}} 做背景补充。',
-  '默认不要把 {{skip}} 写成重点，也不要把纯 {{sponsored}} 内容写成日报主线。',
-  '如果某篇内容同时带有 {{featured}} 和 {{sponsored}}，可以引用其信息价值，但要保持克制，不要写成推荐口吻。',
-  '日报要帮助用户快速了解当天最值得读的内容、值得跟进的话题、关键观点和可执行信息。',
-  '输出内容要克制、清晰、有主题分组，不要写成流水账，也不要有夸张措辞或广告腔。',
-  'report_html 请使用简洁的 HTML 片段，不要输出 markdown，也不要包含 html/body 标签。',
+  '浣犳槸涓€鍚嶄腑鏂囧唴瀹圭紪杈戯紝璐熻矗鍩轰簬褰撳ぉ鏂囩珷鐨勭粨鏋勫寲鎽樿鐢熸垚 AI 鏃ユ姤銆?,
+  '鏃ユ姤鍙弬鑰冩枃绔犳爣棰樸€佹潵婧愪俊鎭€乼ags銆乻ummary 鍜?highlights锛屼笉瑕佸亣璁捐嚜宸辩湅杩囧師鏂囥€?,
+  '浼樺厛浣跨敤 {{featured}} 鍐呭浣滀负涓荤嚎锛屽皯閲忓紩鐢?{{skim}} 浣滀负鑳屾櫙琛ュ厖銆?,
 ].join('\n');
+
+const RUNTIME_DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] = [];
+
+*/
+
+const RUNTIME_DEFAULT_CUSTOM_AI_TAG_DEFINITIONS: AiTagDefinition[] = [];
 
 export const DEFAULT_PREFERENCES: Preferences = {
   hideDeleted: true,
@@ -303,10 +92,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aiSummaryBaseUrl: 'https://api.openai.com/v1',
   aiSummaryApiKey: '',
   aiSummaryModel: 'gpt-4.1-mini',
-  aiSummarySystemPrompt: DEFAULT_AI_SUMMARY_SYSTEM_PROMPT,
-  aiTagDefinitions: DEFAULT_AI_TAG_DEFINITIONS.map(item => ({ ...item })),
-  aiTagSystemPrompt: DEFAULT_AI_TAG_SYSTEM_PROMPT,
-  aiDailyReportSystemPrompt: DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
+  aiSummarySystemPrompt: CLEAN_FIXED_AI_SUMMARY_PROMPT_NOTE,
+  aiTagDefinitions: RUNTIME_DEFAULT_CUSTOM_AI_TAG_DEFINITIONS.map(item => ({ ...item })),
+  aiTagSystemPrompt: CLEAN_FIXED_AI_TAG_PROMPT_NOTE,
+  aiDailyReportSystemPrompt: CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
+  aiDailyReportIncludedLabels: [...DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS],
   exportConfig: {
     dirname: '${title}',
     maxlength: 0,
@@ -334,7 +124,7 @@ type PreferencesInput = Partial<Preferences> & {
 };
 
 function cloneDefaultAiTagDefinitions(): AiTagDefinition[] {
-  return DEFAULT_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
+  return RUNTIME_DEFAULT_CUSTOM_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
 }
 
 function normalizeSyncDateRange(value?: string): Preferences['syncDateRange'] {
@@ -385,8 +175,34 @@ function normalizeProxyList(value?: string[]): string[] {
   return value.map(item => String(item || '').trim()).filter(Boolean);
 }
 
+function looksLikeReplacementPlaceholder(text: string): boolean {
+  const normalized = String(text || '').trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const stripped = normalized.replace(/[\s\n\r\t.,:;!'"()[\]{}\-_/\\|<>`~@#$%^&*+=]+/g, '');
+  if (!stripped) {
+    return false;
+  }
+
+  const placeholderMatches = stripped.match(/[?锛燂拷]/g) || [];
+  if (placeholderMatches.length === stripped.length) {
+    return true;
+  }
+
+  return placeholderMatches.length >= 8 && placeholderMatches.length / stripped.length >= 0.35;
+}
+
 function looksLikeMojibake(text: string): boolean {
-  return /[婵犵數鍋犻幓顏嗙礊娴ｅ壊鍤曞ù鐓庣摠閸嬶綁鏌涢妷顔煎闁哄拋鍓熷娲濞戞瑯妫忛梺绋款儐閹瑰洭銆佸鑸靛仩闁绘劕鐡ㄦ刊鎾煟濡寧鐝粭鎴︽煟閻樺弶宸濋柡灞筋槺濞嗐垽顢橀姀鐘殿槱濠电偠鎻紞浣割嚕娴煎瓨鍋ｉ柛銉墯閺咁剟姊洪棃娑欘棏闁稿鎹囬、姘舵偠閻庡尳]/.test(text);
+  const normalized = String(text || '');
+  return looksLikeReplacementPlaceholder(normalized)
+    || normalized.includes('浣犳槸')
+    || normalized.includes('鏃ユ姤')
+    || normalized.includes('闃呰浠峰€')
+    || normalized.includes('鍐呭')
+    || normalized.includes('璇疯繑鍥')
+    || normalized.includes('鏌ョ湅姝ｆ枃');
 }
 
 function normalizeAiPrompt(value: unknown, fallback: string): string {
@@ -394,7 +210,13 @@ function normalizeAiPrompt(value: unknown, fallback: string): string {
   if (!normalized) {
     return fallback;
   }
-  return looksLikeMojibake(normalized) ? fallback : normalized;
+  const looksCorrupted = looksLikeMojibake(normalized)
+    || /\?{6,}/.test(normalized)
+    || /label\s*\?\s*summary/i.test(normalized)
+    || /report_html\s+\?{2,}/i.test(normalized)
+    || normalized.includes('???? AI ???')
+    || normalized.includes('???????');
+  return looksCorrupted ? fallback : normalized;
 }
 
 function normalizePromptForCompare(value: unknown): string {
@@ -409,7 +231,7 @@ function resolveDefaultAiTagColor(variableOrLabel: unknown): string {
     .trim()
     .toLowerCase();
 
-  const matched = DEFAULT_AI_TAG_DEFINITIONS.find(item => {
+  const matched = [...SYSTEM_AI_TAG_DEFINITIONS, ...RUNTIME_DEFAULT_CUSTOM_AI_TAG_DEFINITIONS].find(item => {
     const variable = item.variable.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
     const label = item.label.trim().toLowerCase();
     return source === variable || source === label;
@@ -473,7 +295,7 @@ function normalizeAiTagDefinition(input: unknown): AiTagDefinition | null {
 
 function buildLegacyTagDefinitions(raw: unknown): AiTagDefinition[] {
   const rows = String(raw || '')
-    .split(/\r?\n|,|，|、/)
+    .split(/\r?\n|,|，/)
     .map(item => String(item || '').trim())
     .filter(Boolean);
 
@@ -504,7 +326,10 @@ function shouldReplaceWithDefaultAiTagDefinitions(list: AiTagDefinition[]): bool
   }
 
   const variables = list.map(item => normalizeAiTagVariable(item.variable, item.label)).filter(Boolean);
-  if (variables.some(variable => LEGACY_READING_TAGS.has(variable))) {
+  if (
+    variables.length > 0
+    && variables.every(variable => LEGACY_READING_TAGS.has(variable) || SYSTEM_AI_TAG_VARIABLES.has(variable))
+  ) {
     return true;
   }
 
@@ -533,6 +358,9 @@ function normalizeAiTagDefinitions(value: unknown, legacyValue: unknown): AiTagD
 
   const byVariable = new Map<string, AiTagDefinition>();
   for (const item of effectiveList) {
+    if (SYSTEM_AI_TAG_VARIABLES.has(item.variable)) {
+      continue;
+    }
     if (!byVariable.has(item.variable)) {
       byVariable.set(item.variable, {
         ...item,
@@ -546,6 +374,30 @@ function normalizeAiTagDefinitions(value: unknown, legacyValue: unknown): AiTagD
   return Array.from(byVariable.values());
 }
 
+function normalizeAiDailyReportIncludedLabels(value: unknown, customDefinitions: AiTagDefinition[]): string[] {
+  const allowed = new Set<string>([
+    ...SYSTEM_AI_TAG_DEFINITIONS.map(item => item.variable),
+    ...customDefinitions.map(item => item.variable),
+  ]);
+
+  const normalized = Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value
+            .map(item => normalizeAiTagVariable(item))
+            .filter(Boolean)
+            .filter(item => allowed.has(item))
+        )
+      )
+    : [];
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS.filter(item => allowed.has(item));
+}
+
 function isLegacyDefaultAiSummaryPrompt(text: string): boolean {
   const normalized = normalizePromptForCompare(text);
   return (
@@ -553,8 +405,8 @@ function isLegacyDefaultAiSummaryPrompt(text: string): boolean {
     || normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT)
     || normalized.includes('{{low_signal}}')
     || normalized.includes('"rating"')
-    || normalized.includes('阅读价值：')
-    || normalized.includes('一句话总述：')
+    || normalized.includes('阅读价值')
+    || normalized.includes('一句话总述')
   );
 }
 
@@ -565,7 +417,6 @@ function isLegacyDefaultAiTagPrompt(text: string): boolean {
     || normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_TAG_SYSTEM_PROMPT)
     || normalized.includes('{{low_signal}}')
     || normalized.includes('只返回一个标签')
-    || normalized.includes('只返回一个')
   );
 }
 
@@ -603,6 +454,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     source.aiTagReportSystemPrompt,
     DEFAULT_PREFERENCES.aiTagSystemPrompt
   );
+  const aiTagDefinitions = normalizeAiTagDefinitions(source.aiTagDefinitions, source.aiTagListText);
 
   return {
     hideDeleted: source.hideDeleted ?? DEFAULT_PREFERENCES.hideDeleted,
@@ -615,7 +467,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     aiSummaryApiKey: String(source.aiSummaryApiKey || '').trim(),
     aiSummaryModel: String(source.aiSummaryModel || DEFAULT_PREFERENCES.aiSummaryModel).trim(),
     aiSummarySystemPrompt: normalizeStoredSummaryPrompt(source.aiSummarySystemPrompt),
-    aiTagDefinitions: normalizeAiTagDefinitions(source.aiTagDefinitions, source.aiTagListText),
+    aiTagDefinitions,
     aiTagSystemPrompt: normalizeStoredTagPrompt(
       source.aiTagSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiTagSystemPrompt
@@ -623,6 +475,10 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     aiDailyReportSystemPrompt: normalizeStoredDailyPrompt(
       source.aiDailyReportSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiDailyReportSystemPrompt
+    ),
+    aiDailyReportIncludedLabels: normalizeAiDailyReportIncludedLabels(
+      (source as Partial<Preferences>).aiDailyReportIncludedLabels,
+      aiTagDefinitions
     ),
     exportConfig: {
       dirname: String(source.exportConfig?.dirname || DEFAULT_PREFERENCES.exportConfig.dirname),
@@ -660,3 +516,5 @@ export function clonePreferences(input?: Partial<Preferences> | null): Preferenc
 export function isDefaultPreferences(input?: Partial<Preferences> | null): boolean {
   return JSON.stringify(normalizePreferences(input)) === JSON.stringify(DEFAULT_PREFERENCES);
 }
+
+

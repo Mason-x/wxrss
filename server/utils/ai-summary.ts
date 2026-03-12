@@ -1,3 +1,12 @@
+﻿import {
+  BUILTIN_AI_QUALITY_TAG_DEFINITIONS,
+  BUILTIN_AI_SPONSORED_TAG_DEFINITION,
+} from '#shared/utils/ai-tags';
+import {
+  buildAiCustomTagDefinitionPrompt,
+  buildAiSummaryArticlePrompt,
+  FIXED_AI_SUMMARY_SYSTEM_PROMPT as CLEAN_FIXED_AI_SUMMARY_SYSTEM_PROMPT,
+} from '#shared/utils/ai-prompts';
 import type { AiTagDefinition } from '~/types/preferences';
 
 export interface AiSummaryConfig {
@@ -7,10 +16,17 @@ export interface AiSummaryConfig {
   systemPrompt?: string;
 }
 
+export interface StructuredSummaryLabelObject {
+  quality: string;
+  sponsored?: string;
+  custom: string[];
+}
+
 export interface StructuredArticleSummary {
+  label: StructuredSummaryLabelObject;
+  summary: string;
   tags: string[];
   rating: string;
-  summary: string;
   highlights: string[];
 }
 
@@ -25,8 +41,9 @@ interface ChatCompletionResponse {
   };
 }
 
-const DEFAULT_READING_TIER_TAGS = new Set(['{{featured}}', '{{skim}}', '{{skip}}']);
-const SPONSORED_TAG = '{{sponsored}}';
+const QUALITY_TAGS = BUILTIN_AI_QUALITY_TAG_DEFINITIONS.map(item => item.variable);
+const QUALITY_TAG_SET = new Set(QUALITY_TAGS);
+const SPONSORED_TAG = BUILTIN_AI_SPONSORED_TAG_DEFINITION.variable;
 
 function normalizeTagVariable(value: unknown): string {
   const raw = String(value || '').trim();
@@ -78,49 +95,10 @@ function formatPublishedAt(value?: number | string): string {
   return text || '';
 }
 
-function buildDynamicTagDefinitionBlock(tagDefinitions: AiTagDefinition[]): string {
-  if (!Array.isArray(tagDefinitions) || tagDefinitions.length === 0) {
-    return '';
-  }
-
-  const variables = tagDefinitions
-    .map(definition => normalizeTagVariable(definition.variable))
-    .filter(Boolean);
-  const exclusiveReadingTags = variables.filter(tag => DEFAULT_READING_TIER_TAGS.has(tag));
-  const hasSponsoredTag = variables.includes(SPONSORED_TAG);
-
-  return [
-    '以下标签定义来自当前设置，请严格以它们为准。',
-    '输出要求：tags 数组必须包含 1 到 2 个变量标签。',
-    exclusiveReadingTags.length > 0
-      ? `互斥规则：${exclusiveReadingTags.join('、')} 最多只能出现一个。`
-      : '',
-    hasSponsoredTag && exclusiveReadingTags.length > 0
-      ? `${SPONSORED_TAG} 可以与其中一个主标签同时出现。`
-      : '',
-    ...tagDefinitions.map(definition => `- ${definition.label} -> ${definition.variable}：${definition.description}`),
-  ]
+export function buildRuntimeSummarySystemPrompt(tagDefinitions: AiTagDefinition[]): string {
+  return [CLEAN_FIXED_AI_SUMMARY_SYSTEM_PROMPT, buildAiCustomTagDefinitionPrompt(tagDefinitions)]
     .filter(Boolean)
-    .join('\n');
-}
-
-export function buildRuntimeSummarySystemPrompt(
-  basePrompt: string,
-  tagDefinitions: AiTagDefinition[],
-  extraGuidance?: string
-): string {
-  const sections = [normalizeSystemPrompt(basePrompt)];
-  const tagBlock = buildDynamicTagDefinitionBlock(tagDefinitions);
-  if (tagBlock) {
-    sections.push(tagBlock);
-  }
-
-  const guidance = normalizeSystemPrompt(extraGuidance);
-  if (guidance) {
-    sections.push(`标签判定补充规则：\n${guidance}`);
-  }
-
-  return sections.filter(Boolean).join('\n\n');
+    .join('\n\n');
 }
 
 export function normalizeChatCompletionsUrl(input?: string): string {
@@ -143,28 +121,15 @@ export function normalizeArticleContent(input?: string): string {
 
 export function buildArticleSummaryUserPrompt(input: {
   title: string;
-  content: string;
+  content?: string;
   account?: string;
   author?: string;
   publishedAt?: number | string;
 }): string {
-  const lines = [`文章标题：${String(input.title || '').trim() || '无标题'}`];
-  const account = String(input.account || '').trim();
-  const author = String(input.author || '').trim();
-  const publishedAt = formatPublishedAt(input.publishedAt);
-
-  if (account) {
-    lines.push(`来源账号：${account}`);
-  }
-  if (author) {
-    lines.push(`作者：${author}`);
-  }
-  if (publishedAt) {
-    lines.push(`发布时间：${publishedAt}`);
-  }
-
-  lines.push('', '文章内容：', normalizeArticleContent(input.content));
-  return lines.join('\n');
+  return buildAiSummaryArticlePrompt({
+    ...input,
+    content: normalizeArticleContent(input.content),
+  });
 }
 
 export function readCompletionText(payload: ChatCompletionResponse): string {
@@ -193,70 +158,124 @@ export function parseAiJsonObject<T = Record<string, any>>(raw: string): T {
     }
     throw createError({
       statusCode: 502,
-      statusMessage: 'AI 接口返回的 JSON 无法解析',
+      statusMessage: 'Bad Gateway',
+      message: 'AI 鎺ュ彛杩斿洖鐨?JSON 鏃犳硶瑙ｆ瀽',
     });
   }
 }
 
-function normalizeStructuredSummaryTags(payload: any, allowedVariables: string[] = []): string[] {
-  const allowSet = new Set(
-    allowedVariables
-      .map(variable => normalizeTagVariable(variable))
-      .filter(Boolean)
+function normalizeUniqueTags(input: unknown[], allowSet?: Set<string>): string[] {
+  return Array.from(
+    new Set(
+      input
+        .map(item => normalizeTagVariable(item))
+        .filter(Boolean)
+        .filter(tag => !allowSet || allowSet.has(tag))
+    )
   );
+}
 
-  const inputTags = Array.isArray(payload?.tags)
+function normalizeLegacyTags(inputTags: unknown[], allowedCustomLabels: string[]): StructuredSummaryLabelObject | null {
+  const normalized = normalizeUniqueTags(inputTags);
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  const quality = normalized.find(tag => QUALITY_TAG_SET.has(tag)) || '';
+  if (!quality) {
+    return null;
+  }
+
+  const sponsored = normalized.includes(SPONSORED_TAG) ? SPONSORED_TAG : undefined;
+  const customAllowSet = allowedCustomLabels.length > 0
+    ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
+    : undefined;
+  const custom = normalized
+    .filter(tag => !QUALITY_TAG_SET.has(tag) && tag !== SPONSORED_TAG)
+    .filter(tag => !customAllowSet || customAllowSet.has(tag))
+    .slice(0, 3);
+
+  return {
+    quality,
+    ...(sponsored ? { sponsored } : {}),
+    custom,
+  };
+}
+
+function normalizeStructuredSummaryLabelObject(
+  payload: any,
+  allowedCustomLabels: string[] = []
+): StructuredSummaryLabelObject | null {
+  const labelPayload = payload?.label;
+  const customAllowSet = allowedCustomLabels.length > 0
+    ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
+    : undefined;
+
+  if (labelPayload && typeof labelPayload === 'object' && !Array.isArray(labelPayload)) {
+    const quality = normalizeTagVariable(labelPayload.quality);
+    if (!QUALITY_TAG_SET.has(quality)) {
+      return null;
+    }
+
+    const sponsored = normalizeTagVariable(labelPayload.sponsored);
+    const custom = normalizeUniqueTags(
+      Array.isArray(labelPayload.custom) ? labelPayload.custom : [],
+      customAllowSet
+    ).slice(0, 3);
+
+    return {
+      quality,
+      ...(sponsored === SPONSORED_TAG ? { sponsored: SPONSORED_TAG } : {}),
+      custom,
+    };
+  }
+
+  const singleLabel = normalizeTagVariable(labelPayload);
+  if (singleLabel && QUALITY_TAG_SET.has(singleLabel)) {
+    return {
+      quality: singleLabel,
+      custom: [],
+    };
+  }
+
+  const legacyInput = Array.isArray(payload?.tags)
     ? payload.tags
     : payload?.rating
       ? [payload.rating]
-      : [];
+      : singleLabel
+        ? [singleLabel]
+        : [];
 
-  const normalized = Array.from(
-    new Set(
-      inputTags
-        .map((item: unknown) => normalizeTagVariable(item))
-        .filter(Boolean)
-        .filter(tag => allowSet.size === 0 || allowSet.has(tag))
-    )
-  );
+  return normalizeLegacyTags(legacyInput, allowedCustomLabels);
+}
 
-  if (normalized.length === 0) {
-    return [];
-  }
-
-  const primaryReadingTag = normalized.find(tag => DEFAULT_READING_TIER_TAGS.has(tag)) || '';
-  const firstNonSponsoredTag = normalized.find(tag => !DEFAULT_READING_TIER_TAGS.has(tag) && tag !== SPONSORED_TAG) || '';
-  const sponsoredTag = normalized.includes(SPONSORED_TAG) ? SPONSORED_TAG : '';
-
-  return [primaryReadingTag || firstNonSponsoredTag, sponsoredTag || (primaryReadingTag ? firstNonSponsoredTag : '')]
-    .filter(Boolean)
-    .slice(0, 2);
+function flattenStructuredSummaryTags(label: StructuredSummaryLabelObject): string[] {
+  return [
+    label.quality,
+    ...(label.sponsored ? [label.sponsored] : []),
+    ...label.custom,
+  ].filter(Boolean);
 }
 
 export function parseStructuredArticleSummary(
   raw: string,
-  allowedVariables: string[] = []
+  allowedCustomLabels: string[] = []
 ): StructuredArticleSummary | null {
   try {
     const payload = parseAiJsonObject<any>(raw);
-    const tags = normalizeStructuredSummaryTags(payload, allowedVariables);
-    const summary = String(payload?.summary || '').trim();
-    const highlights = Array.isArray(payload?.highlights)
-      ? payload.highlights
-          .map((item: unknown) => String(item || '').trim())
-          .filter(Boolean)
-          .slice(0, 3)
-      : [];
+    const label = normalizeStructuredSummaryLabelObject(payload, allowedCustomLabels);
+    const summary = String(payload?.summary || payload?.summaryText || '').trim();
 
-    if (tags.length === 0 || !summary || highlights.length === 0) {
+    if (!label || !summary) {
       return null;
     }
 
     return {
-      tags,
-      rating: tags[0],
+      label,
       summary,
-      highlights,
+      tags: flattenStructuredSummaryTags(label),
+      rating: label.quality,
+      highlights: [],
     };
   } catch {
     return null;
@@ -278,14 +297,16 @@ export async function requestAiCompletionText(
   if (!apiKey) {
     throw createError({
       statusCode: 400,
-      statusMessage: '请先在设置里填写 AI API Key',
+      statusMessage: 'Bad Request',
+      message: '璇峰厛鍦ㄨ缃噷濉啓 AI API Key',
     });
   }
 
   if (!model) {
     throw createError({
       statusCode: 400,
-      statusMessage: '请先在设置里填写 AI 模型',
+      statusMessage: 'Bad Request',
+      message: '璇峰厛鍦ㄨ缃噷濉啓 AI 妯″瀷',
     });
   }
 
@@ -321,14 +342,16 @@ export async function requestAiCompletionText(
   } catch {
     throw createError({
       statusCode: 502,
-      statusMessage: `AI 接口返回了无法解析的内容：${rawText.slice(0, 200)}`,
+      statusMessage: 'Bad Gateway',
+      message: `AI 鎺ュ彛杩斿洖浜嗘棤娉曡В鏋愮殑鍐呭锛?{rawText.slice(0, 200)}`,
     });
   }
 
   if (!response.ok) {
     throw createError({
       statusCode: response.status || 502,
-      statusMessage: String(payload?.error?.message || 'AI 请求失败'),
+      statusMessage: response.status === 400 ? 'Bad Request' : 'Bad Gateway',
+      message: String(payload?.error?.message || 'AI 璇锋眰澶辫触'),
     });
   }
 
@@ -336,7 +359,8 @@ export async function requestAiCompletionText(
   if (!text) {
     throw createError({
       statusCode: 502,
-      statusMessage: 'AI 接口没有返回有效内容',
+      statusMessage: 'Bad Gateway',
+      message: 'AI 鎺ュ彛娌℃湁杩斿洖鏈夋晥鍐呭',
     });
   }
 
@@ -361,3 +385,4 @@ export async function requestAiSummary(
     model: result.model,
   };
 }
+

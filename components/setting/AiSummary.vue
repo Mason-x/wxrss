@@ -324,6 +324,11 @@ import {
   BUILTIN_AI_TAG_DEFINITIONS,
   DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS,
 } from '#shared/utils/ai-tags';
+import {
+  DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
+  FIXED_AI_SUMMARY_PROMPT_NOTE,
+  FIXED_AI_TAG_PROMPT_NOTE,
+} from '#shared/utils/ai-prompts';
 import useSavePreferences from '~/composables/useSavePreferences';
 import toastFactory from '~/composables/toast';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
@@ -340,20 +345,6 @@ const dailyReportIncludedLabelsDraft = ref<string[]>([]);
 const hasUnsavedPreferenceChanges = useState<boolean>('preferences-sync-dirty', () => false);
 
 const builtinTagDefinitions = BUILTIN_AI_TAG_DEFINITIONS;
-const CLEAN_DEFAULT_AI_SUMMARY_PROMPT =
-  '内置固定摘要协议：服务端会自动注入标签定义，并要求模型只输出 {"label": {...}, "summary": "..."}。';
-const CLEAN_DEFAULT_AI_TAG_PROMPT =
-  '内置固定标签协议：标签语义、标签数量、标签说明和判定标准均由系统根据当前标签定义动态注入。';
-const CLEAN_DEFAULT_AI_DAILY_REPORT_PROMPT = [
-  '你是一名中文内容编辑，负责基于当天文章的结构化摘要生成 AI 日报。',
-  '日报只参考文章标题、来源信息、label 和 summary，不要假设自己读过原文。',
-  '优先使用高价值标签的内容作为主线；对明显低价值或明显推广的内容保持克制，不要写成日报重点。',
-  '如果某篇内容带有宣传导向，但仍有信息价值，可以引用其信息点，但不要写成推荐口吻。',
-  '日报目标是帮助用户快速了解当天最值得读的内容、值得跟进的话题和关键观点。',
-  '输出内容要克制、清晰、有主题分组，不要写成流水账，也不要使用营销口吻。',
-  'report_html 请使用简洁的 HTML 片段，不要输出 markdown，也不要包含 html/body 标签。',
-  '如果当天没有足够值得整理的内容，可以返回简短日报，但不要杜撰观点或细节。',
-].join('\n');
 
 const cardUi = {
   ring: '',
@@ -402,13 +393,13 @@ function looksCorruptedPromptText(value: unknown) {
 
 function sanitizePromptFieldsInPlace() {
   if (looksCorruptedPromptText(preferences.value.aiSummarySystemPrompt)) {
-    preferences.value.aiSummarySystemPrompt = CLEAN_DEFAULT_AI_SUMMARY_PROMPT;
+    preferences.value.aiSummarySystemPrompt = FIXED_AI_SUMMARY_PROMPT_NOTE;
   }
   if (looksCorruptedPromptText(preferences.value.aiTagSystemPrompt)) {
-    preferences.value.aiTagSystemPrompt = CLEAN_DEFAULT_AI_TAG_PROMPT;
+    preferences.value.aiTagSystemPrompt = FIXED_AI_TAG_PROMPT_NOTE;
   }
   if (looksCorruptedPromptText(preferences.value.aiDailyReportSystemPrompt)) {
-    preferences.value.aiDailyReportSystemPrompt = CLEAN_DEFAULT_AI_DAILY_REPORT_PROMPT;
+    preferences.value.aiDailyReportSystemPrompt = DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT;
   }
 }
 
@@ -621,9 +612,9 @@ function toggleDailyReportIncludedLabel(variable: string) {
 }
 
 function resetAiDefaults() {
-  preferences.value.aiSummarySystemPrompt = CLEAN_DEFAULT_AI_SUMMARY_PROMPT;
-  preferences.value.aiTagSystemPrompt = CLEAN_DEFAULT_AI_TAG_PROMPT;
-  preferences.value.aiDailyReportSystemPrompt = CLEAN_DEFAULT_AI_DAILY_REPORT_PROMPT;
+  preferences.value.aiSummarySystemPrompt = FIXED_AI_SUMMARY_PROMPT_NOTE;
+  preferences.value.aiTagSystemPrompt = FIXED_AI_TAG_PROMPT_NOTE;
+  preferences.value.aiDailyReportSystemPrompt = DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT;
   customTagDefinitionsDraft.value = cloneDefaultCustomTagDefinitions();
   dailyReportIncludedLabelsDraft.value = [...DEFAULT_PREFERENCES.aiDailyReportIncludedLabels];
   markDraftDirty();
