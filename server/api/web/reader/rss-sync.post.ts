@@ -4,6 +4,7 @@ import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 interface RssSyncBody {
   fakeid?: string;
   url?: string;
+  history?: boolean;
 }
 
 export default defineEventHandler(async event => {
@@ -18,6 +19,7 @@ export default defineEventHandler(async event => {
   const body = await readBody<RssSyncBody>(event);
   const fakeid = String(body?.fakeid || '').trim();
   const url = String(body?.url || '').trim();
+  const history = Boolean(body?.history);
   if (!fakeid && !url) {
     throw createError({
       statusCode: 400,
@@ -28,7 +30,7 @@ export default defineEventHandler(async event => {
 
   try {
     return {
-      data: await syncRssFeed(authKey, { fakeid, url }),
+      data: await syncRssFeed(authKey, { fakeid, url, history }),
     };
   } catch (error: any) {
     throw createError({

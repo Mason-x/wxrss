@@ -4,12 +4,16 @@ import { upsertHtmlCache } from '~/server/repositories/cache';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 
 const MAX_RSS_ITEMS = 200;
+const RSS_HISTORY_STEP = 20;
 const HTML_TAG_PATTERN = /<([a-z][\w:-]*)(\s[^>]*)?>/i;
 const PUBLIC_RSSHUB_HOSTS = new Set(['rsshub.app']);
+const RSS_HISTORY_STATE_PARAM = '__wxrss_history';
+const RSS_HISTORY_LIMIT_PARAM = '__wxrss_limit';
 
 interface SyncRssFeedInput {
   fakeid?: string;
   url?: string;
+  history?: boolean;
 }
 
 interface ParsedRssItem {
@@ -57,6 +61,8 @@ interface RssMediaAttachment {
   mimeType: string;
   duration: string;
 }
+
+type RssHistoryState = 'unknown' | 'exhausted';
 
 function nowSeconds(): number {
   return Math.round(Date.now() / 1000);
@@ -122,6 +128,76 @@ function getHostname(value: string): string {
   } catch {
     return '';
   }
+}
+
+function parseRssHistoryMeta(value: string): { limit: number; state: RssHistoryState } {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return {
+      limit: 0,
+      state: 'unknown',
+    };
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
+    const hashParams = new URLSearchParams(hash);
+    const limit = Number(
+      parsed.searchParams.get('limit')
+      || hashParams.get(RSS_HISTORY_LIMIT_PARAM)
+      || 0
+    );
+    return {
+      limit: Number.isFinite(limit) && limit > 0 ? limit : 0,
+      state: hashParams.get(RSS_HISTORY_STATE_PARAM) === 'exhausted' ? 'exhausted' : 'unknown',
+    };
+  } catch {
+    return {
+      limit: 0,
+      state: 'unknown',
+    };
+  }
+}
+
+function updateRssHistoryMeta(
+  value: string,
+  options: {
+    limit?: number;
+    state?: RssHistoryState;
+  } = {}
+): string {
+  const parsed = new URL(value);
+  const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
+  const hashParams = new URLSearchParams(hash);
+
+  const limit = Number(options.limit) || 0;
+  if (limit > 0) {
+    parsed.searchParams.set('limit', String(limit));
+    hashParams.set(RSS_HISTORY_LIMIT_PARAM, String(limit));
+  } else {
+    parsed.searchParams.delete('limit');
+    hashParams.delete(RSS_HISTORY_LIMIT_PARAM);
+  }
+
+  if (options.state === 'exhausted') {
+    hashParams.set(RSS_HISTORY_STATE_PARAM, 'exhausted');
+  } else {
+    hashParams.delete(RSS_HISTORY_STATE_PARAM);
+  }
+
+  const nextHash = hashParams.toString();
+  parsed.hash = nextHash ? `#${nextHash}` : '';
+  return parsed.toString();
+}
+
+function buildNextRssHistorySourceUrl(sourceUrl: string, currentCount: number, currentLimit: number): string {
+  const base = Math.max(Number(currentLimit) || 0, Number(currentCount) || 0, RSS_HISTORY_STEP);
+  const nextLimit = Math.min(MAX_RSS_ITEMS, base + RSS_HISTORY_STEP);
+  return updateRssHistoryMeta(sourceUrl, {
+    limit: nextLimit,
+    state: 'unknown',
+  });
 }
 
 function isBlockedPublicRsshubResponse(sourceUrl: string, status: number, body: string): boolean {
@@ -729,10 +805,20 @@ export async function syncRssFeed(authKey: string, input: SyncRssFeedInput): Pro
     }
   }
 
-  const sourceUrl = await resolveRssSourceUrl(String(input.url || currentAccount?.source_url || ''), authKey);
+  const storedSourceUrl = String(input.url || currentAccount?.source_url || '');
+  const historyMeta = parseRssHistoryMeta(currentAccount?.source_url || storedSourceUrl);
+  const resolvedSourceUrl = await resolveRssSourceUrl(storedSourceUrl, authKey);
+  const sourceUrl = input.history
+    ? buildNextRssHistorySourceUrl(
+      resolvedSourceUrl,
+      Number(currentAccount?.articles || currentAccount?.count || currentAccount?.total_count || 0),
+      historyMeta.limit
+    )
+    : resolvedSourceUrl;
   const feed = await fetchAndParseRssFeed(sourceUrl);
   const fakeid = currentAccount?.fakeid || buildRssFakeid(sourceUrl);
   const totalCount = feed.items.length;
+  const previousArticleCount = Number(currentAccount?.articles || 0);
   const lastUpdateTime = feed.items.reduce((latest, item) => {
     const candidate = Number(item?.article?.update_time || item?.article?.create_time || 0);
     return candidate > latest ? candidate : latest;
@@ -745,7 +831,10 @@ export async function syncRssFeed(authKey: string, input: SyncRssFeedInput): Pro
     completed: true,
     last_update_time: lastUpdateTime,
     source_type: 'rss',
-    source_url: sourceUrl,
+    source_url: updateRssHistoryMeta(sourceUrl, {
+      limit: parseRssHistoryMeta(sourceUrl).limit || totalCount,
+      state: input.history && totalCount <= previousArticleCount ? 'exhausted' : 'unknown',
+    }),
     site_url: feed.siteUrl || currentAccount?.site_url || '',
     description: feed.description || currentAccount?.description || '',
     category: currentAccount?.category || '',

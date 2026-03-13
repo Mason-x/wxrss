@@ -332,12 +332,13 @@ export async function subscribeRssFeed(url: string): Promise<RssSyncResult> {
   return resp.data;
 }
 
-export async function syncRssFeed(payload: { fakeid?: string; url?: string }): Promise<RssSyncResult> {
+export async function syncRssFeed(payload: { fakeid?: string; url?: string; history?: boolean }): Promise<RssSyncResult> {
   const resp = await request<{ data: RssSyncResult }>('/api/web/reader/rss-sync', {
     method: 'POST',
     body: {
       fakeid: payload.fakeid || '',
       url: payload.url || '',
+      history: Boolean(payload.history),
     },
   });
   return resp.data;

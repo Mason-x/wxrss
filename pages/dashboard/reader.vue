@@ -753,10 +753,32 @@ const selectedAccountRemoteMessageCount = computed(() => {
   const account = selectedAccountInfo.value;
   return Number(account?.total_count) || 0;
 });
+const RSS_HISTORY_LIMIT = 200;
+
+function getRssHistoryState(account?: MpAccount | null): 'unknown' | 'exhausted' {
+  const sourceUrl = String(account?.source_url || '').trim();
+  if (!sourceUrl) {
+    return 'unknown';
+  }
+
+  try {
+    const parsed = new URL(sourceUrl);
+    const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
+    const hashParams = new URLSearchParams(hash);
+    return hashParams.get('__wxrss_history') === 'exhausted' ? 'exhausted' : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 const canContinueSyncSelectedAccount = computed(() => {
   const account = selectedAccountInfo.value;
-  if (!account || isRssAccount(account) || favoriteOnly.value) {
+  if (!account || favoriteOnly.value) {
     return false;
+  }
+
+  if (isRssAccount(account)) {
+    return getRssHistoryState(account) !== 'exhausted' && (Number(account.articles) || 0) < RSS_HISTORY_LIMIT;
   }
 
   return selectedAccountRemoteMessageCount.value > selectedAccountLocalMessageCount.value;
@@ -3482,7 +3504,7 @@ async function handleArticleFooterAction() {
     return;
   }
   if (canContinueSyncSelectedAccount.value) {
-    await syncCurrentAccount();
+    await syncCurrentAccount(Boolean(selectedAccountInfo.value && isRssAccount(selectedAccountInfo.value)));
   }
 }
 
@@ -4017,7 +4039,7 @@ async function _load(
   }
 }
 
-async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0) {
+async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0, rssHistory = false) {
   if (isRssAccount(account)) {
     syncingRowId.value = account.fakeid;
     isSyncing.value = true;
@@ -4029,7 +4051,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true, initialPa
     });
 
     try {
-      const result = await syncRssFeed({ fakeid: account.fakeid });
+      const result = await syncRssFeed({ fakeid: account.fakeid, history: rssHistory });
       if (Number(result.inserted) > 0) {
         markAccountHasNewArticles(account.fakeid);
       }
@@ -4139,7 +4161,7 @@ async function cancelRemoteBatchSync(): Promise<void> {
   });
 }
 
-async function syncCurrentAccount() {
+async function syncCurrentAccount(forceRssHistory = false) {
   if (!checkLogin()) return;
   if (!selectedAccount.value) return;
 
@@ -4149,12 +4171,17 @@ async function syncCurrentAccount() {
   try {
     setBatchSyncNotice('');
     isCanceled.value = false;
-    await loadAccountArticle(account, true);
+    const rssHistory = Boolean(forceRssHistory && isRssAccount(account));
+    await loadAccountArticle(account, true, 0, rssHistory);
     await runAiRefreshAfterSync();
     toast.success(
       '同步完成',
       isRssAccount(account)
-        ? `RSS 订阅【${account.nickname || account.fakeid}】已同步`
+        ? (
+          rssHistory
+            ? `RSS 订阅【${account.nickname || account.fakeid}】已继续同步历史内容`
+            : `RSS 订阅【${account.nickname || account.fakeid}】已同步`
+        )
         : `公众号【${account.nickname || account.fakeid}】文章已同步`
     );
   } catch (error) {
