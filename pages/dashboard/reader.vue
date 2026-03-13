@@ -4689,8 +4689,13 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticlesListRef"
-            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
-            :class="mobileView === 'article' ? 'pointer-events-none' : ''"
+            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pt-3"
+            :class="[
+              mobileView === 'article' ? 'pointer-events-none' : '',
+              mobileView === 'articles' && shouldShowArticleFooterAction
+                ? 'pb-[calc(env(safe-area-inset-bottom)+7.25rem)]'
+                : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]',
+            ]"
             @pointerdown="beginMobileDrag('articles', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
@@ -4821,24 +4826,6 @@ onUnmounted(() => {
                 :title="articleListEmptyState.title"
                 :description="articleListEmptyState.description"
               />
-            </div>
-
-            <div
-              v-if="shouldShowArticleFooterAction"
-              class="sticky bottom-0 z-10 -mx-3 bg-[linear-gradient(180deg,rgba(248,250,252,0),rgba(248,250,252,0.94)_32%,rgba(248,250,252,0.98))] px-3 pb-3 pt-5 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0),rgba(2,6,23,0.94)_32%,rgba(2,6,23,0.98))]"
-            >
-              <UButton
-                size="sm"
-                color="gray"
-                variant="soft"
-                block
-                :loading="articleFooterActionLoading"
-                :disabled="articleFooterActionLoading"
-                class="shadow-[0_12px_28px_rgba(15,23,42,0.10)]"
-                @click="handleArticleFooterAction"
-              >
-                {{ articleFooterActionLabel }}
-              </UButton>
             </div>
           </motion.div>
         </motion.div>
@@ -5305,6 +5292,26 @@ onUnmounted(() => {
           </motion.aside>
         </motion.div>
       </AnimatePresence>
+
+      <div
+        v-if="mobileView === 'articles' && shouldShowArticleFooterAction"
+        class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+      >
+        <div class="pointer-events-auto rounded-[28px] bg-[linear-gradient(180deg,rgba(248,250,252,0),rgba(248,250,252,0.94)_34%,rgba(248,250,252,0.99))] px-3 pt-5 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0),rgba(2,6,23,0.94)_34%,rgba(2,6,23,0.99))]">
+          <UButton
+            size="sm"
+            color="gray"
+            variant="soft"
+            block
+            :loading="articleFooterActionLoading"
+            :disabled="articleFooterActionLoading"
+            class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            @click="handleArticleFooterAction"
+          >
+            {{ articleFooterActionLabel }}
+          </UButton>
+        </div>
+      </div>
 
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
