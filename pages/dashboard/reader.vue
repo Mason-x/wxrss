@@ -1,6 +1,10 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
 import { AnimatePresence, animate, motion, transformValue, type PanInfo, useDragControls, useMotionValue, useReducedMotion } from 'motion-v';
+import {
+  formatAiDailyReportDisplayTitle,
+  formatAiDailyReportListTitle,
+} from '#shared/utils/ai-daily-report';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
@@ -306,6 +310,7 @@ const articlePaneMode = ref<ArticlePaneMode>('articles');
 const dailyReportRows = ref<AiDailyReportItem[]>([]);
 const dailyReportTotalCount = ref(0);
 const dailyReportLoading = ref(false);
+const dailyReportRegenerating = ref(false);
 const selectedArticleKeys = ref<Set<string>>(new Set());
 const selectionMode = ref(false);
 const favoriteOnlySync = useAccountSyncedState<boolean>({
@@ -740,6 +745,44 @@ const editableCategoryNames = computed(() =>
 );
 
 const selectedAccountInfo = computed(() => findAccount(selectedAccount.value));
+const selectedAccountLocalMessageCount = computed(() => {
+  const account = selectedAccountInfo.value;
+  return Number(account?.count) || 0;
+});
+const selectedAccountRemoteMessageCount = computed(() => {
+  const account = selectedAccountInfo.value;
+  return Number(account?.total_count) || 0;
+});
+const canContinueSyncSelectedAccount = computed(() => {
+  const account = selectedAccountInfo.value;
+  if (!account || isRssAccount(account) || favoriteOnly.value) {
+    return false;
+  }
+
+  return selectedAccountRemoteMessageCount.value > selectedAccountLocalMessageCount.value;
+});
+const articleFooterActionLoading = computed(() => {
+  const syncingCurrentAccount =
+    Boolean(selectedAccount.value)
+    && syncingRowId.value === selectedAccount.value
+    && isSyncing.value;
+  return articlePageLoading.value || syncingCurrentAccount;
+});
+const articleFooterActionLabel = computed(() => {
+  if (articlePageHasMore.value) {
+    return '加载更多文章';
+  }
+  if (canContinueSyncSelectedAccount.value) {
+    return '继续同步历史文章';
+  }
+  return '已全部加载';
+});
+const shouldShowArticleFooterAction = computed(() => {
+  if (articlePaneMode.value !== 'articles') {
+    return false;
+  }
+  return articlePageHasMore.value || articlePageLoading.value || canContinueSyncSelectedAccount.value;
+});
 const activeAccountSyncProgress = computed(() => {
   const fakeid = selectedAccount.value;
   if (!fakeid) {
@@ -906,9 +949,22 @@ const selectedArticleDisplayTitle = computed(() => {
   return articleDisplayTitle(selectedArticle.value);
 });
 
+function getDailyReportDisplayTitle(report: Pick<AiDailyReportItem, 'title' | 'reportDate'>): string {
+  return formatAiDailyReportDisplayTitle(report.title, report.reportDate);
+}
+
+function getDailyReportListTitle(report: Pick<AiDailyReportItem, 'title' | 'reportDate'>): string {
+  return formatAiDailyReportListTitle(report.reportDate, report.title);
+}
+
+const todayDateKey = computed(() => format(new Date(), 'yyyy-MM-dd'));
+const canRegenerateSelectedDailyReport = computed(
+  () => Boolean(selectedDailyReport.value && String(selectedDailyReport.value.reportDate || '').trim() === todayDateKey.value)
+);
+
 const selectedContentTitle = computed(() => {
   if (selectedDailyReport.value) {
-    return selectedDailyReport.value.title;
+    return getDailyReportDisplayTitle(selectedDailyReport.value);
   }
   return selectedArticleDisplayTitle.value;
 });
@@ -1474,7 +1530,7 @@ const mobileCurrentHeaderState = computed<MobileHeaderLayerState>(() => {
   if (mobileView.value === 'article' && selectedDailyReport.value) {
     return {
       kind: 'article',
-      title: selectedDailyReport.value.title || 'AI 日报',
+      title: getDailyReportDisplayTitle(selectedDailyReport.value),
       meta: `AI 日报 · ${selectedDailyReport.value.reportDate}`,
       accountId: null,
     };
@@ -2791,6 +2847,114 @@ function decodeHtmlEntitiesDeep(value: string, maxDepth = 4) {
   return current;
 }
 
+function inferCachedRssMediaKind(url: string): 'audio' | 'video' | '' {
+  const normalized = String(url || '').trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  if (/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)(?:$|[?#])/i.test(normalized)) {
+    return 'audio';
+  }
+  if (/\.(mp4|m4v|mov|webm|mkv)(?:$|[?#])/i.test(normalized)) {
+    return 'video';
+  }
+
+  return '';
+}
+
+function resolveCachedRssMediaUrl(url: string, baseUrl: string): string {
+  const normalized = String(url || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  try {
+    return new URL(normalized, baseUrl).toString();
+  } catch {
+    return normalized;
+  }
+}
+
+function injectCachedRssMediaEmbeds(doc: Document, container: Element): boolean {
+  const existingUrls = new Set<string>();
+  container.querySelectorAll('audio[src], video[src], source[src]').forEach(node => {
+    const rawUrl = String(node.getAttribute('src') || '').trim();
+    const resolvedUrl = resolveCachedRssMediaUrl(rawUrl, doc.baseURI);
+    if (resolvedUrl) {
+      existingUrls.add(resolvedUrl);
+    }
+  });
+
+  let inserted = false;
+  const anchors = Array.from(container.querySelectorAll('a[href]'));
+  anchors.forEach(anchor => {
+    if (anchor.closest('.rss-media-card')) {
+      return;
+    }
+
+    const resolvedUrl = resolveCachedRssMediaUrl(String(anchor.getAttribute('href') || ''), doc.baseURI);
+    const kind = inferCachedRssMediaKind(resolvedUrl);
+    if (!kind || existingUrls.has(resolvedUrl)) {
+      return;
+    }
+
+    const card = doc.createElement('section');
+    card.className = `rss-media-card rss-${kind}-card rss-runtime-media-card`;
+
+    const mediaElement = doc.createElement(kind);
+    mediaElement.setAttribute('controls', '');
+    mediaElement.setAttribute('preload', 'metadata');
+    mediaElement.setAttribute('src', resolvedUrl);
+    card.appendChild(mediaElement);
+
+    const host = anchor.closest('p, div, li, figure') || anchor;
+    host.parentNode?.insertBefore(card, host);
+
+    const hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
+    const anchorText = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    if (
+      hostText
+      && (
+        hostText === anchorText
+        || hostText === resolvedUrl
+        || /^(单独打开|打开|收听|播放)/.test(hostText)
+      )
+    ) {
+      host.remove();
+    }
+
+    existingUrls.add(resolvedUrl);
+    inserted = true;
+  });
+
+  return inserted;
+}
+
+function removeCachedRssStandaloneMediaLinks(container: Element): boolean {
+  let removed = false;
+
+  container.querySelectorAll('.rss-media-card-link').forEach(node => {
+    node.remove();
+    removed = true;
+  });
+
+  container.querySelectorAll('a[href]').forEach(anchor => {
+    const href = resolveCachedRssMediaUrl(String(anchor.getAttribute('href') || ''), anchor.ownerDocument.baseURI);
+    const kind = inferCachedRssMediaKind(href);
+    const text = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!kind || !/^(单独打开|打开|收听|播放)/.test(text)) {
+      return;
+    }
+
+    const host = anchor.closest('p, div, li, figure') || anchor;
+    host.remove();
+    removed = true;
+  });
+
+  return removed;
+}
+
 function normalizeCachedRssHtml(html: string) {
   try {
     if (typeof window === 'undefined') {
@@ -2804,18 +2968,25 @@ function normalizeCachedRssHtml(html: string) {
       return html;
     }
 
+    let changed = false;
     const currentMarkup = String(container.innerHTML || '').trim();
-    if (!/&(?:amp;)*(lt|#60);/i.test(currentMarkup)) {
-      return html;
+    if (/&(?:amp;)*(lt|#60);/i.test(currentMarkup)) {
+      const decodedMarkup = decodeHtmlEntitiesDeep(currentMarkup).trim();
+      if (/<(?:\/)?(?:p|div|img|figure|figcaption|blockquote|table|thead|tbody|tr|td|th|ul|ol|li|a|span|section|article|audio|video|source|h[1-6]|br|hr)\b[\s\S]*>/i.test(decodedMarkup)) {
+        container.innerHTML = decodedMarkup;
+        changed = true;
+      }
     }
 
-    const decodedMarkup = decodeHtmlEntitiesDeep(currentMarkup).trim();
-    if (!/<(?:\/)?(?:p|div|img|figure|figcaption|blockquote|table|thead|tbody|tr|td|th|ul|ol|li|a|span|section|article|h[1-6]|br|hr)\b[\s\S]*>/i.test(decodedMarkup)) {
-      return html;
+    if (injectCachedRssMediaEmbeds(doc, container)) {
+      changed = true;
     }
 
-    container.innerHTML = decodedMarkup;
-    return '<!doctype html>\n' + doc.documentElement.outerHTML;
+    if (removeCachedRssStandaloneMediaLinks(container)) {
+      changed = true;
+    }
+
+    return changed ? '<!doctype html>\n' + doc.documentElement.outerHTML : html;
   } catch {
     return html;
   }
@@ -3143,6 +3314,37 @@ function closeAiDailyReports() {
   selectedDailyReport.value = null;
 }
 
+async function regenerateSelectedDailyReport() {
+  const activeReport = selectedDailyReport.value;
+  if (!activeReport || dailyReportRegenerating.value) {
+    return;
+  }
+
+  dailyReportRegenerating.value = true;
+  try {
+    const result = await refreshAiDailyDigest({
+      date: activeReport.reportDate,
+      force: true,
+    });
+    await loadDailyReports();
+
+    const latest = await getAiDailyReport(activeReport.reportDate);
+    if (latest) {
+      selectedDailyReport.value = latest;
+    }
+
+    if (result.reportUpdated) {
+      toast.success('AI 日报已更新', `${activeReport.reportDate} 的日报已重新生成`);
+    } else {
+      toast.success('AI 日报已检查', `${activeReport.reportDate} 暂无可更新内容`);
+    }
+  } catch (error) {
+    toast.error('重新生成日报失败', (error as Error).message);
+  } finally {
+    dailyReportRegenerating.value = false;
+  }
+}
+
 async function runAiRefreshAfterSync() {
   if (!aiAutoSummaryOnSyncEnabled.value) {
     return;
@@ -3224,11 +3426,11 @@ async function openArticleByLinkFromReport(link: string) {
       await openArticle(targetArticle);
       return;
     }
+    toast.warning('文章不存在', '这篇来源文章暂时没有站内缓存内容');
   } catch (error) {
     console.error('Open article from report failed:', error);
+    toast.error('打开文章失败', '无法加载这篇站内文章');
   }
-
-  openOriginalArticle(normalizedLink);
 }
 
 function openOriginalArticle(link: string) {
@@ -3269,6 +3471,19 @@ function onSelectionAction() {
 
 async function loadMoreArticles() {
   await loadArticlePage(false);
+}
+
+async function handleArticleFooterAction() {
+  if (articlePageLoading.value) {
+    return;
+  }
+  if (articlePageHasMore.value) {
+    await loadMoreArticles();
+    return;
+  }
+  if (canContinueSyncSelectedAccount.value) {
+    await syncCurrentAccount();
+  }
 }
 
 function onClickCategory(categoryId: string) {
@@ -3360,6 +3575,23 @@ function resolveScrollableElement(target: any): HTMLElement | null {
   return maybeElement instanceof HTMLElement ? maybeElement : null;
 }
 
+function maybeAutoLoadMoreArticles(container: HTMLElement | null) {
+  if (
+    !container ||
+    mobileView.value !== 'articles' ||
+    articlePaneMode.value !== 'articles' ||
+    articlePageLoading.value ||
+    !articlePageHasMore.value
+  ) {
+    return;
+  }
+
+  const remaining = container.scrollHeight - container.scrollTop - container.clientHeight;
+  if (remaining <= 160) {
+    void loadMoreArticles();
+  }
+}
+
 function onMobileReaderScroll(event?: Event) {
   const directTarget = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   const currentContainer =
@@ -3368,6 +3600,7 @@ function onMobileReaderScroll(event?: Event) {
       mobileView.value === 'articles' ? mobileArticlesListRef.value : mobileArticleContentRef.value
     );
   mobileScrollTopVisible.value = (currentContainer?.scrollTop || 0) > 320;
+  maybeAutoLoadMoreArticles(currentContainer);
 }
 
 function scrollMobileReaderToTop() {
@@ -4458,11 +4691,9 @@ onUnmounted(() => {
               >
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0 flex-1">
-                    <p class="line-clamp-2 text-sm font-medium">{{ report.title }}</p>
+                    <p class="line-clamp-2 text-sm font-medium">{{ getDailyReportListTitle(report) }}</p>
                     <div class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                      <span>{{ report.reportDate }}</span>
-                      <span>·</span>
-                      <span>{{ report.sourceCount }} 篇文章</span>
+                      <span>{{ report.sourceCount }} 篇信息来源</span>
                     </div>
                   </div>
                   <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
@@ -4565,17 +4796,21 @@ onUnmounted(() => {
               />
             </div>
 
-            <div v-if="articlePaneMode === 'articles' && (articlePageHasMore || articlePageLoading)" class="px-1 py-3">
+            <div
+              v-if="shouldShowArticleFooterAction"
+              class="sticky bottom-0 z-10 -mx-3 bg-[linear-gradient(180deg,rgba(248,250,252,0),rgba(248,250,252,0.94)_32%,rgba(248,250,252,0.98))] px-3 pb-3 pt-5 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0),rgba(2,6,23,0.94)_32%,rgba(2,6,23,0.98))]"
+            >
               <UButton
                 size="sm"
                 color="gray"
                 variant="soft"
                 block
-                :loading="articlePageLoading"
-                :disabled="!articlePageHasMore"
-                @click="loadMoreArticles"
+                :loading="articleFooterActionLoading"
+                :disabled="articleFooterActionLoading"
+                class="shadow-[0_12px_28px_rgba(15,23,42,0.10)]"
+                @click="handleArticleFooterAction"
               >
-                {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+                {{ articleFooterActionLabel }}
               </UButton>
             </div>
           </motion.div>
@@ -4632,6 +4867,17 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex items-center gap-2">
+                  <UTooltip v-if="selectedDailyReport && canRegenerateSelectedDailyReport" text="重新生成当日日报">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:refresh-cw"
+                      class="icon-btn"
+                      :loading="dailyReportRegenerating"
+                      @click="regenerateSelectedDailyReport"
+                    />
+                  </UTooltip>
                   <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
                     <UButton
                       size="2xs"
@@ -4863,7 +5109,7 @@ onUnmounted(() => {
                             <div class="min-w-0 flex-1">
                               <span class="block">自动摘要</span>
                               <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                                {{ aiAutoSummaryOnSyncEnabled ? '同步时自动摘要当天文章并打标' : '同步时不自动生成摘要和标签' }}
+                                同步时自动摘要当天文章
                               </p>
                             </div>
                             <span
@@ -5085,7 +5331,7 @@ onUnmounted(() => {
                         <div class="min-w-0 flex-1">
                           <span class="block">自动摘要</span>
                           <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                            {{ aiAutoSummaryOnSyncEnabled ? '同步时自动摘要当天文章并打标' : '同步时不自动生成摘要和标签' }}
+                            同步时自动摘要当天文章
                           </p>
                         </div>
                         <span
@@ -5418,11 +5664,9 @@ onUnmounted(() => {
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
-                <p class="line-clamp-2 text-sm font-medium">{{ report.title }}</p>
+                <p class="line-clamp-2 text-sm font-medium">{{ getDailyReportListTitle(report) }}</p>
                 <div class="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span>{{ report.reportDate }}</span>
-                  <span>·</span>
-                  <span>{{ report.sourceCount }} 篇文章</span>
+                  <span>{{ report.sourceCount }} 篇信息来源</span>
                 </div>
               </div>
               <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
@@ -5523,7 +5767,7 @@ onUnmounted(() => {
       </ul>
       </div>
       <div
-        v-if="articlePaneMode === 'articles' && !loading && (articlePageHasMore || articlePageLoading)"
+        v-if="!loading && shouldShowArticleFooterAction"
         class="border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
       >
         <UButton
@@ -5531,11 +5775,11 @@ onUnmounted(() => {
           color="gray"
           variant="ghost"
           block
-          :loading="articlePageLoading"
-          :disabled="!articlePageHasMore"
-          @click="loadMoreArticles"
+          :loading="articleFooterActionLoading"
+          :disabled="articleFooterActionLoading"
+          @click="handleArticleFooterAction"
         >
-          {{ articlePageHasMore ? '加载更多文章' : '已全部加载' }}
+          {{ articleFooterActionLabel }}
         </UButton>
       </div>
     </section>
@@ -5553,6 +5797,18 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
+            <UButton
+              v-if="selectedDailyReport && canRegenerateSelectedDailyReport"
+              size="xs"
+              color="primary"
+              variant="soft"
+              icon="i-lucide:refresh-cw"
+              :loading="dailyReportRegenerating"
+              class="shrink-0"
+              @click="regenerateSelectedDailyReport"
+            >
+              重新生成
+            </UButton>
             <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
               <UButton
                 size="2xs"

@@ -51,6 +51,13 @@ export interface SyncRssFeedResult {
   sourceUrl: string;
 }
 
+interface RssMediaAttachment {
+  kind: 'audio' | 'video';
+  url: string;
+  mimeType: string;
+  duration: string;
+}
+
 function nowSeconds(): number {
   return Math.round(Date.now() / 1000);
 }
@@ -341,6 +348,162 @@ function extractCoverUrl(contentHtml: string, fallbackLink: string): string {
   return '';
 }
 
+function isAudioMimeType(value: string): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized.startsWith('audio/');
+}
+
+function isVideoMimeType(value: string): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized.startsWith('video/');
+}
+
+function inferMediaKind(url: string, mimeType: string, medium = ''): 'audio' | 'video' | '' {
+  const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
+  const normalizedMedium = String(medium || '').trim().toLowerCase();
+  const normalizedUrl = String(url || '').trim().toLowerCase();
+
+  if (isAudioMimeType(normalizedMimeType) || normalizedMedium === 'audio') {
+    return 'audio';
+  }
+  if (isVideoMimeType(normalizedMimeType) || normalizedMedium === 'video') {
+    return 'video';
+  }
+
+  if (/\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)(?:$|[?#])/i.test(normalizedUrl)) {
+    return 'audio';
+  }
+  if (/\.(mp4|m4v|mov|webm|mkv)(?:$|[?#])/i.test(normalizedUrl)) {
+    return 'video';
+  }
+
+  return '';
+}
+
+function extractRssMediaAttachment($item: cheerio.Cheerio<any>, baseUrl: string): RssMediaAttachment | null {
+  const duration = firstTextByLocalNames($item, ['duration']);
+  const attachments: RssMediaAttachment[] = [];
+
+  findByLocalName($item, 'enclosure').each((_, element) => {
+    const url = resolveAbsoluteUrl(normalizeWhitespace(String(element.attribs?.url || '')), baseUrl);
+    const mimeType = normalizeWhitespace(String(element.attribs?.type || ''));
+    const kind = inferMediaKind(url, mimeType, String(element.attribs?.medium || ''));
+    if (!url || !kind) {
+      return;
+    }
+
+    attachments.push({
+      kind,
+      url,
+      mimeType,
+      duration,
+    });
+  });
+
+  $item.find('link').each((_, element) => {
+    const rel = normalizeWhitespace(String(element.attribs?.rel || '')).toLowerCase();
+    if (rel !== 'enclosure') {
+      return;
+    }
+
+    const url = resolveAbsoluteUrl(normalizeWhitespace(String(element.attribs?.href || '')), baseUrl);
+    const mimeType = normalizeWhitespace(String(element.attribs?.type || ''));
+    const kind = inferMediaKind(url, mimeType);
+    if (!url || !kind) {
+      return;
+    }
+
+    attachments.push({
+      kind,
+      url,
+      mimeType,
+      duration,
+    });
+  });
+
+  $item.find('*').each((_, element) => {
+    const tagName = String((element as any)?.tagName || (element as any)?.name || '').toLowerCase();
+    if (!tagName.endsWith(':content')) {
+      return;
+    }
+
+    const url = resolveAbsoluteUrl(normalizeWhitespace(String(element.attribs?.url || '')), baseUrl);
+    const mimeType = normalizeWhitespace(String(element.attribs?.type || ''));
+    const kind = inferMediaKind(url, mimeType, String(element.attribs?.medium || ''));
+    if (!url || !kind) {
+      return;
+    }
+
+    attachments.push({
+      kind,
+      url,
+      mimeType,
+      duration,
+    });
+  });
+
+  return attachments.find(item => item.kind === 'audio') || attachments[0] || null;
+}
+
+function extractMediaAttachmentFromContentHtml(contentHtml: string, baseUrl: string): RssMediaAttachment | null {
+  const html = String(contentHtml || '').trim();
+  if (!html) {
+    return null;
+  }
+
+  const $ = cheerio.load(html);
+  const attachments: RssMediaAttachment[] = [];
+
+  $('audio[src], video[src], source[src], a[href]').each((_, element) => {
+    const tagName = String((element as any)?.tagName || (element as any)?.name || '').toLowerCase();
+    const rawUrl = tagName === 'a'
+      ? normalizeWhitespace(String(element.attribs?.href || ''))
+      : normalizeWhitespace(String(element.attribs?.src || ''));
+    const url = resolveAbsoluteUrl(rawUrl, baseUrl);
+    const mimeType = normalizeWhitespace(String(element.attribs?.type || ''));
+    const kind = inferMediaKind(url, mimeType);
+    if (!url || !kind) {
+      return;
+    }
+
+    attachments.push({
+      kind,
+      url,
+      mimeType,
+      duration: '',
+    });
+  });
+
+  return attachments.find(item => item.kind === 'audio') || attachments[0] || null;
+}
+
+function buildRssMediaEmbedHtml(attachment: RssMediaAttachment, title: string, authorName: string): string {
+  const metaParts = [authorName, attachment.duration].filter(Boolean);
+  const metaHtml = metaParts.length > 0 ? `<p class="rss-media-card-meta">${escapeHtml(metaParts.join(' · '))}</p>` : '';
+
+  if (attachment.kind === 'audio') {
+    return `
+      <section class="rss-media-card rss-audio-card">
+        <div class="rss-media-card-header">
+          <h2>${escapeHtml(title)}</h2>
+          ${metaHtml}
+        </div>
+        <audio controls preload="metadata" src="${escapeHtml(attachment.url)}"></audio>
+      </section>
+    `.trim();
+  }
+
+  return `
+    <section class="rss-media-card rss-video-card">
+      <div class="rss-media-card-header">
+        <h2>${escapeHtml(title)}</h2>
+        ${metaHtml}
+      </div>
+      <video controls preload="metadata" src="${escapeHtml(attachment.url)}"></video>
+    </section>
+  `.trim();
+}
+
 function parseUnixTimestamp(value: string): number {
   const trimmed = normalizeWhitespace(value);
   if (!trimmed) {
@@ -409,7 +572,11 @@ function buildRssHtmlDocument(contentHtml: string, baseUrl: string): string {
     'body{font:16px/1.78 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-x:hidden;}',
     'article{padding:0 0 32px;}',
     'img,video,iframe{max-width:100%!important;height:auto!important;}',
+    'audio{display:block;width:100%;max-width:100%!important;min-height:40px;margin:1rem 0;}',
     'a{color:#2563eb;text-decoration:none;}',
+    '.rss-media-card{margin:0 0 1.25rem;padding:1rem 1rem 1.1rem;border:1px solid #e2e8f0;border-radius:18px;background:#f8fafc;}',
+    '.rss-media-card h2{margin:0;font-size:1rem;line-height:1.5;}',
+    '.rss-media-card-meta{margin:.35rem 0 0;color:#64748b;font-size:.875rem;line-height:1.5;}',
     'pre{overflow:auto;border-radius:14px;background:#f8fafc;padding:16px;}',
     'blockquote{margin:1.25rem 0;padding-left:1rem;border-left:3px solid #cbd5e1;color:#475569;}',
     'table{border-collapse:collapse;max-width:none;}',
@@ -429,16 +596,31 @@ function parseRssItem($item: cheerio.Cheerio<any>, feedUrl: string, fallbackAuth
 } | null {
   const title = firstTextByLocalNames($item, ['title']) || 'Untitled';
   const itemLinkText = firstTextByLocalNames($item, ['link', 'guid', 'id']);
-  const atomLink = normalizeWhitespace(String(findByLocalName($item, 'link').first().attr('href') || ''));
+  const atomLink = normalizeWhitespace(
+    String(
+      $item
+        .find('link')
+        .filter((_, element) => normalizeWhitespace(String(element.attribs?.rel || '')).toLowerCase() !== 'enclosure')
+        .first()
+        .attr('href') || ''
+    )
+  );
   const link = resolveAbsoluteUrl(atomLink || itemLinkText, feedUrl);
   const fallbackLink = link || `${feedUrl}#${hashString(`${title}:${itemLinkText}`)}`;
+  const authorName =
+    firstTextByLocalNames($item, ['creator', 'author', 'name']) || fallbackAuthor || 'RSS';
 
   const contentMarkup = extractMarkupByLocalNames($item, ['encoded', 'content', 'description', 'summary']);
   const normalizedHtml = normalizeBodyHtml(contentMarkup, firstTextByLocalNames($item, ['description', 'summary']));
-  const digest = extractTextExcerpt(contentMarkup || normalizedHtml || title);
-  const cover = extractCoverUrl(normalizedHtml, fallbackLink);
-  const authorName =
-    firstTextByLocalNames($item, ['creator', 'author', 'name']) || fallbackAuthor || 'RSS';
+  const mediaAttachment =
+    extractRssMediaAttachment($item, fallbackLink)
+    || extractMediaAttachmentFromContentHtml(normalizedHtml, fallbackLink);
+  const contentHtml =
+    mediaAttachment && !/<(?:audio|video)[\s>]/i.test(normalizedHtml)
+      ? [buildRssMediaEmbedHtml(mediaAttachment, title, authorName), normalizedHtml].filter(Boolean).join('\n')
+      : normalizedHtml;
+  const digest = extractTextExcerpt(contentMarkup || contentHtml || title);
+  const cover = extractCoverUrl(contentHtml, fallbackLink);
   const publishedAt =
     parseUnixTimestamp(firstTextByLocalNames($item, ['pubDate', 'published', 'updated', 'date', 'created'])) ||
     nowSeconds();
@@ -455,7 +637,7 @@ function parseRssItem($item: cheerio.Cheerio<any>, feedUrl: string, fallbackAuth
     create_time: publishedAt,
     update_time: publishedAt,
     item_show_type: 11,
-    media_duration: '',
+    media_duration: mediaAttachment?.duration || '',
     appmsg_album_infos: [],
     copyright_stat: 0,
     copyright_type: 0,
@@ -465,7 +647,7 @@ function parseRssItem($item: cheerio.Cheerio<any>, feedUrl: string, fallbackAuth
 
   return {
     article,
-    html: buildRssHtmlDocument(normalizedHtml, fallbackLink),
+    html: buildRssHtmlDocument(contentHtml, fallbackLink),
   };
 }
 

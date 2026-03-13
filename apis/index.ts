@@ -249,7 +249,7 @@ async function handleMpSessionError() {
     throw new Error('session expired');
   }
 
-  // 寰俊鎺ュ彛杩斿洖 200003 浣?auth-key 浠嶅瓨鍦ㄦ椂锛岄€氬父鏄井淇＄浼氳瘽寮傚父鎴栭鎺э紝涓嶅簲鐩存帴娓呯┖鏈湴鐧诲綍鎬併€?  throw new Error('寰俊浼氳瘽寮傚父(200003)锛岃绋嶅悗閲嶈瘯');
+  throw new Error('微信会话异常(200003)，请稍后重试；如果持续失败，请重新登录公众号后台');
 }
 
 /**
@@ -393,9 +393,13 @@ export async function getReaderArticleByLink(url: string): Promise<ReaderArticle
   return resp.article || null;
 }
 
-export async function refreshAiDailyDigest(): Promise<AiDailyProcessResult> {
+export async function refreshAiDailyDigest(options: { date?: string; force?: boolean } = {}): Promise<AiDailyProcessResult> {
   const resp = await request<{ data: AiDailyProcessResult }>('/api/web/ai/daily-refresh', {
     method: 'POST',
+    body: {
+      date: options.date,
+      force: options.force === true,
+    },
   });
   return resp.data;
 }

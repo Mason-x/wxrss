@@ -1,4 +1,8 @@
 ﻿import { load } from 'cheerio';
+import {
+  formatAiDailyReportDisplayTitle,
+  normalizeAiDailyReportTopic,
+} from '#shared/utils/ai-daily-report';
 import { DEFAULT_PREFERENCES } from '#shared/utils/preferences';
 import {
   buildAiDailyReportSystemPrompt,
@@ -55,6 +59,10 @@ export interface AiAccountBootstrapResult {
   taggedCount: number;
   summarizedCount: number;
   reason?: string;
+}
+
+interface RunAiDailyDigestOptions {
+  forceReport?: boolean;
 }
 
 const DAILY_AI_LOCKS = new Map<string, Promise<AiDailyProcessResult>>();
@@ -172,75 +180,211 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function formatReportArticleDate(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
+function formatDailyReportSourceTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
     return '';
   }
 
-  return new Intl.DateTimeFormat('zh-CN', {
+  const date = new Date(timestamp * 1000);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  }).format(new Date(value * 1000));
+  });
+
+  const parts = formatter.formatToParts(date);
+  const valueByType = new Map(parts.map(part => [part.type, part.value]));
+  const year = valueByType.get('year') || '0000';
+  const month = valueByType.get('month') || '00';
+  const day = valueByType.get('day') || '00';
+  const hour = valueByType.get('hour') || '00';
+  const minute = valueByType.get('minute') || '00';
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
-function buildReportArticleTagBadges(article: PreparedAiArticle): string {
-  const tags = Array.isArray(article.summaryPayload.tags) ? article.summaryPayload.tags : [];
-  if (tags.length === 0) {
+function buildDailyReportSourceMeta(article: PreparedAiArticle): string {
+  const segments = [
+    String(article.accountName || '').trim(),
+    formatDailyReportSourceTime(Number(article.updateTime || article.createTime || 0)),
+  ].filter(Boolean);
+
+  return segments.join(' · ');
+}
+
+const AI_DAILY_REPORT_ALLOWED_TAGS = new Set([
+  'section',
+  'h2',
+  'h3',
+  'h4',
+  'p',
+  'ul',
+  'ol',
+  'li',
+  'strong',
+  'em',
+  'blockquote',
+  'code',
+  'pre',
+  'hr',
+  'br',
+]);
+
+function normalizeHeadingText(value: string): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function sanitizeAiDailyReportBodyHtml(html: string, topic: string): string {
+  const rawHtml = String(html || '').trim();
+  if (!rawHtml) {
+    return '';
+  }
+
+  const $ = load(`<div data-ai-daily-report-root="true">${rawHtml}</div>`, null, false);
+  const root = $('[data-ai-daily-report-root="true"]');
+  root.find('script, style, iframe, object, embed, form, button, input, textarea, select, svg, canvas').remove();
+
+  root.find('*').each((_, element) => {
+    const $element = $(element);
+    let tagName = String(element.tagName || '').toLowerCase();
+
+    if (!tagName) {
+      return;
+    }
+
+    if (tagName === 'a') {
+      $element.replaceWith($element.text());
+      return;
+    }
+
+    if (tagName === 'h1') {
+      element.tagName = 'h2';
+      tagName = 'h2';
+    }
+
+    if (!AI_DAILY_REPORT_ALLOWED_TAGS.has(tagName)) {
+      $element.replaceWith($element.contents());
+      return;
+    }
+
+    Object.keys(element.attribs || {}).forEach(attribute => {
+      $element.removeAttr(attribute);
+    });
+  });
+
+  const reportTitle = formatAiDailyReportDisplayTitle(topic);
+  const firstHeading = root.find('h1, h2, h3, h4').first();
+  const firstHeadingText = normalizeHeadingText(firstHeading.text());
+  if (
+    firstHeadingText &&
+    (
+      firstHeadingText === reportTitle ||
+      firstHeadingText === topic ||
+      /^(今日聚焦|AI日报|AI 日报)/u.test(firstHeadingText)
+    )
+  ) {
+    firstHeading.remove();
+  }
+
+  root.find('section').each((_, element) => {
+    const heading = $(element).children('h1, h2, h3, h4').first();
+    const headingText = normalizeHeadingText(heading.text());
+    if (/^(信息来源|来源列表|参考来源)$/u.test(headingText)) {
+      $(element).remove();
+    }
+  });
+
+  root.find('p, h2, h3, h4, li, blockquote').each((_, element) => {
+    if (!normalizeHeadingText($(element).text())) {
+      $(element).remove();
+    }
+  });
+
+  root.find('ul, ol').each((_, element) => {
+    if ($(element).children('li').length === 0) {
+      $(element).remove();
+    }
+  });
+
+  root.find('section').each((_, element) => {
+    if (!normalizeHeadingText($(element).text()) && $(element).find('pre, hr').length === 0) {
+      $(element).remove();
+    }
+  });
+
+  return root.html()?.trim() || '';
+}
+
+function buildDailyReportHeaderHtml(dateKey: string, topic: string, sourceCount: number): string {
+  return `
+    <header class="ai-daily-report-header">
+      <h1 class="ai-daily-report-title">${escapeHtml(formatAiDailyReportDisplayTitle(topic, dateKey))}</h1>
+      <p class="ai-daily-report-meta">${escapeHtml(dateKey)} · ${sourceCount} 篇信息来源</p>
+    </header>
+  `.trim();
+}
+
+function buildDailyReportBodyHtml(bodyHtml: string): string {
+  const normalizedBody = String(bodyHtml || '').trim();
+  return `
+    <section class="ai-daily-report-body">
+      ${normalizedBody || '<p class="ai-daily-report-empty">AI 日报内容为空。</p>'}
+    </section>
+  `.trim();
+}
+
+function buildDailyReportSourcesHtml(articles: PreparedAiArticle[]): string {
+  const uniqueArticles = Array.from(new Map(articles.map(article => [article.link, article])).values());
+  if (uniqueArticles.length === 0) {
     return '';
   }
 
   return `
-    <div class="ai-daily-report-entry-tags">
-      ${tags.map(tag => `<span class="ai-daily-report-entry-tag">${escapeHtml(tag)}</span>`).join('')}
-    </div>
+    <section class="ai-daily-report-sources">
+      <h2>信息来源</h2>
+      <ol class="ai-daily-report-source-list">
+        ${uniqueArticles
+          .map(
+            article => {
+              const sourceMeta = buildDailyReportSourceMeta(article);
+              return `
+              <li class="ai-daily-report-source-item">
+                <a
+                  class="ai-daily-report-source-link"
+                  href="/dashboard/reader"
+                  data-reader-article-link="${escapeHtml(article.link)}"
+                >
+                  ${escapeHtml(article.title || '无标题')}
+                </a>
+                ${sourceMeta ? `<p class="ai-daily-report-source-meta">${escapeHtml(sourceMeta)}</p>` : ''}
+              </li>
+            `.trim();
+            }
+          )
+          .join('\n')}
+      </ol>
+    </section>
   `.trim();
 }
 
-function buildDailyReportArticleCards(articles: PreparedAiArticle[]): string {
-  return articles.map(article => {
-    const publishedAt = formatReportArticleDate(article.updateTime || article.createTime);
-    const metaParts = [
-      article.accountName ? escapeHtml(article.accountName) : '',
-      article.authorName ? escapeHtml(article.authorName) : '',
-      publishedAt ? escapeHtml(publishedAt) : '',
-    ].filter(Boolean);
-
-    return `
-      <article class="ai-daily-report-entry">
-        <div class="ai-daily-report-entry-header">
-          <div class="ai-daily-report-entry-heading">
-            <h3 class="ai-daily-report-entry-title">${escapeHtml(article.title || '无标题')}</h3>
-            ${metaParts.length > 0 ? `<p class="ai-daily-report-entry-meta">${metaParts.join(' · ')}</p>` : ''}
-            ${buildReportArticleTagBadges(article)}
-          </div>
-          <a
-            class="ai-daily-report-entry-link"
-            href="${escapeHtml(article.link)}"
-            data-reader-article-link="${escapeHtml(article.link)}"
-          >
-            查看正文
-          </a>
-        </div>
-        <p class="ai-daily-report-entry-summary">${escapeHtml(article.summaryPayload.summary || '')}</p>
-      </article>
-    `.trim();
-  }).join('\n');
-}
-
 function buildFinalDailyReportHtml(options: {
-  overviewHtml: string;
+  dateKey: string;
+  topic: string;
+  bodyHtml: string;
   articles: PreparedAiArticle[];
 }): string {
-  const overviewHtml = String(options.overviewHtml || '').trim();
-  const articleCards = buildDailyReportArticleCards(options.articles);
+  const topic = normalizeAiDailyReportTopic(options.topic, options.dateKey);
+  const bodyHtml = sanitizeAiDailyReportBodyHtml(options.bodyHtml, topic);
+  const sourcesHtml = buildDailyReportSourcesHtml(options.articles);
+  const sourceCount = new Set(options.articles.map(article => article.link)).size;
 
   return [
-    overviewHtml ? `<section class="ai-daily-report-overview">${overviewHtml}</section>` : '',
-    `<section class="ai-daily-report-entries">${articleCards}</section>`,
+    buildDailyReportHeaderHtml(options.dateKey, topic, sourceCount),
+    buildDailyReportBodyHtml(bodyHtml),
+    sourcesHtml,
   ].filter(Boolean).join('\n');
 }
 
@@ -249,6 +393,25 @@ function shouldIncludeArticleInDailyReport(article: PreparedAiArticle, includedL
     return false;
   }
   return article.summaryPayload.tags.some(tag => includedLabels.includes(tag));
+}
+
+function needsDailyReportTemplateRefresh(
+  report: Awaited<ReturnType<typeof getAiDailyReport>> | null
+): boolean {
+  if (!report) {
+    return true;
+  }
+
+  const title = String(report.title || '').trim();
+  const contentHtml = String(report.contentHtml || '').trim();
+
+  return (
+    !title ||
+    /AI日报|AI 日报/u.test(title) ||
+    contentHtml.includes('ai-daily-report-entry') ||
+    !contentHtml.includes('ai-daily-report-header') ||
+    !contentHtml.includes('ai-daily-report-sources')
+  );
 }
 
 async function ensureArticleSummaries(
@@ -423,7 +586,11 @@ async function runAiAccountBootstrapInternal(
   };
 }
 
-async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Promise<AiDailyProcessResult> {
+async function runAiDailyDigestInternal(
+  authKey: string,
+  dateKey?: string,
+  options: RunAiDailyDigestOptions = {}
+): Promise<AiDailyProcessResult> {
   const range = getShanghaiDayRange(dateKey);
   const { preferences, configured } = await resolveAiPreferences(authKey);
   if (!isAiAutoSummaryOnSyncEnabled(preferences)) {
@@ -501,7 +668,8 @@ async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Prom
   }
 
   const currentReport = await getAiDailyReport(authKey, range.dateKey);
-  const shouldRefreshReport = !currentReport || summarizedCount > 0 || taggedCount > 0;
+  const shouldRefreshReport =
+    options.forceReport === true || needsDailyReportTemplateRefresh(currentReport) || summarizedCount > 0 || taggedCount > 0;
 
   if (!shouldRefreshReport) {
     return {
@@ -538,8 +706,12 @@ async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Prom
     );
 
     const payload = parseAiJsonObject<AiDailyPayload>(result.text);
+    const reportTopic = normalizeAiDailyReportTopic(String(payload.report_title || '').trim(), range.dateKey);
+    const sourceCount = new Set(reportArticles.map(article => article.link)).size;
     const reportHtml = buildFinalDailyReportHtml({
-      overviewHtml: String(payload.report_html || '').trim(),
+      dateKey: range.dateKey,
+      topic: reportTopic,
+      bodyHtml: String(payload.report_html || '').trim(),
       articles: reportArticles,
     });
     let reportUpdated = false;
@@ -547,9 +719,9 @@ async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Prom
     if (reportHtml) {
       await upsertAiDailyReport(authKey, {
         reportDate: range.dateKey,
-        title: String(payload.report_title || `${range.dateKey} AI鏃ユ姤`).trim() || `${range.dateKey} AI鏃ユ姤`,
+        title: reportTopic,
         contentHtml: reportHtml,
-        sourceCount: reportArticles.length,
+        sourceCount,
       });
       reportUpdated = true;
     }
@@ -582,7 +754,11 @@ export async function runAiAccountBootstrap(
   return await enqueueAiTask(authKey, async () => await runAiAccountBootstrapInternal(authKey, fakeid, limit));
 }
 
-export async function runAiDailyDigest(authKey: string, dateKey?: string): Promise<AiDailyProcessResult> {
+export async function runAiDailyDigest(
+  authKey: string,
+  dateKey?: string,
+  options: RunAiDailyDigestOptions = {}
+): Promise<AiDailyProcessResult> {
   return await enqueueAiTask(authKey, async () => {
     const range = getShanghaiDayRange(dateKey);
     const lockKey = `${authKey}:${range.dateKey}`;
@@ -591,7 +767,7 @@ export async function runAiDailyDigest(authKey: string, dateKey?: string): Promi
       return await running;
     }
 
-    const task = runAiDailyDigestInternal(authKey, range.dateKey).finally(() => {
+    const task = runAiDailyDigestInternal(authKey, range.dateKey, options).finally(() => {
       DAILY_AI_LOCKS.delete(lockKey);
     });
 

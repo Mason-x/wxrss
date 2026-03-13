@@ -56,7 +56,7 @@ const VIDEO_PROXY_HOSTS = [
 function buildSrcdoc(html: string): string {
   const sanitized = DOMPurify.sanitize(html || '', {
     WHOLE_DOCUMENT: true,
-    ADD_TAGS: ['iframe', 'video', 'source'],
+    ADD_TAGS: ['iframe', 'video', 'audio', 'source'],
     ADD_ATTR: [
       'allow',
       'allowfullscreen',
@@ -75,6 +75,8 @@ function buildSrcdoc(html: string): string {
       'src',
       'type',
       'scrolling',
+      'target',
+      'rel',
       'data-src',
       'data-mpvid',
       'sandbox',
@@ -250,6 +252,67 @@ function buildSrcdoc(html: string): string {
       .ai-daily-report a:hover {
         text-decoration: underline;
       }
+      .ai-daily-report-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .ai-daily-report-title {
+        margin: 0;
+        font-size: clamp(1.45rem, 3vw, 2rem);
+        line-height: 1.25;
+      }
+      .ai-daily-report-meta {
+        margin: 0;
+        color: #64748b;
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-meta {
+        color: #94a3b8;
+      }
+      .ai-daily-report-body > :first-child,
+      .ai-daily-report-sources > :first-child {
+        margin-top: 0;
+      }
+      .ai-daily-report-body > :last-child,
+      .ai-daily-report-sources > :last-child {
+        margin-bottom: 0;
+      }
+      .ai-daily-report-source-list {
+        margin: 0.9rem 0 0;
+        padding-left: 1.25rem;
+      }
+      .ai-daily-report-source-item + .ai-daily-report-source-item {
+        margin-top: 0.65rem;
+      }
+      .ai-daily-report-source-link {
+        display: inline-block;
+        color: #0f172a;
+        font-size: 0.98rem;
+        font-weight: 600;
+        line-height: 1.65;
+        text-decoration: none;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-source-link {
+        color: #e2e8f0;
+      }
+      .ai-daily-report-source-link:hover {
+        color: #2563eb;
+        text-decoration: underline;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-source-link:hover {
+        color: #7dd3fc;
+      }
+      .ai-daily-report-source-meta {
+        margin: 0.15rem 0 0;
+        color: #64748b;
+        font-size: 0.84rem;
+        line-height: 1.55;
+      }
+      body[data-renderer-theme="dark"] .ai-daily-report-source-meta {
+        color: #94a3b8;
+      }
       .ai-daily-report-overview {
         margin-bottom: 1.5rem;
       }
@@ -354,7 +417,7 @@ function buildSrcdoc(html: string): string {
         background: transparent;
         color: inherit;
       }
-      img, video, iframe {
+      img, video, iframe, audio {
         max-width: 100%;
       }
       img {
@@ -399,6 +462,13 @@ function buildSrcdoc(html: string): string {
         width: 100%;
         height: auto;
         background: #000;
+      }
+      body audio {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: 40px !important;
+        margin: 1rem 0 !important;
       }
       table {
         max-width: none;
@@ -534,8 +604,8 @@ async function refreshMpVideos(doc: Document): Promise<void> {
   }
 }
 
-function rewriteVideoUrls(doc: Document): void {
-  doc.querySelectorAll('video[src], source[src]').forEach(node => {
+function rewriteMediaUrls(doc: Document): void {
+  doc.querySelectorAll('video[src], audio[src], source[src]').forEach(node => {
     const src = node.getAttribute('src') || '';
     if (!src) {
       return;
@@ -585,7 +655,7 @@ async function buildPreparedHtml(html: string): Promise<string> {
   const doc = parser.parseFromString(html, 'text/html');
 
   await refreshMpVideos(doc);
-  rewriteVideoUrls(doc);
+  rewriteMediaUrls(doc);
   wrapResponsiveTables(doc);
 
   return buildSrcdoc('<!doctype html>\n' + doc.documentElement.outerHTML);
