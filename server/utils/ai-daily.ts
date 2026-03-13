@@ -28,6 +28,7 @@ import {
   requestAiSummary,
   type StructuredArticleSummary,
 } from '~/server/utils/ai-summary';
+import { ensureArticleSummarySource } from '~/server/utils/article-summary-source';
 import { enqueueAiTask } from '~/server/utils/ai-queue';
 
 interface AiDailyPayload {
@@ -79,29 +80,6 @@ function getShanghaiDayRange(dateKey = getShanghaiDateKey()): { dateKey: string;
   };
 }
 
-function htmlToPlainText(html: string): string {
-  const source = String(html || '').trim();
-  if (!source) {
-    return '';
-  }
-
-  try {
-    const $ = load(source);
-    $('script, style, noscript, iframe, svg').remove();
-    return String($.root().text() || '')
-      .replace(/\r\n?/g, '\n')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/[ \t]{2,}/g, ' ')
-      .trim();
-  } catch {
-    return source
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-}
-
 function takeMiddleSegment(text: string, size: number): string {
   if (text.length <= size) {
     return text;
@@ -110,10 +88,8 @@ function takeMiddleSegment(text: string, size: number): string {
   return text.slice(start, start + size);
 }
 
-function buildSummarySourceText(article: ReaderAiProcessingArticle): string {
-  const plainText = htmlToPlainText(article.cachedHtml);
-  const digest = String(article.digest || '').trim();
-  const source = plainText || digest;
+function buildSummarySourceText(content: string): string {
+  const source = String(content || '').trim();
 
   if (!source) {
     return '';
@@ -289,7 +265,17 @@ async function ensureArticleSummaries(
     let parsedSummary = parseStructuredArticleSummary(rawSummary, allowedCustomLabels);
 
     if (!parsedSummary) {
-      const sourceText = buildSummarySourceText(article);
+      const summarySource = await ensureArticleSummarySource(authKey, {
+        fakeid: article.fakeid,
+        link: article.link,
+        title: article.title,
+        digest: article.digest,
+        cachedHtml: article.cachedHtml,
+      });
+      if (summarySource.refreshed && summarySource.html) {
+        article.cachedHtml = summarySource.html;
+      }
+      const sourceText = buildSummarySourceText(summarySource.content);
       if (!sourceText) {
         continue;
       }
@@ -306,6 +292,7 @@ async function ensureArticleSummaries(
             account: article.accountName,
             author: article.authorName,
             publishedAt: article.updateTime || article.createTime,
+            url: article.link,
             content: sourceText,
           }),
           {

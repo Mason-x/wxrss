@@ -48,7 +48,6 @@
     "motion-v": "^2.0.0",
     "nuxt": "^3.12.3",
     "nuxt-monaco-editor": "1.4.0",
-    "nuxt-umami": "3.2.1",
     "p-queue": "^8.0.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",

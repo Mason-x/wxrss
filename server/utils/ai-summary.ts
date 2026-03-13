@@ -125,6 +125,7 @@ export function buildArticleSummaryUserPrompt(input: {
   account?: string;
   author?: string;
   publishedAt?: number | string;
+  url?: string;
 }): string {
   return buildAiSummaryArticlePrompt({
     ...input,

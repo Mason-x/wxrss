@@ -5823,14 +5823,6 @@ nuxt-monaco-editor@1.4.0:
     defu "^6.1.4"
     vite-plugin-static-copy "^3.1.1"
 
-nuxt-umami@3.2.1:
-  version "3.2.1"
-  resolved "https://registry.npmjs.org/nuxt-umami/-/nuxt-umami-3.2.1.tgz#03284f3ab6c64a28cea62c461dbb1c1928122dc3"
-  integrity sha512-82cf3kcrMn4Iq0rJ2Blfl48AqLWqRubEpxOinOoxqW7taZAd5SgZcCdCj7y4qXSt0W5DhBYgaq4IboyGFHoVUQ==
-  dependencies:
-    "@nuxt/kit" "^3.15.4"
-    request-ip "^3.3.0"
-
 nuxt@^3.12.3:
   version "3.20.1"
   resolved "https://registry.npmjs.org/nuxt/-/nuxt-3.20.1.tgz#ff270dec28a1000e8307b4465fc203c91617a41f"
@@ -6804,11 +6796,6 @@ replace-in-file@^6.1.0:
     chalk "^4.1.2"
     glob "^7.2.0"
     yargs "^17.2.1"
-
-request-ip@^3.3.0:
-  version "3.3.0"
-  resolved "https://registry.npmjs.org/request-ip/-/request-ip-3.3.0.tgz#863451e8fec03847d44f223e30a5d63e369fa611"
-  integrity sha512-cA6Xh6e0fDBBBwH77SLJaJPBmD3nWVAcF9/XAcsrIHdjhFzFiB5aNQFytdjCGPezU3ROwrR11IddKAM08vohxA==
 
 require-directory@^2.1.1:
   version "2.1.1"

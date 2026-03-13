@@ -1,14 +1,17 @@
-import { load } from 'cheerio';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import { getArticleByLink, updateArticleAiSummary, updateArticleAiTags } from '~/server/repositories/reader';
 import {
   buildArticleSummaryUserPrompt,
   buildRuntimeSummarySystemPrompt,
-  normalizeArticleContent,
   parseStructuredArticleSummary,
   requestAiSummary,
 } from '~/server/utils/ai-summary';
 import { enqueueAiTask } from '~/server/utils/ai-queue';
+import {
+  ensureArticleSummarySource,
+  extractArticleSummaryContent,
+  isArticleSummaryContentUsable,
+} from '~/server/utils/article-summary-source';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface ArticleSummaryRequestBody {
@@ -16,28 +19,6 @@ interface ArticleSummaryRequestBody {
   title?: string;
   content?: string;
   force?: boolean;
-}
-
-function extractSummaryContentFromHtml(html: string): string {
-  const source = String(html || '').trim();
-  if (!source) {
-    return '';
-  }
-
-  try {
-    const $ = load(source);
-    $('script, style, noscript, iframe, svg').remove();
-    return normalizeArticleContent(
-      String($.root().text() || '')
-        .replace(/\r\n?/g, '\n')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim()
-    );
-  } catch {
-    return normalizeArticleContent(source.replace(/<[^>]+>/g, ' '));
-  }
 }
 
 export default defineEventHandler(async event => {
@@ -55,8 +36,25 @@ export default defineEventHandler(async event => {
     const force = Boolean(body?.force);
     const existing = url ? await getArticleByLink(authKey, url) : null;
     const title = String(body?.title || existing?.title || '').trim();
-    const content = normalizeArticleContent(body?.content)
-      || extractSummaryContentFromHtml(String(existing?.cachedHtml || ''));
+    const providedContent = extractArticleSummaryContent(body?.content);
+    const source = isArticleSummaryContentUsable(providedContent, {
+      title,
+      digest: String(existing?.digest || '').trim(),
+    })
+      ? {
+          content: providedContent,
+        }
+      : await ensureArticleSummarySource(authKey, {
+          fakeid: existing?.fakeid,
+          link: url,
+          title,
+          digest: String(existing?.digest || '').trim(),
+          cachedHtml: String(existing?.cachedHtml || ''),
+        }, {
+          preferredHtml: String(body?.content || ''),
+          preferredContent: providedContent,
+        });
+    const content = String(source?.content || '').trim();
 
     if (!title) {
       throw createError({
@@ -114,6 +112,7 @@ export default defineEventHandler(async event => {
         account: existing?.accountName,
         author: existing?.author_name,
         publishedAt: existing?.update_time || existing?.create_time,
+        url: url || existing?.link,
         content,
       }),
       {

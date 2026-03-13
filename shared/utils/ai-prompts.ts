@@ -129,11 +129,16 @@ export function buildAiSummaryArticlePrompt(input: {
   account?: string;
   author?: string;
   publishedAt?: number | string;
+  url?: string;
 }): string {
   const lines = [`文章标题：${String(input.title || '').trim() || '无标题'}`];
   const account = String(input.account || '').trim();
   const author = String(input.author || '').trim();
   const publishedAt = formatPublishedAt(input.publishedAt);
+  const url = String(input.url || '').trim();
+  if (url) {
+    lines.push(`原文链接：${url}`);
+  }
 
   if (account) {
     lines.push(`来源账号：${account}`);

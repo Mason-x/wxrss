@@ -18,7 +18,7 @@ export default defineNuxtConfig({
     host: defaultHost,
     port: defaultPort,
   },
-  modules: ['@vueuse/nuxt', '@nuxt/ui', 'nuxt-monaco-editor', '@sentry/nuxt/module', 'nuxt-umami'],
+  modules: ['@vueuse/nuxt', '@nuxt/ui', 'nuxt-monaco-editor', '@sentry/nuxt/module'],
   ssr: false,
   runtimeConfig: {
     public: {
@@ -167,16 +167,5 @@ export default defineNuxtConfig({
     project: process.env.NUXT_SENTRY_PROJECT,
     authToken: process.env.NUXT_SENTRY_AUTH_TOKEN,
     telemetry: false,
-  },
-
-  // https://umami.nuxt.dev/api/configuration
-  umami: {
-    enabled: true,
-    id: process.env.NUXT_UMAMI_ID,
-    host: process.env.NUXT_UMAMI_HOST,
-    domains: ['down.mptext.top'],
-    ignoreLocalhost: true,
-    autoTrack: true,
-    logErrors: true,
   },
 });
