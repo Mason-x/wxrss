@@ -118,6 +118,14 @@ export interface ArticleSummaryResult {
   rating?: string;
   summaryText?: string;
   highlights?: string[];
+  debug?: {
+    source: 'preferred' | 'cache' | 'fetched' | 'unavailable';
+    contentFormat: 'markdown' | 'text' | null;
+    promptLength: number;
+    markdownLength: number;
+    textLength: number;
+    refreshed: boolean;
+  };
 }
 
 export interface AiDailyProcessResult {
@@ -371,6 +379,7 @@ export async function generateArticleSummary(payload: {
   url?: string;
   title: string;
   content?: string;
+  contentHtml?: string;
   force?: boolean;
 }): Promise<ArticleSummaryResult> {
   const resp = await request<{ data: ArticleSummaryResult }>('/api/web/ai/article-summary', {
@@ -379,6 +388,7 @@ export async function generateArticleSummary(payload: {
       url: payload.url,
       title: payload.title,
       ...(payload.content ? { content: payload.content } : {}),
+      ...(payload.contentHtml ? { contentHtml: payload.contentHtml } : {}),
       ...(payload.force ? { force: true } : {}),
     },
   });

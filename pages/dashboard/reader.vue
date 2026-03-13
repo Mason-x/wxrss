@@ -3014,29 +3014,6 @@ function normalizeCachedRssHtml(html: string) {
   }
 }
 
-function extractArticleSummaryContent(html: string) {
-  if (typeof window === 'undefined') {
-    return '';
-  }
-
-  try {
-    const parser = new window.DOMParser();
-    const doc = parser.parseFromString(String(html || ''), 'text/html');
-    doc.querySelectorAll('script, style, noscript, iframe, svg').forEach(node => node.remove());
-
-    const text = String(doc.body?.textContent || '')
-      .replace(/\r\n?/g, '\n')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-
-    return text.slice(0, 24000);
-  } catch {
-    return '';
-  }
-}
-
 function updateArticleSummaryState(key: string, patch: Partial<ArticleSummaryState>) {
   const previous = articleSummaryByKey.value[key] || {
     status: 'idle' as const,
@@ -3088,7 +3065,7 @@ async function generateArticleSummaryForArticle(
     return;
   }
 
-  const content = options.contentHtml ? extractArticleSummaryContent(options.contentHtml) : '';
+  const contentHtml = String(options.contentHtml || '').trim();
   updateArticleSummaryState(key, {
     status: 'loading',
     error: '',
@@ -3098,7 +3075,7 @@ async function generateArticleSummaryForArticle(
     const result = await generateArticleSummary({
       url: article.link,
       title: articleDisplayTitle(article) || article.title || '无标题',
-      ...(content ? { content } : {}),
+      ...(contentHtml ? { contentHtml } : {}),
       ...(options.force ? { force: true } : {}),
     });
 

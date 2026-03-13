@@ -443,7 +443,7 @@ async function ensureArticleSummaries(
       if (summarySource.refreshed && summarySource.html) {
         article.cachedHtml = summarySource.html;
       }
-      const sourceText = buildSummarySourceText(summarySource.content);
+      const sourceText = buildSummarySourceText(summarySource.contentForPrompt);
       if (!sourceText) {
         continue;
       }

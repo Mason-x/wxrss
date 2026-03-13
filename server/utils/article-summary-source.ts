@@ -24,9 +24,21 @@ interface EnsureArticleSummarySourceOptions {
 
 export interface EnsuredArticleSummarySource {
   html: string;
-  content: string;
+  markdown: string;
+  textContent: string;
+  contentForPrompt: string;
+  contentFormat: ArticleSummaryContentFormat | null;
   source: 'preferred' | 'cache' | 'fetched' | 'unavailable';
   refreshed: boolean;
+}
+
+export type ArticleSummaryContentFormat = 'markdown' | 'text';
+
+export interface ArticleSummaryExtractedContent {
+  markdown: string;
+  textContent: string;
+  contentForPrompt: string;
+  contentFormat: ArticleSummaryContentFormat | null;
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 30000;
@@ -409,9 +421,9 @@ function createSummaryTurndownService(): TurndownService {
       }
 
       const language =
-        normalizeInlineText(node?.getAttribute?.('data-lang') || '')
-        || normalizeInlineText(node?.getAttribute?.('language') || '')
-        || normalizeInlineText(node?.querySelector?.('code')?.getAttribute?.('class') || '');
+        normalizeInlineText(node?.getAttribute?.('data-lang') || '') ||
+        normalizeInlineText(node?.getAttribute?.('language') || '') ||
+        normalizeInlineText(node?.querySelector?.('code')?.getAttribute?.('class') || '');
       const normalizedLanguage = language
         .replace(/language[-_:]?/i, '')
         .replace(/[^a-z0-9#+.-]/gi, '')
@@ -450,69 +462,134 @@ function cleanupSummaryMarkdown(markdown: string): string {
     .trim();
 }
 
-function extractSummaryMarkdownFromHtml(source: string): string {
-  const normalizedHtml = normalizeHtml(source, 'html');
-  const $ = load(normalizedHtml);
-  const $root = $('#js_article').first().length > 0
-    ? $('#js_article').first()
-    : $('#js_content').first().length > 0
-      ? $('#js_content').first()
-      : $('body').first();
+function createEmptyArticleSummaryExtractedContent(): ArticleSummaryExtractedContent {
+  return {
+    markdown: '',
+    textContent: '',
+    contentForPrompt: '',
+    contentFormat: null,
+  };
+}
 
-  if ($root.length === 0) {
+function buildArticleSummaryExtractedContent(input: {
+  markdown?: string;
+  textContent?: string;
+}): ArticleSummaryExtractedContent {
+  const markdown = normalizeArticleContent(input.markdown);
+  const textContent = normalizeArticleContent(input.textContent);
+  const contentForPrompt = markdown || textContent;
+  const contentFormat = markdown ? 'markdown' : textContent ? 'text' : null;
+
+  return {
+    markdown,
+    textContent,
+    contentForPrompt,
+    contentFormat,
+  };
+}
+
+function extractSummaryTextContentFromHtml(source: string): string {
+  if (!source.trim()) {
     return '';
   }
 
-  const baseUrl = sanitizeLinkUrl(
-    $('meta[name="wechat-article-url"]').attr('content')
-      || $('meta[property="og:url"]').attr('content')
-      || $('link[rel="canonical"]').attr('href')
-      || extractOriginalArticleUrl(source)
-      || extractOriginalArticleUrl(normalizedHtml)
-      || SUMMARY_BASE_URL,
-    SUMMARY_BASE_URL
-  ) || SUMMARY_BASE_URL;
+  const $ = load(`<div id="__summary_text_root">${source}</div>`, null, false);
+  const $root = $('#__summary_text_root');
+  $root.find('br').replaceWith('\n');
+  $root
+    .find(
+      'p,div,section,article,figure,figcaption,blockquote,li,table,thead,tbody,tfoot,tr,th,td,pre,code,h1,h2,h3,h4,h5,h6'
+    )
+    .each((_, el) => {
+      $(el).append('\n');
+    });
+
+  return normalizeArticleContent($root.text());
+}
+
+function extractSummaryContentFromHtml(source: string): ArticleSummaryExtractedContent {
+  const normalizedHtml = normalizeHtml(source, 'html');
+  const $ = load(normalizedHtml);
+  const $root =
+    $('#js_article').first().length > 0
+      ? $('#js_article').first()
+      : $('#js_content').first().length > 0
+        ? $('#js_content').first()
+        : $('body').first();
+
+  if ($root.length === 0) {
+    return createEmptyArticleSummaryExtractedContent();
+  }
+
+  const baseUrl =
+    sanitizeLinkUrl(
+      $('meta[name="wechat-article-url"]').attr('content') ||
+        $('meta[property="og:url"]').attr('content') ||
+        $('link[rel="canonical"]').attr('href') ||
+        extractOriginalArticleUrl(source) ||
+        extractOriginalArticleUrl(normalizedHtml) ||
+        SUMMARY_BASE_URL,
+      SUMMARY_BASE_URL
+    ) || SUMMARY_BASE_URL;
 
   sanitizeSummaryDom($, $root, baseUrl);
   const cleanedHtml = $.html($root) || '';
   if (!cleanedHtml.trim()) {
-    return '';
+    return createEmptyArticleSummaryExtractedContent();
   }
 
   const markdown = createSummaryTurndownService().turndown(cleanedHtml);
-  return cleanupSummaryMarkdown(markdown);
+  return buildArticleSummaryExtractedContent({
+    markdown: cleanupSummaryMarkdown(markdown),
+    textContent: extractSummaryTextContentFromHtml(cleanedHtml),
+  });
 }
 
-export function extractArticleSummaryContent(value?: string): string {
+export function extractArticleSummaryContentFields(value?: string): ArticleSummaryExtractedContent {
   const source = String(value || '').trim();
   if (!source) {
-    return '';
+    return createEmptyArticleSummaryExtractedContent();
   }
 
   try {
     if (looksLikeHtml(source)) {
-      const markdown = extractSummaryMarkdownFromHtml(source);
-      if (markdown) {
-        return normalizeArticleContent(markdown);
+      const extracted = extractSummaryContentFromHtml(source);
+      if (extracted.contentForPrompt) {
+        return extracted;
       }
 
-      return normalizeArticleContent(normalizeHtml(source, 'text'));
+      return buildArticleSummaryExtractedContent({
+        textContent: normalizeHtml(source, 'text'),
+      });
     }
   } catch {
     // Fall through to plain-text normalization below.
   }
 
-  return normalizeArticleContent(source);
+  return buildArticleSummaryExtractedContent({
+    textContent: source,
+  });
+}
+
+export function extractArticleSummaryContent(value?: string): string {
+  return extractArticleSummaryContentFields(value).contentForPrompt;
 }
 
 export function isArticleSummaryContentUsable(
-  content?: string,
+  content?: string | ArticleSummaryExtractedContent,
   options: {
     title?: string;
     digest?: string;
   } = {}
 ): boolean {
-  const normalized = extractArticleSummaryContent(content);
+  const extracted =
+    typeof content === 'string'
+      ? extractArticleSummaryContentFields(content)
+      : buildArticleSummaryExtractedContent({
+          markdown: content?.markdown,
+          textContent: content?.textContent || content?.contentForPrompt,
+        });
+  const normalized = extracted.textContent;
   if (!normalized) {
     return false;
   }
@@ -522,13 +599,15 @@ export function isArticleSummaryContentUsable(
   const comparableDigest = normalizeComparableText(options.digest);
 
   if (
-    comparableContent
-    && (
-      comparableContent === comparableTitle
-      || comparableContent === comparableDigest
-      || (comparableTitle && comparableContent.startsWith(comparableTitle) && comparableContent.length <= comparableTitle.length + 24)
-      || (comparableDigest && comparableContent.startsWith(comparableDigest) && comparableContent.length <= comparableDigest.length + 24)
-    )
+    comparableContent &&
+    (comparableContent === comparableTitle ||
+      comparableContent === comparableDigest ||
+      (comparableTitle &&
+        comparableContent.startsWith(comparableTitle) &&
+        comparableContent.length <= comparableTitle.length + 24) ||
+      (comparableDigest &&
+        comparableContent.startsWith(comparableDigest) &&
+        comparableContent.length <= comparableDigest.length + 24))
   ) {
     return false;
   }
@@ -536,8 +615,7 @@ export function isArticleSummaryContentUsable(
   const paragraphCount = normalized
     .split(/\n+/)
     .map(part => part.trim())
-    .filter(Boolean)
-    .length;
+    .filter(Boolean).length;
   const sentenceCount = (normalized.match(/[\u3002\uFF01\uFF1F!?;\uFF1B:\uFF1A]/g) || []).length;
 
   if (normalized.length >= 220) {
@@ -559,7 +637,7 @@ export function isArticleSummaryContentUsable(
 async function fetchNormalizedMpArticleHtml(
   url: string,
   timeoutMs: number
-): Promise<{ html: string; content: string; commentID: string | null }> {
+): Promise<{ html: string; extractedContent: ArticleSummaryExtractedContent; commentID: string | null }> {
   const response = await fetch(url, {
     headers: {
       Referer: 'https://mp.weixin.qq.com/',
@@ -575,14 +653,43 @@ async function fetchNormalizedMpArticleHtml(
   }
 
   const normalizedHtml = normalizeHtml(rawHtml, 'html');
-  const content = extractArticleSummaryContent(normalizedHtml);
+  const extractedContent = extractArticleSummaryContentFields(normalizedHtml);
   const [status, commentID] = validateHTMLContent(rawHtml);
 
   return {
     html: normalizedHtml,
-    content,
+    extractedContent,
     commentID: status === 'Success' ? commentID : null,
   };
+}
+
+function buildEnsuredArticleSummarySource(payload: {
+  html?: string;
+  extractedContent?: ArticleSummaryExtractedContent;
+  source: EnsuredArticleSummarySource['source'];
+  refreshed: boolean;
+}): EnsuredArticleSummarySource {
+  const extractedContent = payload.extractedContent || createEmptyArticleSummaryExtractedContent();
+
+  return {
+    html: String(payload.html || '').trim(),
+    markdown: extractedContent.markdown,
+    textContent: extractedContent.textContent,
+    contentForPrompt: extractedContent.contentForPrompt,
+    contentFormat: extractedContent.contentFormat,
+    source: payload.source,
+    refreshed: payload.refreshed,
+  };
+}
+
+function pickBestArticleSummaryExtractedContent(
+  ...candidates: ArticleSummaryExtractedContent[]
+): ArticleSummaryExtractedContent {
+  return candidates.reduce((best, current) => {
+    const bestLen = best.textContent.length || best.contentForPrompt.length;
+    const currentLen = current.textContent.length || current.contentForPrompt.length;
+    return currentLen > bestLen ? current : best;
+  }, createEmptyArticleSummaryExtractedContent());
 }
 
 async function cacheFetchedArticleHtml(
@@ -612,48 +719,50 @@ export async function ensureArticleSummarySource(
 ): Promise<EnsuredArticleSummarySource> {
   const title = String(article.title || '').trim();
   const digest = String(article.digest || '').trim();
-  const preferredContent = extractArticleSummaryContent(options.preferredContent);
-  if (isArticleSummaryContentUsable(preferredContent, { title, digest })) {
-    return {
-      html: String(options.preferredHtml || '').trim(),
-      content: preferredContent,
-      source: 'preferred',
-      refreshed: false,
-    };
-  }
-
   const preferredHtml = String(options.preferredHtml || '').trim();
+  const preferredHtmlContent = preferredHtml
+    ? extractArticleSummaryContentFields(preferredHtml)
+    : createEmptyArticleSummaryExtractedContent();
   if (preferredHtml) {
-    const contentFromPreferredHtml = extractArticleSummaryContent(preferredHtml);
-    if (isArticleSummaryContentUsable(contentFromPreferredHtml, { title, digest })) {
-      return {
+    if (isArticleSummaryContentUsable(preferredHtmlContent, { title, digest })) {
+      return buildEnsuredArticleSummarySource({
         html: preferredHtml,
-        content: contentFromPreferredHtml,
+        extractedContent: preferredHtmlContent,
         source: 'preferred',
         refreshed: false,
-      };
+      });
     }
   }
 
+  const preferredContent = extractArticleSummaryContentFields(options.preferredContent);
+  if (isArticleSummaryContentUsable(preferredContent, { title, digest })) {
+    return buildEnsuredArticleSummarySource({
+      html: preferredHtml,
+      extractedContent: preferredContent,
+      source: 'preferred',
+      refreshed: false,
+    });
+  }
+
   const cachedHtml = String(article.cachedHtml || '').trim();
-  const cachedContent = extractArticleSummaryContent(cachedHtml);
+  const cachedContent = extractArticleSummaryContentFields(cachedHtml);
   if (isArticleSummaryContentUsable(cachedContent, { title, digest })) {
-    return {
+    return buildEnsuredArticleSummarySource({
       html: cachedHtml,
-      content: cachedContent,
+      extractedContent: cachedContent,
       source: 'cache',
       refreshed: false,
-    };
+    });
   }
 
   const link = String(article.link || '').trim();
   if (!link || !urlIsValidMpArticle(link)) {
-    return {
+    return buildEnsuredArticleSummarySource({
       html: cachedHtml || preferredHtml,
-      content: cachedContent || preferredContent,
+      extractedContent: pickBestArticleSummaryExtractedContent(cachedContent, preferredHtmlContent, preferredContent),
       source: 'unavailable',
       refreshed: false,
-    };
+    });
   }
 
   const timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_FETCH_TIMEOUT_MS);
@@ -661,20 +770,22 @@ export async function ensureArticleSummarySource(
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs) || DEFAULT_RETRY_DELAY_MS);
 
   let lastFetchedHtml = '';
+  let lastFetchedContent = createEmptyArticleSummaryExtractedContent();
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const fetched = await fetchNormalizedMpArticleHtml(link, timeoutMs);
       lastFetchedHtml = fetched.html;
+      lastFetchedContent = fetched.extractedContent;
 
-      if (isArticleSummaryContentUsable(fetched.content, { title, digest })) {
+      if (isArticleSummaryContentUsable(fetched.extractedContent, { title, digest })) {
         await cacheFetchedArticleHtml(authKey, article, fetched);
-        return {
+        return buildEnsuredArticleSummarySource({
           html: fetched.html,
-          content: fetched.content,
+          extractedContent: fetched.extractedContent,
           source: 'fetched',
           refreshed: true,
-        };
+        });
       }
     } catch (error) {
       if (attempt >= maxAttempts - 1) {
@@ -687,10 +798,15 @@ export async function ensureArticleSummarySource(
     }
   }
 
-  return {
+  return buildEnsuredArticleSummarySource({
     html: lastFetchedHtml || cachedHtml || preferredHtml,
-    content: '',
+    extractedContent: pickBestArticleSummaryExtractedContent(
+      lastFetchedContent,
+      cachedContent,
+      preferredHtmlContent,
+      preferredContent
+    ),
     source: 'unavailable',
     refreshed: false,
-  };
+  });
 }
