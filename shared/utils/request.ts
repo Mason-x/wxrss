@@ -1,11 +1,38 @@
+import { $fetch as ofetch } from 'ofetch';
+
+type RuntimeFetch = typeof ofetch;
+
+let cachedBaseFetch: RuntimeFetch | null = null;
+let cachedRequest: RuntimeFetch | null = null;
+
+function resolveBaseFetch(): RuntimeFetch {
+  const runtimeFetch = (globalThis as typeof globalThis & { $fetch?: RuntimeFetch }).$fetch;
+  return typeof runtimeFetch === 'function' ? runtimeFetch : ofetch;
+}
+
+function getRequestClient(): RuntimeFetch {
+  const baseFetch = resolveBaseFetch();
+  if (cachedRequest && cachedBaseFetch === baseFetch) {
+    return cachedRequest;
+  }
+
+  cachedBaseFetch = baseFetch;
+  cachedRequest = baseFetch.create({
+    retry: 0,
+    method: 'GET',
+    async onResponse() {
+      // This wrapper may run on both client and server.
+    },
+    async onResponseError() {},
+  });
+
+  return cachedRequest;
+}
+
 /**
- * 封装 $fetch 无重试请求
+ * Wrap fetch without retries and avoid touching Nuxt global $fetch during module evaluation.
  */
-export const request = $fetch.create({
-  retry: 0,
-  method: 'GET',
-  async onResponse({ request, response, options, error }) {
-    // 需要注意的是，这里有可能是客户端和服务器端调用
-  },
-  async onResponseError({ request, response, options, error }) {},
-});
+export const request = ((...args: Parameters<RuntimeFetch>) => {
+  const client = getRequestClient();
+  return client(...args);
+}) as RuntimeFetch;

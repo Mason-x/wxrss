@@ -97,6 +97,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   aiTagSystemPrompt: CLEAN_FIXED_AI_TAG_PROMPT_NOTE,
   aiDailyReportSystemPrompt: CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
   aiDailyReportIncludedLabels: [...DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS],
+  aiAutoSummaryOnSyncEnabled: true,
   exportConfig: {
     dirname: '${title}',
     maxlength: 0,
@@ -472,6 +473,8 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
       source.aiTagSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiTagSystemPrompt
     ),
+    aiAutoSummaryOnSyncEnabled:
+      source.aiAutoSummaryOnSyncEnabled ?? DEFAULT_PREFERENCES.aiAutoSummaryOnSyncEnabled,
     aiDailyReportSystemPrompt: normalizeStoredDailyPrompt(
       source.aiDailyReportSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiDailyReportSystemPrompt

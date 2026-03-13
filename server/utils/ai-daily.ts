@@ -59,6 +59,10 @@ export interface AiAccountBootstrapResult {
 
 const DAILY_AI_LOCKS = new Map<string, Promise<AiDailyProcessResult>>();
 
+function isAiAutoSummaryOnSyncEnabled(preferences: Pick<Preferences, 'aiAutoSummaryOnSyncEnabled'>): boolean {
+  return preferences.aiAutoSummaryOnSyncEnabled !== false;
+}
+
 function getShanghaiDateKey(input = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai',
@@ -372,6 +376,15 @@ async function runAiAccountBootstrapInternal(
   }
 
   const { preferences, configured } = await resolveAiPreferences(authKey);
+  if (!isAiAutoSummaryOnSyncEnabled(preferences)) {
+    return {
+      processed: false,
+      fakeid: normalizedFakeid,
+      summarizedCount: 0,
+      taggedCount: 0,
+      reason: 'disabled',
+    };
+  }
   if (!configured) {
     return {
       processed: false,
@@ -411,11 +424,22 @@ async function runAiAccountBootstrapInternal(
 }
 
 async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Promise<AiDailyProcessResult> {
+  const range = getShanghaiDayRange(dateKey);
   const { preferences, configured } = await resolveAiPreferences(authKey);
+  if (!isAiAutoSummaryOnSyncEnabled(preferences)) {
+    return {
+      processed: false,
+      reportDate: range.dateKey,
+      taggedCount: 0,
+      reportUpdated: false,
+      summarizedCount: 0,
+      reason: 'disabled',
+    };
+  }
   if (!configured) {
     return {
       processed: false,
-      reportDate: getShanghaiDateKey(),
+      reportDate: range.dateKey,
       taggedCount: 0,
       reportUpdated: false,
       summarizedCount: 0,
@@ -423,7 +447,6 @@ async function runAiDailyDigestInternal(authKey: string, dateKey?: string): Prom
     };
   }
 
-  const range = getShanghaiDayRange(dateKey);
   const todayArticles = await listAiProcessingArticles(authKey, {
     startTime: range.startTime,
     endTime: range.endTime,

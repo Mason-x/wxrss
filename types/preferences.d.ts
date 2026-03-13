@@ -23,6 +23,7 @@ export interface Preferences {
   aiTagSystemPrompt: string;
   aiDailyReportSystemPrompt: string;
   aiDailyReportIncludedLabels: string[];
+  aiAutoSummaryOnSyncEnabled: boolean;
 
   exportConfig: ExportConfig;
   downloadConfig: DownloadConfig;

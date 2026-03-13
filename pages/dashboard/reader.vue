@@ -234,6 +234,7 @@ const route = useRoute();
 const { navigateToLogin } = useMpAuth();
 const loginAccount = useLoginAccount();
 const preferences = usePreferences();
+const { saveNow: savePreferencesNow, saving: savingPreferences } = useSavePreferences();
 const {
   preference: themeModePreference,
   effective: themeModeEffective,
@@ -954,6 +955,11 @@ const aiSummaryConfigured = computed(() => {
       String(currentPreferences.aiSummaryModel || '').trim() &&
       String(currentPreferences.aiSummaryBaseUrl || '').trim()
   );
+});
+
+const aiAutoSummaryOnSyncEnabled = computed(() => {
+  const currentPreferences = preferences.value as unknown as Preferences;
+  return currentPreferences.aiAutoSummaryOnSyncEnabled !== false;
 });
 
 const selectedArticleSummaryKey = computed(() => {
@@ -3138,6 +3144,10 @@ function closeAiDailyReports() {
 }
 
 async function runAiRefreshAfterSync() {
+  if (!aiAutoSummaryOnSyncEnabled.value) {
+    return;
+  }
+
   try {
     const result = await refreshAiDailyDigest();
     if (!result.processed) {
@@ -3153,7 +3163,7 @@ async function runAiRefreshAfterSync() {
 
 async function bootstrapAiAfterAddingAccount(fakeid: string) {
   const normalizedFakeid = String(fakeid || '').trim();
-  if (!normalizedFakeid) {
+  if (!normalizedFakeid || !aiAutoSummaryOnSyncEnabled.value) {
     return;
   }
 
@@ -3432,6 +3442,25 @@ function openSettingsFromAvatarMenu() {
 function openSettingsFromMobileAvatarMenu() {
   mobileAvatarMenuOpen.value = false;
   openSystemMenu();
+}
+
+async function toggleAiAutoSummaryOnSync() {
+  const currentPreferences = preferences.value as unknown as Preferences;
+  const previous = currentPreferences.aiAutoSummaryOnSyncEnabled !== false;
+  const next = !previous;
+
+  currentPreferences.aiAutoSummaryOnSyncEnabled = next;
+
+  try {
+    await savePreferencesNow();
+    toast.success(
+      next ? '已开启自动摘要' : '已关闭自动摘要',
+      next ? '后续同步会自动为当天文章生成摘要并打标' : '后续同步不会自动为当天文章生成摘要或标签'
+    );
+  } catch (error) {
+    currentPreferences.aiAutoSummaryOnSyncEnabled = previous;
+    toast.error(next ? '开启自动摘要失败' : '关闭自动摘要失败', (error as Error).message);
+  }
 }
 
 async function logoutFromAvatarMenu() {
@@ -4819,6 +4848,42 @@ onUnmounted(() => {
                           <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                           <span>设置</span>
                         </button>
+                        <button
+                          type="button"
+                          class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
+                          :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
+                          :disabled="savingPreferences"
+                          :aria-checked="aiAutoSummaryOnSyncEnabled"
+                          :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
+                          role="switch"
+                          @click="toggleAiAutoSummaryOnSync"
+                        >
+                          <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
+                          <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                              <span class="block">自动摘要</span>
+                              <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                {{ aiAutoSummaryOnSyncEnabled ? '同步时自动摘要当天文章并打标' : '同步时不自动生成摘要和标签' }}
+                              </p>
+                            </div>
+                            <span
+                              class="desktop-avatar-menu-switch"
+                              :class="{
+                                'is-active': aiAutoSummaryOnSyncEnabled,
+                                'is-loading': savingPreferences,
+                              }"
+                              aria-hidden="true"
+                            >
+                              <span class="desktop-avatar-menu-switch-thumb">
+                                <UIcon
+                                  v-if="savingPreferences"
+                                  name="i-lucide:loader-circle"
+                                  class="size-3 animate-spin"
+                                />
+                              </span>
+                            </span>
+                          </div>
+                        </button>
                         <div class="desktop-avatar-menu-section">
                           <p class="desktop-avatar-menu-label">模式切换</p>
                           <div class="desktop-avatar-menu-theme-grid">
@@ -5004,6 +5069,42 @@ onUnmounted(() => {
                     <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromAvatarMenu">
                       <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                       <span>设置</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
+                      :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
+                      :disabled="savingPreferences"
+                      :aria-checked="aiAutoSummaryOnSyncEnabled"
+                      :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
+                      role="switch"
+                      @click="toggleAiAutoSummaryOnSync"
+                    >
+                      <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
+                      <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                          <span class="block">自动摘要</span>
+                          <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                            {{ aiAutoSummaryOnSyncEnabled ? '同步时自动摘要当天文章并打标' : '同步时不自动生成摘要和标签' }}
+                          </p>
+                        </div>
+                        <span
+                          class="desktop-avatar-menu-switch"
+                          :class="{
+                            'is-active': aiAutoSummaryOnSyncEnabled,
+                            'is-loading': savingPreferences,
+                          }"
+                          aria-hidden="true"
+                        >
+                          <span class="desktop-avatar-menu-switch-thumb">
+                            <UIcon
+                              v-if="savingPreferences"
+                              name="i-lucide:loader-circle"
+                              class="size-3 animate-spin"
+                            />
+                          </span>
+                        </span>
+                      </div>
                     </button>
                     <div class="desktop-avatar-menu-section">
                       <p class="desktop-avatar-menu-label">模式切换</p>
@@ -5940,6 +6041,34 @@ onUnmounted(() => {
 .desktop-avatar-menu-item {
   @apply flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 transition-colors duration-150
     hover:bg-slate-100/80 dark:text-slate-200 dark:hover:bg-slate-900/80;
+}
+
+.desktop-avatar-menu-item.is-active {
+  @apply bg-emerald-50/80 dark:bg-emerald-500/10;
+}
+
+.desktop-avatar-menu-toggle {
+  @apply justify-between;
+}
+
+.desktop-avatar-menu-switch {
+  @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-slate-300/80 bg-slate-300/70 px-0.5 transition-all duration-200 dark:border-slate-700 dark:bg-slate-700/80;
+}
+
+.desktop-avatar-menu-switch.is-active {
+  @apply border-emerald-500/80 bg-emerald-500/90 dark:border-emerald-400/80 dark:bg-emerald-400/90;
+}
+
+.desktop-avatar-menu-switch-thumb {
+  @apply inline-flex size-5 translate-x-0 items-center justify-center rounded-full bg-white text-slate-400 shadow-[0_2px_6px_rgba(15,23,42,0.18)] transition-all duration-200 dark:bg-slate-950 dark:text-slate-500;
+}
+
+.desktop-avatar-menu-switch.is-active .desktop-avatar-menu-switch-thumb {
+  @apply translate-x-5 text-emerald-500 dark:text-emerald-300;
+}
+
+.desktop-avatar-menu-switch.is-loading .desktop-avatar-menu-switch-thumb {
+  @apply text-slate-500 dark:text-slate-300;
 }
 
 .desktop-avatar-menu-section {
