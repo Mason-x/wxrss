@@ -58,6 +58,7 @@ const { navigateToLogin } = useMpAuth();
 const { getSyncTimestamp } = useSyncDeadline();
 
 const preferences = usePreferences();
+const aiAutoSummaryOnSyncEnabled = computed(() => preferences.value.aiAutoSummaryOnSyncEnabled !== false);
 
 // 账号事件总线，用于和 Credentials 面板保持列表同步
 const { accountEventBus } = useAccountEventBus();
@@ -537,6 +538,10 @@ async function syncSingleAccount(account: MpAccount) {
 }
 
 async function runAiRefreshAfterSync() {
+  if (!aiAutoSummaryOnSyncEnabled.value) {
+    return;
+  }
+
   try {
     await refreshAiDailyDigest();
   } catch (error) {
@@ -546,7 +551,7 @@ async function runAiRefreshAfterSync() {
 
 async function bootstrapAiAfterAddingAccount(fakeid: string) {
   const normalizedFakeid = String(fakeid || '').trim();
-  if (!normalizedFakeid) {
+  if (!normalizedFakeid || !aiAutoSummaryOnSyncEnabled.value) {
     return;
   }
 

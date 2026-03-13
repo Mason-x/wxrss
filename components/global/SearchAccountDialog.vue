@@ -8,7 +8,7 @@
     }"
   >
     <div
-      class="flex h-dvh max-h-dvh flex-1 flex-col overflow-hidden bg-white shadow dark:bg-slate-950"
+      class="mobile-dialog-shell flex flex-1 flex-col overflow-hidden bg-white shadow dark:bg-slate-950"
       @touchstart="handleDialogTouchStart"
       @touchmove="handleDialogTouchMove"
       @touchend="handleDialogTouchEnd"
@@ -839,6 +839,12 @@ const DIALOG_BACK_MAX_OFFSET_RATIO = 0.9;
 const DIALOG_BACK_RESET_MS = 180;
 let dialogBackResetTimer: ReturnType<typeof setTimeout> | null = null;
 let newrankLoadedOnce = false;
+let lockedPageScrollY = 0;
+let previousHtmlOverflow = '';
+let previousBodyOverflow = '';
+let previousBodyPosition = '';
+let previousBodyTop = '';
+let previousBodyWidth = '';
 
 const hasNewrankCookie = computed(() => Boolean(String(preferences.value.newrankCookie || '').trim()));
 const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuery.value.trim());
@@ -899,6 +905,61 @@ function describeRequestError(error: any): string {
 
 function normalizeSubscriptionLookupValue(value: string): string {
   return String(value || '').trim().toLowerCase();
+}
+
+function isMobileViewport(): boolean {
+  if (!import.meta.client) {
+    return false;
+  }
+
+  const viewportWidth = window.visualViewport?.width || window.innerWidth || 0;
+  return viewportWidth < 768;
+}
+
+function lockMobileDialogPageScroll() {
+  if (!import.meta.client || !isMobileViewport()) {
+    return;
+  }
+
+  const root = document.documentElement;
+  const body = document.body;
+  if (!root || !body || body.dataset.searchAccountDialogScrollLock === 'true') {
+    return;
+  }
+
+  lockedPageScrollY = window.scrollY || window.pageYOffset || 0;
+  previousHtmlOverflow = root.style.overflow;
+  previousBodyOverflow = body.style.overflow;
+  previousBodyPosition = body.style.position;
+  previousBodyTop = body.style.top;
+  previousBodyWidth = body.style.width;
+
+  root.style.overflow = 'hidden';
+  body.style.overflow = 'hidden';
+  body.style.position = 'fixed';
+  body.style.top = `-${lockedPageScrollY}px`;
+  body.style.width = '100%';
+  body.dataset.searchAccountDialogScrollLock = 'true';
+}
+
+function unlockMobileDialogPageScroll() {
+  if (!import.meta.client) {
+    return;
+  }
+
+  const root = document.documentElement;
+  const body = document.body;
+  if (!root || !body || body.dataset.searchAccountDialogScrollLock !== 'true') {
+    return;
+  }
+
+  root.style.overflow = previousHtmlOverflow;
+  body.style.overflow = previousBodyOverflow;
+  body.style.position = previousBodyPosition;
+  body.style.top = previousBodyTop;
+  body.style.width = previousBodyWidth;
+  delete body.dataset.searchAccountDialogScrollLock;
+  window.scrollTo({ top: lockedPageScrollY, left: 0, behavior: 'auto' });
 }
 
 async function loadExistingSubscriptions(force = false) {
@@ -1475,6 +1536,15 @@ watch(
   }
 );
 
+watch(isOpen, open => {
+  if (open) {
+    lockMobileDialogPageScroll();
+    return;
+  }
+
+  unlockMobileDialogPageScroll();
+});
+
 watch(accountQuery, value => {
   if (value.trim()) {
     return;
@@ -1518,9 +1588,33 @@ watch(rssRouteEditorOpen, open => {
     clearSelectedRsshubRoute();
   }
 });
+
+onBeforeUnmount(() => {
+  unlockMobileDialogPageScroll();
+});
 </script>
 
 <style scoped>
+.mobile-dialog-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overscroll-behavior: contain;
+}
+
+@supports (height: 100svh) {
+  .mobile-dialog-shell {
+    height: 100svh;
+    max-height: 100svh;
+  }
+}
+
+@media (min-width: 768px) {
+  .mobile-dialog-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
 .icon-btn {
   @apply !inline-flex size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200
     bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900

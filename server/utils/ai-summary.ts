@@ -283,6 +283,21 @@ export function parseStructuredArticleSummary(
   }
 }
 
+function isH3ErrorLike(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'statusCode' in error);
+}
+
+function isFetchTimeoutError(error: unknown): boolean {
+  const name = String((error as any)?.name || '').trim();
+  const message = String((error as any)?.message || '').trim();
+  return (
+    name === 'AbortError' ||
+    name === 'TimeoutError' ||
+    /aborted/i.test(message) ||
+    /timeout/i.test(message)
+  );
+}
+
 export async function requestAiCompletionText(
   config: AiSummaryConfig,
   userPrompt: string,
@@ -312,28 +327,49 @@ export async function requestAiCompletionText(
   }
 
   const endpoint = normalizeChatCompletionsUrl(config.baseUrl);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: Number.isFinite(options?.temperature) ? options.temperature : 0.2,
-      messages: [
-        {
-          role: 'system',
-          content: normalizeSystemPrompt(options?.systemPrompt || config.systemPrompt),
-        },
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(Math.max(1000, Number(options?.timeoutMs) || 60000)),
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: Number.isFinite(options?.temperature) ? options.temperature : 0.2,
+        messages: [
+          {
+            role: 'system',
+            content: normalizeSystemPrompt(options?.systemPrompt || config.systemPrompt),
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(Math.max(1000, Number(options?.timeoutMs) || 60000)),
+    });
+  } catch (error) {
+    if (isH3ErrorLike(error)) {
+      throw error;
+    }
+
+    if (isFetchTimeoutError(error)) {
+      throw createError({
+        statusCode: 504,
+        statusMessage: 'Gateway Timeout',
+        message: 'AI 请求超时，请稍后重试或更换更快的模型/接口',
+      });
+    }
+
+    throw createError({
+      statusCode: 502,
+      statusMessage: 'Bad Gateway',
+      message: String((error as Error)?.message || 'AI 请求失败'),
+    });
+  }
 
   const rawText = await response.text();
   let payload: ChatCompletionResponse = {};

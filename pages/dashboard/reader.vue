@@ -3126,7 +3126,7 @@ async function generateArticleSummaryForArticle(
       summary: '',
       model: '',
       error: normalizeRuntimeErrorMessage(
-        String(error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
+        String(error?.data?.message || error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
       ),
     });
   }
@@ -3358,7 +3358,16 @@ async function regenerateSelectedDailyReport() {
     if (result.reportUpdated) {
       toast.success('AI 日报已更新', `${activeReport.reportDate} 的日报已重新生成`);
     } else {
-      toast.success('AI 日报已检查', `${activeReport.reportDate} 暂无可更新内容`);
+      const reason = String(result.reason || '').trim();
+      if (reason === 'no-report-articles') {
+        toast.success('AI 日报未生成', `${activeReport.reportDate} 没有命中日报条件的文章`);
+      } else if (reason === 'no-valid-summaries') {
+        toast.success('AI 日报未生成', `${activeReport.reportDate} 的文章摘要尚不可用`);
+      } else if (reason === 'no-articles') {
+        toast.success('AI 日报未生成', `${activeReport.reportDate} 没有可用于生成日报的文章`);
+      } else {
+        toast.success('AI 日报已检查', `${activeReport.reportDate} 暂无可更新内容`);
+      }
     }
   } catch (error) {
     toast.error('重新生成日报失败', (error as Error).message);

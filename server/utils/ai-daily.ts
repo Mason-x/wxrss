@@ -63,6 +63,7 @@ export interface AiAccountBootstrapResult {
 
 interface RunAiDailyDigestOptions {
   forceReport?: boolean;
+  bypassAutoSummaryToggle?: boolean;
 }
 
 const DAILY_AI_LOCKS = new Map<string, Promise<AiDailyProcessResult>>();
@@ -354,8 +355,8 @@ function buildDailyReportSourcesHtml(articles: PreparedAiArticle[]): string {
               <li class="ai-daily-report-source-item">
                 <a
                   class="ai-daily-report-source-link"
-                  href="/dashboard/reader"
-                  data-reader-article-link="${escapeHtml(article.link)}"
+                  href="${escapeHtml(article.link || '#')}"
+                  rel="noopener noreferrer"
                 >
                   ${escapeHtml(article.title || '无标题')}
                 </a>
@@ -593,7 +594,7 @@ async function runAiDailyDigestInternal(
 ): Promise<AiDailyProcessResult> {
   const range = getShanghaiDayRange(dateKey);
   const { preferences, configured } = await resolveAiPreferences(authKey);
-  if (!isAiAutoSummaryOnSyncEnabled(preferences)) {
+  if (!options.bypassAutoSummaryToggle && !isAiAutoSummaryOnSyncEnabled(preferences)) {
     return {
       processed: false,
       reportDate: range.dateKey,
@@ -735,6 +736,10 @@ async function runAiDailyDigestInternal(
     };
   } catch (error) {
     console.warn('AI daily digest failed:', error);
+    if (options.forceReport === true) {
+      throw error;
+    }
+
     return {
       processed: summarizedCount > 0 || taggedCount > 0,
       reportDate: range.dateKey,
@@ -751,7 +756,9 @@ export async function runAiAccountBootstrap(
   fakeid: string,
   limit = 10
 ): Promise<AiAccountBootstrapResult> {
-  return await enqueueAiTask(authKey, async () => await runAiAccountBootstrapInternal(authKey, fakeid, limit));
+  return await enqueueAiTask(authKey, async () => await runAiAccountBootstrapInternal(authKey, fakeid, limit), {
+    priority: 'background',
+  });
 }
 
 export async function runAiDailyDigest(
@@ -773,6 +780,8 @@ export async function runAiDailyDigest(
 
     DAILY_AI_LOCKS.set(lockKey, task);
     return await task;
+  }, {
+    priority: 'background',
   });
 }
 

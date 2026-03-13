@@ -21,6 +21,8 @@ interface ArticleSummaryRequestBody {
   force?: boolean;
 }
 
+const MANUAL_AI_SUMMARY_TIMEOUT_MS = 90000;
+
 export default defineEventHandler(async event => {
   const authKey = getAuthKeyFromRequest(event);
   if (!authKey) {
@@ -118,6 +120,7 @@ export default defineEventHandler(async event => {
       {
         temperature: 0.2,
         systemPrompt: buildRuntimeSummarySystemPrompt(preferences.aiTagDefinitions),
+        timeoutMs: MANUAL_AI_SUMMARY_TIMEOUT_MS,
       }
     );
 
@@ -141,5 +144,7 @@ export default defineEventHandler(async event => {
         highlights: parsed?.highlights || [],
       },
     };
+  }, {
+    priority: 'interactive',
   });
 });

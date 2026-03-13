@@ -20,6 +20,7 @@ export default defineEventHandler(async event => {
   return {
     data: await runAiDailyDigest(authKey, String(body?.date || '').trim() || undefined, {
       forceReport: body?.force === true,
+      bypassAutoSummaryToggle: body?.force === true,
     }),
   };
 });
