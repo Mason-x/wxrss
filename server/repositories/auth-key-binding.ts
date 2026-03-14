@@ -45,6 +45,37 @@ function mapBindingRow(row: BindingRow): AuthKeyBindingRecord {
   };
 }
 
+function getIdentityKeyPriority(identityKey: string): number {
+  const normalized = String(identityKey || '').trim();
+  if (normalized.startsWith('user_name:')) {
+    return 0;
+  }
+  if (normalized.startsWith('biz_uin:')) {
+    return 1;
+  }
+  if (normalized.startsWith('alias:')) {
+    return 2;
+  }
+  if (normalized.startsWith('profile:')) {
+    return 3;
+  }
+  return 4;
+}
+
+function compareBindingRows(a: BindingRow, b: BindingRow): number {
+  const priorityDiff = getIdentityKeyPriority(a.identity_key) - getIdentityKeyPriority(b.identity_key);
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  const updatedAtDiff = (Number(a.updated_at) || 0) - (Number(b.updated_at) || 0);
+  if (updatedAtDiff !== 0) {
+    return updatedAtDiff;
+  }
+
+  return String(a.identity_key || '').localeCompare(String(b.identity_key || ''), 'en');
+}
+
 export async function getAuthKeyBindingByIdentity(identityKey: string): Promise<AuthKeyBindingRecord | null> {
   const normalized = String(identityKey || '').trim();
   if (!normalized) {
@@ -71,7 +102,7 @@ export async function getAuthKeyBindingByAuthKey(authKey: string): Promise<AuthK
   }
 
   const db = await getSqliteDb();
-  const row = await db.get<BindingRow>(
+  const rows = await db.all<BindingRow>(
     `
     SELECT *
     FROM mp_account_identity
@@ -80,6 +111,7 @@ export async function getAuthKeyBindingByAuthKey(authKey: string): Promise<AuthK
     normalized
   );
 
+  const row = (rows || []).sort(compareBindingRows)[0] || null;
   return row ? mapBindingRow(row) : null;
 }
 

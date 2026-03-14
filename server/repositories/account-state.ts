@@ -82,6 +82,67 @@ async function migrateLegacyAuthScopedRow(options: {
   };
 }
 
+async function migrateAlternateOwnerRow(options: {
+  ownerKey: string;
+  identityKey: string;
+  authKey: string;
+  stateKey: string;
+}): Promise<AccountStateRow | null> {
+  if (!options.authKey) {
+    return null;
+  }
+
+  const db = await getSqliteDb();
+  const alternateRow = await db.get<AccountStateRow>(
+    `
+    SELECT owner_key, state_key, identity_key, auth_key, data_json, updated_at
+    FROM mp_account_state
+    WHERE auth_key = ? AND state_key = ? AND owner_key <> ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+    `,
+    options.authKey,
+    options.stateKey,
+    options.ownerKey
+  );
+  if (!alternateRow) {
+    return null;
+  }
+
+  const now = Date.now();
+  await db.run(
+    `
+    INSERT INTO mp_account_state(owner_key, state_key, identity_key, auth_key, data_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, state_key) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
+      data_json = excluded.data_json,
+      updated_at = excluded.updated_at
+    `,
+    options.ownerKey,
+    options.stateKey,
+    options.identityKey,
+    options.authKey,
+    alternateRow.data_json,
+    now
+  );
+  await db.run(
+    `DELETE FROM mp_account_state WHERE owner_key = ? AND state_key = ?`,
+    alternateRow.owner_key,
+    alternateRow.state_key
+  );
+
+  return {
+    owner_key: options.ownerKey,
+    state_key: options.stateKey,
+    identity_key: options.identityKey,
+    auth_key: options.authKey,
+    data_json: alternateRow.data_json,
+    updated_at: now,
+  };
+}
+
 async function loadStateRow(options: {
   ownerKey: string;
   identityKey: string;
@@ -102,7 +163,12 @@ async function loadStateRow(options: {
     return row;
   }
 
-  return migrateLegacyAuthScopedRow(options);
+  const legacyRow = await migrateLegacyAuthScopedRow(options);
+  if (legacyRow) {
+    return legacyRow;
+  }
+
+  return migrateAlternateOwnerRow(options);
 }
 
 export async function getStoredAccountStateByAuthKey<T = unknown>(

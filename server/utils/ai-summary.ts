@@ -160,7 +160,7 @@ export function parseAiJsonObject<T = Record<string, any>>(raw: string): T {
     throw createError({
       statusCode: 502,
       statusMessage: 'Bad Gateway',
-      message: 'AI 鎺ュ彛杩斿洖鐨?JSON 鏃犳硶瑙ｆ瀽',
+      message: 'AI 接口返回的 JSON 无法解析',
     });
   }
 }
@@ -308,7 +308,7 @@ export async function requestAiCompletionText(
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      message: '璇峰厛鍦ㄨ缃噷濉啓 AI API Key',
+      message: '请先在设置里填写 AI API Key',
     });
   }
 
@@ -316,7 +316,7 @@ export async function requestAiCompletionText(
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      message: '璇峰厛鍦ㄨ缃噷濉啓 AI 妯″瀷',
+      message: '请先在设置里填写 AI 模型',
     });
   }
 
@@ -374,7 +374,7 @@ export async function requestAiCompletionText(
     throw createError({
       statusCode: 502,
       statusMessage: 'Bad Gateway',
-      message: `AI 鎺ュ彛杩斿洖浜嗘棤娉曡В鏋愮殑鍐呭锛?{rawText.slice(0, 200)}`,
+      message: `AI 接口返回了无法解析的内容：${rawText.slice(0, 200)}`,
     });
   }
 
@@ -382,7 +382,7 @@ export async function requestAiCompletionText(
     throw createError({
       statusCode: response.status || 502,
       statusMessage: response.status === 400 ? 'Bad Request' : 'Bad Gateway',
-      message: String(payload?.error?.message || 'AI 璇锋眰澶辫触'),
+      message: String(payload?.error?.message || 'AI 请求失败'),
     });
   }
 
@@ -391,7 +391,7 @@ export async function requestAiCompletionText(
     throw createError({
       statusCode: 502,
       statusMessage: 'Bad Gateway',
-      message: 'AI 鎺ュ彛娌℃湁杩斿洖鏈夋晥鍐呭',
+      message: 'AI 接口没有返回有效内容',
     });
   }
 

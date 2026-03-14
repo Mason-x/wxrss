@@ -1,4 +1,4 @@
-import { normalizePreferences } from '#shared/utils/preferences';
+import { isDefaultPreferences, normalizePreferences } from '#shared/utils/preferences';
 import { getSqliteDb } from '~/server/db/sqlite';
 import { getSchedulerState } from '~/server/kv/scheduler';
 import { resolveAccountOwnerScope } from '~/server/repositories/account-owner';
@@ -25,6 +25,16 @@ function parsePreferencesJson(raw: string): Preferences {
   } catch {
     return normalizePreferences();
   }
+}
+
+function shouldReplacePreferencesRow(currentRow: PreferencesRow | null, alternateRow: PreferencesRow): boolean {
+  if (!currentRow) {
+    return true;
+  }
+
+  const currentPreferences = parsePreferencesJson(currentRow.data_json);
+  const alternatePreferences = parsePreferencesJson(alternateRow.data_json);
+  return isDefaultPreferences(currentPreferences) && !isDefaultPreferences(alternatePreferences);
 }
 
 async function migrateLegacyAuthScopedRow(options: {
@@ -81,6 +91,60 @@ async function migrateLegacyAuthScopedRow(options: {
   };
 }
 
+async function migrateAlternateOwnerRow(options: {
+  ownerKey: string;
+  identityKey: string;
+  authKey: string;
+  currentRow?: PreferencesRow | null;
+}): Promise<PreferencesRow | null> {
+  if (!options.authKey) {
+    return options.currentRow || null;
+  }
+
+  const db = await getSqliteDb();
+  const alternateRow = await db.get<PreferencesRow>(
+    `
+    SELECT owner_key, identity_key, auth_key, data_json, updated_at
+    FROM mp_preferences
+    WHERE auth_key = ? AND owner_key <> ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+    `,
+    options.authKey,
+    options.ownerKey
+  );
+  if (!alternateRow || !shouldReplacePreferencesRow(options.currentRow || null, alternateRow)) {
+    return options.currentRow || null;
+  }
+
+  const now = Date.now();
+  await db.run(
+    `
+    INSERT INTO mp_preferences(owner_key, identity_key, auth_key, data_json, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
+      data_json = excluded.data_json,
+      updated_at = excluded.updated_at
+    `,
+    options.ownerKey,
+    options.identityKey,
+    options.authKey,
+    alternateRow.data_json,
+    now
+  );
+  await db.run(`DELETE FROM mp_preferences WHERE owner_key = ?`, alternateRow.owner_key);
+
+  return {
+    owner_key: options.ownerKey,
+    identity_key: options.identityKey,
+    auth_key: options.authKey,
+    data_json: alternateRow.data_json,
+    updated_at: now,
+  };
+}
+
 async function loadPreferencesRow(options: {
   ownerKey: string;
   identityKey: string;
@@ -96,10 +160,18 @@ async function loadPreferencesRow(options: {
     options.ownerKey
   );
   if (row) {
-    return row;
+    return migrateAlternateOwnerRow({
+      ...options,
+      currentRow: row,
+    });
   }
 
-  return migrateLegacyAuthScopedRow(options);
+  const legacyRow = await migrateLegacyAuthScopedRow(options);
+  if (legacyRow) {
+    return legacyRow;
+  }
+
+  return migrateAlternateOwnerRow(options);
 }
 
 function buildSchedulerFallback(authKey: string): Promise<Preferences> {

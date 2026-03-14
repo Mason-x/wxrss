@@ -165,6 +165,30 @@ async function resolveCanonicalAuthKey(options: {
   return temporaryAuthKey;
 }
 
+async function resolveEffectiveIdentityKey(options: {
+  canonicalAuthKey: string;
+  extractedIdentityKey: string;
+}): Promise<string> {
+  const extractedIdentityKey = String(options.extractedIdentityKey || '').trim();
+  const canonicalAuthKey = normalizeAuthKey(options.canonicalAuthKey);
+  if (!canonicalAuthKey) {
+    return extractedIdentityKey;
+  }
+
+  const existingBinding = await getAuthKeyBindingByAuthKey(canonicalAuthKey);
+  const existingIdentityKey = String(existingBinding?.identityKey || '').trim();
+  if (!existingIdentityKey) {
+    return extractedIdentityKey;
+  }
+
+  if (!extractedIdentityKey || extractedIdentityKey === existingIdentityKey) {
+    return existingIdentityKey;
+  }
+
+  // Keep the existing owner binding stable once this auth_key has been bound.
+  return existingIdentityKey;
+}
+
 async function promoteTemporarySession(temporaryAuthKey: string, canonicalAuthKey: string): Promise<void> {
   const temporaryKey = normalizeAuthKey(temporaryAuthKey);
   const canonicalKey = normalizeAuthKey(canonicalAuthKey);
@@ -248,12 +272,16 @@ export default defineEventHandler(async event => {
       temporaryAuthKey,
       info,
     });
+    const effectiveIdentityKey = await resolveEffectiveIdentityKey({
+      canonicalAuthKey,
+      extractedIdentityKey: info.identity_key || '',
+    });
 
     await promoteTemporarySession(temporaryAuthKey, canonicalAuthKey);
 
-    if (info.identity_key) {
+    if (effectiveIdentityKey) {
       await upsertAuthKeyBinding({
-        identityKey: info.identity_key,
+        identityKey: effectiveIdentityKey,
         authKey: canonicalAuthKey,
         userName: info.user_name,
         bizUin: info.biz_uin,
@@ -273,7 +301,7 @@ export default defineEventHandler(async event => {
       avatar: info.head_img,
       expires: dayjs().add(4, 'days').toString(),
       auth_key: canonicalAuthKey,
-      identity_key: info.identity_key || '',
+      identity_key: effectiveIdentityKey,
     });
 
     headers.set('Content-Length', new TextEncoder().encode(body).length.toString());
