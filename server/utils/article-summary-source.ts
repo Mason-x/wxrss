@@ -507,15 +507,42 @@ function extractSummaryTextContentFromHtml(source: string): string {
   return normalizeArticleContent($root.text());
 }
 
-function extractSummaryContentFromHtml(source: string): ArticleSummaryExtractedContent {
-  const normalizedHtml = normalizeHtml(source, 'html');
-  const $ = load(normalizedHtml);
-  const $root =
-    $('#js_article').first().length > 0
-      ? $('#js_article').first()
-      : $('#js_content').first().length > 0
-        ? $('#js_content').first()
-        : $('body').first();
+function hasWechatSummaryRoot(source: string): boolean {
+  if (!source.trim()) {
+    return false;
+  }
+
+  const $ = load(source);
+  return $('#js_article').first().length > 0 || $('#js_content').first().length > 0;
+}
+
+function selectSummaryRoot($: any): any {
+  if ($('#js_article').first().length > 0) {
+    return $('#js_article').first();
+  }
+  if ($('#js_content').first().length > 0) {
+    return $('#js_content').first();
+  }
+  if ($('article').first().length > 0) {
+    return $('article').first();
+  }
+  if ($('main').first().length > 0) {
+    return $('main').first();
+  }
+  return $('body').first();
+}
+
+function extractSummaryContentFromPreparedHtml(
+  source: string,
+  originalSource = source
+): ArticleSummaryExtractedContent {
+  const preparedHtml = String(source || '').trim();
+  if (!preparedHtml) {
+    return createEmptyArticleSummaryExtractedContent();
+  }
+
+  const $ = load(preparedHtml);
+  const $root = selectSummaryRoot($);
 
   if ($root.length === 0) {
     return createEmptyArticleSummaryExtractedContent();
@@ -526,8 +553,9 @@ function extractSummaryContentFromHtml(source: string): ArticleSummaryExtractedC
       $('meta[name="wechat-article-url"]').attr('content') ||
         $('meta[property="og:url"]').attr('content') ||
         $('link[rel="canonical"]').attr('href') ||
-        extractOriginalArticleUrl(source) ||
-        extractOriginalArticleUrl(normalizedHtml) ||
+        $('base').attr('href') ||
+        extractOriginalArticleUrl(originalSource) ||
+        extractOriginalArticleUrl(preparedHtml) ||
         SUMMARY_BASE_URL,
       SUMMARY_BASE_URL
     ) || SUMMARY_BASE_URL;
@@ -543,6 +571,18 @@ function extractSummaryContentFromHtml(source: string): ArticleSummaryExtractedC
     markdown: cleanupSummaryMarkdown(markdown),
     textContent: extractSummaryTextContentFromHtml(cleanedHtml),
   });
+}
+
+function extractSummaryContentFromHtml(source: string): ArticleSummaryExtractedContent {
+  const directExtracted = extractSummaryContentFromPreparedHtml(source, source);
+  const normalizedHtml = normalizeHtml(source, 'html');
+  const normalizedExtracted = extractSummaryContentFromPreparedHtml(normalizedHtml, source);
+
+  if (hasWechatSummaryRoot(source)) {
+    return normalizedExtracted.contentForPrompt ? normalizedExtracted : directExtracted;
+  }
+
+  return directExtracted.contentForPrompt ? directExtracted : normalizedExtracted;
 }
 
 export function extractArticleSummaryContentFields(value?: string): ArticleSummaryExtractedContent {
