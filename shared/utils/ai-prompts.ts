@@ -109,11 +109,7 @@ function formatPublishedAt(value?: number | string): string {
 
 export function buildAiCustomTagDefinitionPrompt(tagDefinitions: AiTagDefinition[]): string {
   if (!Array.isArray(tagDefinitions) || tagDefinitions.length === 0) {
-    return [
-      '### 当前用户自定义标签配置',
-      '当前没有可用的用户自定义标签。',
-      '此时请始终输出 "custom": []。',
-    ].join('\n');
+    return ['### 当前用户自定义标签配置', '当前没有可用的用户自定义标签。', '此时请始终输出 "custom": []。'].join('\n');
   }
 
   return [

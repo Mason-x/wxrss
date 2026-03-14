@@ -15,7 +15,9 @@ const APP_THEME_OPTIONS: AppThemeModeOption[] = [
 ];
 
 function normalizeAppThemeMode(value: unknown): AppThemeMode {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (normalized === 'light' || normalized === 'dark' || normalized === 'system') {
     return normalized;
   }
@@ -36,9 +38,7 @@ export function useAppThemeMode() {
     },
   });
 
-  const effective = computed<'light' | 'dark'>(() => (
-    preference.value === 'system' ? system.value : preference.value
-  ));
+  const effective = computed<'light' | 'dark'>(() => (preference.value === 'system' ? system.value : preference.value));
   const isDark = computed(() => effective.value === 'dark');
 
   if (import.meta.client && !listenersBound.value) {

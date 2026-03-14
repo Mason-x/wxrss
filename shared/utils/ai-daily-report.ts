@@ -5,7 +5,10 @@ function escapeRegExp(value: string): string {
 }
 
 function trimTopicSeparators(value: string): string {
-  return value.replace(/^[\s|｜:：\-]+/u, '').replace(/[\s|｜:：\-]+$/u, '').trim();
+  return value
+    .replace(/^[\s|｜:：\-]+/u, '')
+    .replace(/[\s|｜:：\-]+$/u, '')
+    .trim();
 }
 
 export function normalizeAiDailyReportTopic(title: string, reportDate = ''): string {
@@ -17,10 +20,7 @@ export function normalizeAiDailyReportTopic(title: string, reportDate = ''): str
   }
 
   if (dateText) {
-    normalized = normalized.replace(
-      new RegExp(`^${escapeRegExp(dateText)}(?:\\s*[|｜:：-]\\s*|\\s+)`, 'u'),
-      ''
-    );
+    normalized = normalized.replace(new RegExp(`^${escapeRegExp(dateText)}(?:\\s*[|｜:：-]\\s*|\\s+)`, 'u'), '');
   }
 
   normalized = normalized

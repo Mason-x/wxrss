@@ -1,5 +1,5 @@
-import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 import { validateNewrankCookie } from '~/server/utils/newrank';
+import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface NewrankCookieTestBody {
   cookie?: string;

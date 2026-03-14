@@ -344,12 +344,10 @@ const RSSHUB_CATEGORY_META: Record<string, RsshubCategoryMeta> = {
   },
 };
 
-let routeIndexCache:
-  | {
-      loadedAt: number;
-      items: RsshubDiscoverItem[];
-    }
-  | null = null;
+let routeIndexCache: {
+  loadedAt: number;
+  items: RsshubDiscoverItem[];
+} | null = null;
 let routeIndexPromise: Promise<RsshubDiscoverItem[]> | null = null;
 
 function normalizeWhitespace(value: string): string {
@@ -429,13 +427,7 @@ function extractRouteParams(
 }
 
 function uniqueTextList(values: Array<string | undefined | null>): string[] {
-  return Array.from(
-    new Set(
-      values
-        .map(value => normalizeWhitespace(String(value || '')))
-        .filter(Boolean)
-    )
-  );
+  return Array.from(new Set(values.map(value => normalizeWhitespace(String(value || ''))).filter(Boolean)));
 }
 
 function buildSearchCorpus(item: RsshubDiscoverItem): string {
@@ -498,7 +490,9 @@ function isNsfwRouteCandidate(input: {
   siteUrl: string;
   summary: string;
 }): boolean {
-  const namespace = String(input.namespace || '').trim().toLowerCase();
+  const namespace = String(input.namespace || '')
+    .trim()
+    .toLowerCase();
   if (RSSHUB_NSFW_NAMESPACE_BLOCKLIST.has(namespace)) {
     return true;
   }
@@ -511,7 +505,11 @@ function isNsfwRouteCandidate(input: {
     input.siteUrl,
     input.summary,
   ]
-    .map(value => String(value || '').trim().toLowerCase())
+    .map(value =>
+      String(value || '')
+        .trim()
+        .toLowerCase()
+    )
     .join(' ');
 
   if (RSSHUB_NSFW_HOST_KEYWORDS.some(keyword => haystack.includes(keyword))) {
@@ -522,15 +520,16 @@ function isNsfwRouteCandidate(input: {
 }
 
 function filterNsfwRoutes(items: RsshubDiscoverItem[]): RsshubDiscoverItem[] {
-  return items.filter(item =>
-    !isNsfwRouteCandidate({
-      namespace: item.namespace,
-      namespaceName: item.namespaceName,
-      routeName: item.routeName,
-      routePath: item.routePath,
-      siteUrl: item.siteUrl,
-      summary: item.summary,
-    }),
+  return items.filter(
+    item =>
+      !isNsfwRouteCandidate({
+        namespace: item.namespace,
+        namespaceName: item.namespaceName,
+        routeName: item.routeName,
+        routePath: item.routePath,
+        siteUrl: item.siteUrl,
+        summary: item.summary,
+      })
   );
 }
 
@@ -737,10 +736,7 @@ export async function discoverRsshubCatalog(options?: {
   const categories = buildCategoryList(items);
 
   if (keyword) {
-    const terms = keyword
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
+    const terms = keyword.toLowerCase().split(/\s+/).filter(Boolean);
 
     const routes = items
       .map(item => ({

@@ -12,8 +12,8 @@ import {
 } from '~/server/kv/scheduler';
 import { listArticlesPage } from '~/server/repositories/reader';
 import { runAiDailyDigest } from '~/server/utils/ai-daily';
-import { syncRssFeed } from '~/server/utils/rss';
 import { cookieStore } from '~/server/utils/CookieStore';
+import { syncRssFeed } from '~/server/utils/rss';
 
 const MAX_PAGE_PER_ACCOUNT = 50;
 const MAX_ARTICLES_PER_ACCOUNT = 3000;
@@ -295,11 +295,7 @@ async function syncOneAccount(
   return collected.length;
 }
 
-async function syncOneRssAccount(
-  authKey: string,
-  account: SchedulerAccount,
-  config: SchedulerConfig
-): Promise<number> {
+async function syncOneRssAccount(authKey: string, account: SchedulerAccount, config: SchedulerConfig): Promise<number> {
   const fakeid = account.fakeid;
   const cached = await getSchedulerArticles(authKey, fakeid);
   const syncThreshold = calcSyncThreshold(config);

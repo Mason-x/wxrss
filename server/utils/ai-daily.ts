@@ -1,18 +1,8 @@
 ﻿import { load } from 'cheerio';
-import {
-  formatAiDailyReportDisplayTitle,
-  normalizeAiDailyReportTopic,
-} from '#shared/utils/ai-daily-report';
+import { formatAiDailyReportDisplayTitle, normalizeAiDailyReportTopic } from '#shared/utils/ai-daily-report';
+import { buildAiDailyReportSystemPrompt, buildAiDailyReportUserPrompt } from '#shared/utils/ai-prompts';
+import { BUILTIN_AI_TAG_DEFINITIONS, DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS } from '#shared/utils/ai-tags';
 import { DEFAULT_PREFERENCES } from '#shared/utils/preferences';
-import {
-  buildAiDailyReportSystemPrompt,
-  buildAiDailyReportUserPrompt,
-} from '#shared/utils/ai-prompts';
-import {
-  BUILTIN_AI_TAG_DEFINITIONS,
-  DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS,
-} from '#shared/utils/ai-tags';
-import type { AiTagDefinition, Preferences } from '~/types/preferences';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import {
   getAiDailyReport,
@@ -23,6 +13,7 @@ import {
   updateArticleAiTags,
   upsertAiDailyReport,
 } from '~/server/repositories/reader';
+import { enqueueAiTask } from '~/server/utils/ai-queue';
 import {
   buildArticleSummaryUserPrompt,
   buildRuntimeSummarySystemPrompt,
@@ -33,7 +24,7 @@ import {
   type StructuredArticleSummary,
 } from '~/server/utils/ai-summary';
 import { ensureArticleSummarySource } from '~/server/utils/article-summary-source';
-import { enqueueAiTask } from '~/server/utils/ai-queue';
+import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
 interface AiDailyPayload {
   report_title?: string;
@@ -139,9 +130,7 @@ function normalizeDailyReportIncludedLabels(input: unknown, customDefinitions: A
       )
     : [];
 
-  return normalized.length > 0
-    ? normalized
-    : DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS.filter(item => allowed.has(item));
+  return normalized.length > 0 ? normalized : DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS.filter(item => allowed.has(item));
 }
 
 function buildRuntimeDailyReportSystemPrompt(
@@ -235,7 +224,9 @@ const AI_DAILY_REPORT_ALLOWED_TAGS = new Set([
 ]);
 
 function normalizeHeadingText(value: string): string {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function sanitizeAiDailyReportBodyHtml(html: string, topic: string): string {
@@ -281,11 +272,9 @@ function sanitizeAiDailyReportBodyHtml(html: string, topic: string): string {
   const firstHeadingText = normalizeHeadingText(firstHeading.text());
   if (
     firstHeadingText &&
-    (
-      firstHeadingText === reportTitle ||
+    (firstHeadingText === reportTitle ||
       firstHeadingText === topic ||
-      /^(今日聚焦|AI日报|AI 日报)/u.test(firstHeadingText)
-    )
+      /^(今日聚焦|AI日报|AI 日报)/u.test(firstHeadingText))
   ) {
     firstHeading.remove();
   }
@@ -348,10 +337,9 @@ function buildDailyReportSourcesHtml(articles: PreparedAiArticle[]): string {
       <h2>信息来源</h2>
       <ol class="ai-daily-report-source-list">
         ${uniqueArticles
-          .map(
-            article => {
-              const sourceMeta = buildDailyReportSourceMeta(article);
-              return `
+          .map(article => {
+            const sourceMeta = buildDailyReportSourceMeta(article);
+            return `
               <li class="ai-daily-report-source-item">
                 <a
                   class="ai-daily-report-source-link"
@@ -363,8 +351,7 @@ function buildDailyReportSourcesHtml(articles: PreparedAiArticle[]): string {
                 ${sourceMeta ? `<p class="ai-daily-report-source-meta">${escapeHtml(sourceMeta)}</p>` : ''}
               </li>
             `.trim();
-            }
-          )
+          })
           .join('\n')}
       </ol>
     </section>
@@ -386,7 +373,9 @@ function buildFinalDailyReportHtml(options: {
     buildDailyReportHeaderHtml(options.dateKey, topic, sourceCount),
     buildDailyReportBodyHtml(bodyHtml),
     sourcesHtml,
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function shouldIncludeArticleInDailyReport(article: PreparedAiArticle, includedLabels: string[]): boolean {
@@ -396,9 +385,7 @@ function shouldIncludeArticleInDailyReport(article: PreparedAiArticle, includedL
   return article.summaryPayload.tags.some(tag => includedLabels.includes(tag));
 }
 
-function needsDailyReportTemplateRefresh(
-  report: Awaited<ReturnType<typeof getAiDailyReport>> | null
-): boolean {
+function needsDailyReportTemplateRefresh(report: Awaited<ReturnType<typeof getAiDailyReport>> | null): boolean {
   if (!report) {
     return true;
   }
@@ -670,7 +657,10 @@ async function runAiDailyDigestInternal(
 
   const currentReport = await getAiDailyReport(authKey, range.dateKey);
   const shouldRefreshReport =
-    options.forceReport === true || needsDailyReportTemplateRefresh(currentReport) || summarizedCount > 0 || taggedCount > 0;
+    options.forceReport === true ||
+    needsDailyReportTemplateRefresh(currentReport) ||
+    summarizedCount > 0 ||
+    taggedCount > 0;
 
   if (!shouldRefreshReport) {
     return {
@@ -766,22 +756,25 @@ export async function runAiDailyDigest(
   dateKey?: string,
   options: RunAiDailyDigestOptions = {}
 ): Promise<AiDailyProcessResult> {
-  return await enqueueAiTask(authKey, async () => {
-    const range = getShanghaiDayRange(dateKey);
-    const lockKey = `${authKey}:${range.dateKey}`;
-    const running = DAILY_AI_LOCKS.get(lockKey);
-    if (running) {
-      return await running;
+  return await enqueueAiTask(
+    authKey,
+    async () => {
+      const range = getShanghaiDayRange(dateKey);
+      const lockKey = `${authKey}:${range.dateKey}`;
+      const running = DAILY_AI_LOCKS.get(lockKey);
+      if (running) {
+        return await running;
+      }
+
+      const task = runAiDailyDigestInternal(authKey, range.dateKey, options).finally(() => {
+        DAILY_AI_LOCKS.delete(lockKey);
+      });
+
+      DAILY_AI_LOCKS.set(lockKey, task);
+      return await task;
+    },
+    {
+      priority: 'background',
     }
-
-    const task = runAiDailyDigestInternal(authKey, range.dateKey, options).finally(() => {
-      DAILY_AI_LOCKS.delete(lockKey);
-    });
-
-    DAILY_AI_LOCKS.set(lockKey, task);
-    return await task;
-  }, {
-    priority: 'background',
-  });
+  );
 }
-

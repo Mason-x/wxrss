@@ -19,7 +19,7 @@ interface NewrankRecommendationCacheRow {
 function parseItemsJson<T>(raw: string): T[] {
   try {
     const parsed = JSON.parse(raw || '[]');
-    return Array.isArray(parsed) ? parsed as T[] : [];
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }

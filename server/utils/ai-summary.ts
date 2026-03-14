@@ -1,12 +1,9 @@
 ﻿import {
-  BUILTIN_AI_QUALITY_TAG_DEFINITIONS,
-  BUILTIN_AI_SPONSORED_TAG_DEFINITION,
-} from '#shared/utils/ai-tags';
-import {
   buildAiCustomTagDefinitionPrompt,
   buildAiSummaryArticlePrompt,
   FIXED_AI_SUMMARY_SYSTEM_PROMPT as CLEAN_FIXED_AI_SUMMARY_SYSTEM_PROMPT,
 } from '#shared/utils/ai-prompts';
+import { BUILTIN_AI_QUALITY_TAG_DEFINITIONS, BUILTIN_AI_SPONSORED_TAG_DEFINITION } from '#shared/utils/ai-tags';
 import type { AiTagDefinition } from '~/types/preferences';
 
 export interface AiSummaryConfig {
@@ -51,7 +48,10 @@ function normalizeTagVariable(value: unknown): string {
     return '';
   }
 
-  const plain = raw.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+  const plain = raw
+    .replace(/^\{\{\s*|\s*\}\}$/g, '')
+    .trim()
+    .toLowerCase();
   if (!plain) {
     return '';
   }
@@ -188,9 +188,10 @@ function normalizeLegacyTags(inputTags: unknown[], allowedCustomLabels: string[]
   }
 
   const sponsored = normalized.includes(SPONSORED_TAG) ? SPONSORED_TAG : undefined;
-  const customAllowSet = allowedCustomLabels.length > 0
-    ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
-    : undefined;
+  const customAllowSet =
+    allowedCustomLabels.length > 0
+      ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
+      : undefined;
   const custom = normalized
     .filter(tag => !QUALITY_TAG_SET.has(tag) && tag !== SPONSORED_TAG)
     .filter(tag => !customAllowSet || customAllowSet.has(tag))
@@ -208,9 +209,10 @@ function normalizeStructuredSummaryLabelObject(
   allowedCustomLabels: string[] = []
 ): StructuredSummaryLabelObject | null {
   const labelPayload = payload?.label;
-  const customAllowSet = allowedCustomLabels.length > 0
-    ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
-    : undefined;
+  const customAllowSet =
+    allowedCustomLabels.length > 0
+      ? new Set(allowedCustomLabels.map(item => normalizeTagVariable(item)).filter(Boolean))
+      : undefined;
 
   if (labelPayload && typeof labelPayload === 'object' && !Array.isArray(labelPayload)) {
     const quality = normalizeTagVariable(labelPayload.quality);
@@ -251,11 +253,7 @@ function normalizeStructuredSummaryLabelObject(
 }
 
 function flattenStructuredSummaryTags(label: StructuredSummaryLabelObject): string[] {
-  return [
-    label.quality,
-    ...(label.sponsored ? [label.sponsored] : []),
-    ...label.custom,
-  ].filter(Boolean);
+  return [label.quality, ...(label.sponsored ? [label.sponsored] : []), ...label.custom].filter(Boolean);
 }
 
 export function parseStructuredArticleSummary(
@@ -290,12 +288,7 @@ function isH3ErrorLike(error: unknown): boolean {
 function isFetchTimeoutError(error: unknown): boolean {
   const name = String((error as any)?.name || '').trim();
   const message = String((error as any)?.message || '').trim();
-  return (
-    name === 'AbortError' ||
-    name === 'TimeoutError' ||
-    /aborted/i.test(message) ||
-    /timeout/i.test(message)
-  );
+  return name === 'AbortError' || name === 'TimeoutError' || /aborted/i.test(message) || /timeout/i.test(message);
 }
 
 export async function requestAiCompletionText(
@@ -309,6 +302,7 @@ export async function requestAiCompletionText(
 ): Promise<{ text: string; model: string }> {
   const apiKey = String(config.apiKey || '').trim();
   const model = String(config.model || '').trim();
+  const requestOptions = options ?? {};
 
   if (!apiKey) {
     throw createError({
@@ -337,11 +331,11 @@ export async function requestAiCompletionText(
       },
       body: JSON.stringify({
         model,
-        temperature: Number.isFinite(options?.temperature) ? options.temperature : 0.2,
+        temperature: Number.isFinite(requestOptions.temperature) ? requestOptions.temperature : 0.2,
         messages: [
           {
             role: 'system',
-            content: normalizeSystemPrompt(options?.systemPrompt || config.systemPrompt),
+            content: normalizeSystemPrompt(requestOptions.systemPrompt || config.systemPrompt),
           },
           {
             role: 'user',
@@ -349,7 +343,7 @@ export async function requestAiCompletionText(
           },
         ],
       }),
-      signal: AbortSignal.timeout(Math.max(1000, Number(options?.timeoutMs) || 60000)),
+      signal: AbortSignal.timeout(Math.max(1000, Number(requestOptions.timeoutMs) || 60000)),
     });
   } catch (error) {
     if (isH3ErrorLike(error)) {
@@ -422,4 +416,3 @@ export async function requestAiSummary(
     model: result.model,
   };
 }
-

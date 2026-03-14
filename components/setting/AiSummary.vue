@@ -318,19 +318,16 @@
 </template>
 
 <script setup lang="ts">
-import { DEFAULT_PREFERENCES } from '#shared/utils/preferences';
-import { request } from '#shared/utils/request';
-import {
-  BUILTIN_AI_TAG_DEFINITIONS,
-  DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS,
-} from '#shared/utils/ai-tags';
 import {
   DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
   FIXED_AI_SUMMARY_PROMPT_NOTE,
   FIXED_AI_TAG_PROMPT_NOTE,
 } from '#shared/utils/ai-prompts';
-import useSavePreferences from '~/composables/useSavePreferences';
+import { BUILTIN_AI_TAG_DEFINITIONS, DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS } from '#shared/utils/ai-tags';
+import { DEFAULT_PREFERENCES } from '#shared/utils/preferences';
+import { request } from '#shared/utils/request';
 import toastFactory from '~/composables/toast';
+import useSavePreferences from '~/composables/useSavePreferences';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
@@ -357,10 +354,7 @@ const availableDailyReportLabels = computed(() => {
   const customDefinitions = normalizeLocalTagDefinitions(customTagDefinitionsDraft.value, {
     dropEmpty: false,
   });
-  const definitions = [
-    ...builtinTagDefinitions,
-    ...customDefinitions,
-  ];
+  const definitions = [...builtinTagDefinitions, ...customDefinitions];
 
   const map = new Map<string, AiTagDefinition>();
   for (const item of definitions) {
@@ -383,12 +377,14 @@ function looksCorruptedPromptText(value: unknown) {
   const placeholderMatches = stripped.match(/[?？�]/g) || [];
   const placeholderRatio = stripped.length > 0 ? placeholderMatches.length / stripped.length : 0;
 
-  return placeholderMatches.length >= 6
-    || placeholderRatio >= 0.25
-    || /label\s*\?\s*summary/i.test(text)
-    || /report_html\s+\?{2,}/i.test(text)
-    || text.includes('???? AI ???')
-    || text.includes('???????');
+  return (
+    placeholderMatches.length >= 6 ||
+    placeholderRatio >= 0.25 ||
+    /label\s*\?\s*summary/i.test(text) ||
+    /report_html\s+\?{2,}/i.test(text) ||
+    text.includes('???? AI ???') ||
+    text.includes('???????')
+  );
 }
 
 function sanitizePromptFieldsInPlace() {
@@ -429,9 +425,7 @@ function slugifyTagVariable(value: string, fallback = ''): string {
     return `{{${normalized}}}`;
   }
 
-  const plain = (raw || fallbackText)
-    .replace(/^\{\{\s*|\s*\}\}$/g, '')
-    .slice(0, 48);
+  const plain = (raw || fallbackText).replace(/^\{\{\s*|\s*\}\}$/g, '').slice(0, 48);
 
   return plain ? `{{${plain}}}` : '';
 }
@@ -447,11 +441,7 @@ function ensureCustomTagDefinitions() {
   }
 }
 
-function updateTagDefinitionField(
-  index: number,
-  field: keyof AiTagDefinition,
-  value: string
-) {
+function updateTagDefinitionField(index: number, field: keyof AiTagDefinition, value: string) {
   ensureCustomTagDefinitions();
   const target = customTagDefinitionsDraft.value[index];
   if (!target) {
@@ -500,27 +490,37 @@ function normalizeLocalTagDefinitions(
     }
 
     const sourceItem = item as Partial<AiTagDefinition>;
-    const label = String(sourceItem.label || '').trim().slice(0, 32);
-    const description = String(sourceItem.description || '').trim().slice(0, 240);
+    const label = String(sourceItem.label || '')
+      .trim()
+      .slice(0, 32);
+    const description = String(sourceItem.description || '')
+      .trim()
+      .slice(0, 240);
     const color = normalizeTagColor(sourceItem.color || '', '#94a3b8');
 
     if (!label) {
-      return options.dropEmpty ? [] : [{
-        label: '',
-        variable: '',
-        description,
-        color,
-      }];
+      return options.dropEmpty
+        ? []
+        : [
+            {
+              label: '',
+              variable: '',
+              description,
+              color,
+            },
+          ];
     }
 
     const variable = makeUniqueTagVariable(slugifyTagVariable(String(sourceItem.variable || ''), label), seen);
 
-    return [{
-      label,
-      variable,
-      description,
-      color,
-    }];
+    return [
+      {
+        label,
+        variable,
+        description,
+        color,
+      },
+    ];
   });
 }
 
@@ -535,9 +535,7 @@ function normalizeDailyReportIncludedLabelsSelection(value: unknown) {
     )
   );
 
-  return normalized.length > 0
-    ? normalized
-    : DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS.filter(item => allowed.has(item));
+  return normalized.length > 0 ? normalized : DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS.filter(item => allowed.has(item));
 }
 
 function syncDraftFromPreferences() {

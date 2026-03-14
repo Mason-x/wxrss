@@ -690,12 +690,12 @@ import { Loader } from 'lucide-vue-next';
 import {
   getAccountList,
   getNewrankMpRecommendations,
-  searchRsshubRoutes,
-  subscribeRssFeed,
   type NewrankMpCategoryItem,
   type NewrankMpRecommendationItem,
   type RsshubCategoryItem,
   type RsshubDiscoverItem,
+  searchRsshubRoutes,
+  subscribeRssFeed,
 } from '~/apis';
 import { ACCOUNT_LIST_PAGE_SIZE, ACCOUNT_TYPE } from '~/config';
 import { getAllInfo, type MpAccount } from '~/store/v2/info';
@@ -849,7 +849,10 @@ let previousBodyWidth = '';
 const hasNewrankCookie = computed(() => Boolean(String(preferences.value.newrankCookie || '').trim()));
 const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuery.value.trim());
 const selectedNewrankCategory = computed(
-  () => newrankCategories.value.find(category => category.id === selectedNewrankCategoryId.value) || newrankCategories.value[0] || null
+  () =>
+    newrankCategories.value.find(category => category.id === selectedNewrankCategoryId.value) ||
+    newrankCategories.value[0] ||
+    null
 );
 const existingMpAccountIndex = computed(() => {
   const fakeids = new Set<string>();
@@ -871,17 +874,15 @@ const existingMpAccountIndex = computed(() => {
 });
 
 const canSwipeBackInsideRssPage = computed(
-  () =>
-    mode.value === 'rss' &&
-    Boolean(
-      selectedRsshubCategoryId.value ||
-        rssDiscoverSearched.value
-    )
+  () => mode.value === 'rss' && Boolean(selectedRsshubCategoryId.value || rssDiscoverSearched.value)
 );
 
 const rssDialogPageStyle = computed(() => ({
-  transform: dialogBackGesture.offsetX > 0 ? `translate3d(${dialogBackGesture.offsetX}px, 0, 0)` : 'translate3d(0, 0, 0)',
-  transition: dialogBackGesture.animating ? `transform ${DIALOG_BACK_RESET_MS}ms cubic-bezier(0.22, 1, 0.36, 1)` : 'none',
+  transform:
+    dialogBackGesture.offsetX > 0 ? `translate3d(${dialogBackGesture.offsetX}px, 0, 0)` : 'translate3d(0, 0, 0)',
+  transition: dialogBackGesture.animating
+    ? `transform ${DIALOG_BACK_RESET_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+    : 'none',
 }));
 
 function normalizeRouteValue(value: string): string {
@@ -900,11 +901,15 @@ function encodeRouteValue(value: string): string {
 }
 
 function describeRequestError(error: any): string {
-  return String(error?.data?.statusMessage || error?.statusMessage || error?.data?.message || error?.message || '未知错误');
+  return String(
+    error?.data?.statusMessage || error?.statusMessage || error?.data?.message || error?.message || '未知错误'
+  );
 }
 
 function normalizeSubscriptionLookupValue(value: string): string {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function isMobileViewport(): boolean {
@@ -1270,22 +1275,49 @@ async function ensureNewrankRecommendationsLoaded() {
   await loadNewrankRecommendations(selectedNewrankCategoryId.value);
 }
 
-function pickRecommendedAccountMatch(
-  accounts: AccountInfo[],
-  target: NewrankMpRecommendationItem
-): AccountInfo | null {
+function pickRecommendedAccountMatch(accounts: AccountInfo[], target: NewrankMpRecommendationItem): AccountInfo | null {
   if (accounts.length === 0) {
     return null;
   }
 
-  const alias = String(target.alias || '').trim().toLowerCase();
-  const nickname = String(target.nickname || '').trim().toLowerCase();
+  const alias = String(target.alias || '')
+    .trim()
+    .toLowerCase();
+  const nickname = String(target.nickname || '')
+    .trim()
+    .toLowerCase();
 
   return (
-    accounts.find(item => alias && String(item.alias || '').trim().toLowerCase() === alias) ||
-    accounts.find(item => nickname && String(item.nickname || '').trim().toLowerCase() === nickname) ||
-    accounts.find(item => alias && String(item.alias || '').trim().toLowerCase().includes(alias)) ||
-    accounts.find(item => nickname && String(item.nickname || '').trim().toLowerCase().includes(nickname)) ||
+    accounts.find(
+      item =>
+        alias &&
+        String(item.alias || '')
+          .trim()
+          .toLowerCase() === alias
+    ) ||
+    accounts.find(
+      item =>
+        nickname &&
+        String(item.nickname || '')
+          .trim()
+          .toLowerCase() === nickname
+    ) ||
+    accounts.find(
+      item =>
+        alias &&
+        String(item.alias || '')
+          .trim()
+          .toLowerCase()
+          .includes(alias)
+    ) ||
+    accounts.find(
+      item =>
+        nickname &&
+        String(item.nickname || '')
+          .trim()
+          .toLowerCase()
+          .includes(nickname)
+    ) ||
     accounts[0] ||
     null
   );

@@ -1,26 +1,32 @@
 ﻿<script setup lang="ts">
 import { format } from 'date-fns';
-import { AnimatePresence, animate, motion, transformValue, type PanInfo, useDragControls, useMotionValue, useReducedMotion } from 'motion-v';
 import {
-  formatAiDailyReportDisplayTitle,
-  formatAiDailyReportListTitle,
-} from '#shared/utils/ai-daily-report';
+  AnimatePresence,
+  animate,
+  motion,
+  type PanInfo,
+  transformValue,
+  useDragControls,
+  useMotionValue,
+  useReducedMotion,
+} from 'motion-v';
+import { formatAiDailyReportDisplayTitle, formatAiDailyReportListTitle } from '#shared/utils/ai-daily-report';
+import { BUILTIN_AI_TAG_DEFINITIONS } from '#shared/utils/ai-tags';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { normalizeHtml } from '#shared/utils/html';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { BUILTIN_AI_TAG_DEFINITIONS } from '#shared/utils/ai-tags';
 import {
-  INITIAL_SUBSCRIBE_PAGE_SIZE,
+  type AiDailyReportItem,
   bootstrapAccountAi,
   generateArticleSummary,
-  getReaderArticleByLink,
   getAiDailyReport,
+  getArticleList,
+  getReaderArticleByLink,
+  INITIAL_SUBSCRIBE_PAGE_SIZE,
   listAiDailyReports,
   refreshAiDailyDigest,
-  getArticleList,
   syncRssFeed,
-  type AiDailyReportItem,
 } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
@@ -467,11 +473,7 @@ function formatBatchFailedAccountNames(
   limit = 3
 ) {
   const uniqueNames = Array.from(
-    new Set(
-      accounts
-        .map(account => String(account.nickname || account.fakeid || '').trim())
-        .filter(Boolean)
-    )
+    new Set(accounts.map(account => String(account.nickname || account.fakeid || '').trim()).filter(Boolean))
   );
   if (uniqueNames.length === 0) {
     return '';
@@ -785,9 +787,7 @@ const canContinueSyncSelectedAccount = computed(() => {
 });
 const articleFooterActionLoading = computed(() => {
   const syncingCurrentAccount =
-    Boolean(selectedAccount.value)
-    && syncingRowId.value === selectedAccount.value
-    && isSyncing.value;
+    Boolean(selectedAccount.value) && syncingRowId.value === selectedAccount.value && isSyncing.value;
   return articlePageLoading.value || syncingCurrentAccount;
 });
 const articleFooterActionLabel = computed(() => {
@@ -980,8 +980,8 @@ function getDailyReportListTitle(report: Pick<AiDailyReportItem, 'title' | 'repo
 }
 
 const todayDateKey = computed(() => format(new Date(), 'yyyy-MM-dd'));
-const canRegenerateSelectedDailyReport = computed(
-  () => Boolean(selectedDailyReport.value && String(selectedDailyReport.value.reportDate || '').trim() === todayDateKey.value)
+const canRegenerateSelectedDailyReport = computed(() =>
+  Boolean(selectedDailyReport.value && String(selectedDailyReport.value.reportDate || '').trim() === todayDateKey.value)
 );
 
 const selectedContentTitle = computed(() => {
@@ -1072,17 +1072,23 @@ function getArticleSummaryStateByArticle(article?: Partial<ReaderArticle> | null
     };
   }
 
-  return state || {
-    status: 'idle',
-    summary: '',
-    error: '',
+  return (
+    state || {
+      status: 'idle',
+      summary: '',
+      error: '',
       model: '',
-    };
+    }
+  );
 }
 
-const selectedArticleSummaryState = computed<ArticleSummaryState>(() => getArticleSummaryStateByArticle(selectedArticle.value));
+const selectedArticleSummaryState = computed<ArticleSummaryState>(() =>
+  getArticleSummaryStateByArticle(selectedArticle.value)
+);
 
-const articleSummaryDialogState = computed<ArticleSummaryState>(() => getArticleSummaryStateByArticle(articleSummaryDialogArticle.value));
+const articleSummaryDialogState = computed<ArticleSummaryState>(() =>
+  getArticleSummaryStateByArticle(articleSummaryDialogArticle.value)
+);
 
 function normalizeSummaryTagVariable(value: unknown): string {
   const raw = String(value || '').trim();
@@ -1090,7 +1096,10 @@ function normalizeSummaryTagVariable(value: unknown): string {
     return '';
   }
 
-  const plain = raw.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+  const plain = raw
+    .replace(/^\{\{\s*|\s*\}\}$/g, '')
+    .trim()
+    .toLowerCase();
   if (!plain) {
     return '';
   }
@@ -1109,13 +1118,7 @@ const SUMMARY_SPONSORED_TAG = '{{sponsored}}';
 
 function normalizeSummaryTagList(input: unknown): string[] {
   if (Array.isArray(input)) {
-    return Array.from(
-      new Set(
-        input
-          .map(tag => normalizeSummaryTagVariable(tag))
-          .filter(Boolean)
-      )
-    );
+    return Array.from(new Set(input.map(tag => normalizeSummaryTagVariable(tag)).filter(Boolean)));
   }
 
   if (!input || typeof input !== 'object') {
@@ -1131,13 +1134,7 @@ function normalizeSummaryTagList(input: unknown): string[] {
   const quality = normalizeSummaryTagVariable(payload.quality);
   const sponsored = normalizeSummaryTagVariable(payload.sponsored);
   const custom = Array.isArray(payload.custom)
-    ? Array.from(
-        new Set(
-          payload.custom
-            .map(tag => normalizeSummaryTagVariable(tag))
-            .filter(Boolean)
-        )
-      ).slice(0, 3)
+    ? Array.from(new Set(payload.custom.map(tag => normalizeSummaryTagVariable(tag)).filter(Boolean))).slice(0, 3)
     : [];
 
   return [
@@ -1227,10 +1224,7 @@ function splitSummaryIntoParagraphs(summary: string): string[] {
   }
 
   if (sentenceParts.length <= 4) {
-    return [
-      sentenceParts.slice(0, 2).join(' '),
-      sentenceParts.slice(2).join(' '),
-    ].filter(Boolean);
+    return [sentenceParts.slice(0, 2).join(' '), sentenceParts.slice(2).join(' ')].filter(Boolean);
   }
 
   const chunkSize = Math.ceil(sentenceParts.length / 3);
@@ -1238,7 +1232,9 @@ function splitSummaryIntoParagraphs(summary: string): string[] {
     sentenceParts.slice(0, chunkSize).join(' '),
     sentenceParts.slice(chunkSize, chunkSize * 2).join(' '),
     sentenceParts.slice(chunkSize * 2).join(' '),
-  ].map(item => item.trim()).filter(Boolean);
+  ]
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
 function renderSummaryParagraphHtml(summary: string): string {
@@ -1271,28 +1267,28 @@ const articleSummaryDialogParagraphs = computed(() =>
 
 const selectedArticleSummaryTagDisplays = computed<ArticleTagDisplayItem[]>(() => {
   const tags = selectedArticleSummaryPayload.value?.tags || [];
-  return tags.map(tag => (
-    aiTagDisplayMap.value.get(tag)
-    || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim())
-    || {
-      key: tag,
-      label: tag,
-      color: '#94a3b8',
-    }
-  ));
+  return tags.map(
+    tag =>
+      aiTagDisplayMap.value.get(tag) ||
+      aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim()) || {
+        key: tag,
+        label: tag,
+        color: '#94a3b8',
+      }
+  );
 });
 
 const articleSummaryDialogTagDisplays = computed<ArticleTagDisplayItem[]>(() => {
   const tags = articleSummaryDialogPayload.value?.tags || [];
-  return tags.map(tag => (
-    aiTagDisplayMap.value.get(tag)
-    || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim())
-    || {
-      key: tag,
-      label: tag,
-      color: '#94a3b8',
-    }
-  ));
+  return tags.map(
+    tag =>
+      aiTagDisplayMap.value.get(tag) ||
+      aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim()) || {
+        key: tag,
+        label: tag,
+        color: '#94a3b8',
+      }
+  );
 });
 
 const selectedArticleUrls = computed(() => {
@@ -1340,7 +1336,9 @@ const mobileView = computed<'articles' | 'article'>(() => {
   return 'articles';
 });
 
-const mobileCanGoBack = computed(() => Boolean(selectedArticle.value || selectedDailyReport.value || selectedAccount.value));
+const mobileCanGoBack = computed(() =>
+  Boolean(selectedArticle.value || selectedDailyReport.value || selectedAccount.value)
+);
 const mobileAccountsListRef = ref<any>(null);
 const mobileArticlesListRef = ref<any>(null);
 const mobileArticleContentRef = ref<any>(null);
@@ -1417,7 +1415,8 @@ function getMobileDrawerWidth() {
     return 368;
   }
 
-  const rootFontSize = Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize || '16') || 16;
+  const rootFontSize =
+    Number.parseFloat(window.getComputedStyle(window.document.documentElement).fontSize || '16') || 16;
   return Math.min(rootFontSize * 23, getMobileViewportWidth() * 0.88);
 }
 
@@ -1488,9 +1487,7 @@ const mobileSwipeSnapTransition = computed(() =>
 );
 
 const mobileDrawerSnapTransition = computed(() =>
-  prefersReducedMotion.value
-    ? { bounceStiffness: 960, bounceDamping: 88 }
-    : { bounceStiffness: 920, bounceDamping: 74 }
+  prefersReducedMotion.value ? { bounceStiffness: 960, bounceDamping: 88 } : { bounceStiffness: 920, bounceDamping: 74 }
 );
 
 const mobileSwipeCommitTransition = computed(() =>
@@ -1645,6 +1642,19 @@ function rememberMobileArticlesUnderlaySnapshot() {
   mobileArticlesUnderlaySnapshot.value = buildMobileArticlesLayerSnapshot();
 }
 
+function mergeMobileSnapshotArticles(snapshotArticles: ReaderArticle[], liveArticles: ReaderArticle[]) {
+  if (snapshotArticles.length === 0 || liveArticles.length === 0) {
+    return snapshotArticles.slice();
+  }
+
+  const liveArticleMap = new Map(liveArticles.map(article => [articleKey(article), article]));
+  return snapshotArticles.map(article => {
+    const key = articleKey(article);
+    const live = liveArticleMap.get(key);
+    return live ? { ...article, ...live } : article;
+  });
+}
+
 function matchesMobileArticlesSnapshot(
   snapshot: MobileArticlesLayerSnapshot | null,
   state: Pick<MobileHistoryState, 'categoryId' | 'accountId'>
@@ -1661,10 +1671,15 @@ function matchesMobileArticlesSnapshot(
 }
 
 function restoreMobileArticlesLayerSnapshot(snapshot: MobileArticlesLayerSnapshot) {
-  articleRows.value = snapshot.articles.slice();
+  const mergedArticles = mergeMobileSnapshotArticles(snapshot.articles, articleRows.value);
+  articleRows.value = mergedArticles;
   articleTotalCount.value = snapshot.totalCount;
   articlePageOffset.value = snapshot.pageOffset;
   articlePageHasMore.value = snapshot.pageHasMore;
+  mobileArticlesUnderlaySnapshot.value = {
+    ...snapshot,
+    articles: mergedArticles,
+  };
 }
 
 function restoreMobileArticlesScrollTop(scrollTop: number) {
@@ -2653,7 +2668,11 @@ async function performMobileInteractiveSwipe(
 
   setMobileUnderlayActive(context, Boolean(action.revealPreviousLayer));
   const direction = effectiveOffset >= 0 ? 1 : -1;
-  await animateMobileSwipeValue(context, getMobileSwipeCommitTarget(width, direction), mobileSwipeCommitTransition.value);
+  await animateMobileSwipeValue(
+    context,
+    getMobileSwipeCommitTarget(width, direction),
+    mobileSwipeCommitTransition.value
+  );
   await action.execute();
 
   if (context === 'articles' && action.revealPreviousLayer) {
@@ -2663,7 +2682,8 @@ async function performMobileInteractiveSwipe(
   }
 
   const contextStillActive =
-    (context === 'articles' && mobileView.value === 'articles') || (context === 'article' && mobileView.value === 'article');
+    (context === 'articles' && mobileView.value === 'articles') ||
+    (context === 'article' && mobileView.value === 'article');
 
   if (!contextStillActive) {
     clearMobileUnderlay(context);
@@ -2688,7 +2708,14 @@ async function onArticlesDragEnd(_event: PointerEvent, info: PanInfo) {
     return;
   }
 
-  await performMobileInteractiveSwipe('articles', info.offset.x || info.velocity.x, edge, interactive, committed, width);
+  await performMobileInteractiveSwipe(
+    'articles',
+    info.offset.x || info.velocity.x,
+    edge,
+    interactive,
+    committed,
+    width
+  );
 }
 
 async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
@@ -2698,7 +2725,8 @@ async function onArticleDragEnd(_event: PointerEvent, info: PanInfo) {
   const width = mobileDragSession.width || getMobileViewportWidth();
   const committed = shouldCommitSwipe(info.offset.x, info.velocity.x);
   const velocityX = Number(info.velocity.x) || 0;
-  const fastClose = edge === 'left' && !interactive && velocityX >= MOBILE_ARTICLE_FAST_CLOSE_VELOCITY && info.offset.x > 0;
+  const fastClose =
+    edge === 'left' && !interactive && velocityX >= MOBILE_ARTICLE_FAST_CLOSE_VELOCITY && info.offset.x > 0;
   resetMobileDragSession();
 
   if (context !== 'article') {
@@ -2777,10 +2805,9 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
           ? stripWechatHeader(normalizeCachedRssHtml(rawHtml))
           : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
-        selectedArticleHtml.value =
-          preferCachedHtml
-            ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
-            : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
+        selectedArticleHtml.value = preferCachedHtml
+          ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
+          : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
       }
     } catch {
       selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
@@ -2870,7 +2897,9 @@ function decodeHtmlEntitiesDeep(value: string, maxDepth = 4) {
 }
 
 function inferCachedRssMediaKind(url: string): 'audio' | 'video' | '' {
-  const normalized = String(url || '').trim().toLowerCase();
+  const normalized = String(url || '')
+    .trim()
+    .toLowerCase();
   if (!normalized) {
     return '';
   }
@@ -2933,15 +2962,15 @@ function injectCachedRssMediaEmbeds(doc: Document, container: Element): boolean 
     const host = anchor.closest('p, div, li, figure') || anchor;
     host.parentNode?.insertBefore(card, host);
 
-    const hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
-    const anchorText = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    const hostText = String(host.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const anchorText = String(anchor.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (
-      hostText
-      && (
-        hostText === anchorText
-        || hostText === resolvedUrl
-        || /^(单独打开|打开|收听|播放)/.test(hostText)
-      )
+      hostText &&
+      (hostText === anchorText || hostText === resolvedUrl || /^(单独打开|打开|收听|播放)/.test(hostText))
     ) {
       host.remove();
     }
@@ -2964,7 +2993,9 @@ function removeCachedRssStandaloneMediaLinks(container: Element): boolean {
   container.querySelectorAll('a[href]').forEach(anchor => {
     const href = resolveCachedRssMediaUrl(String(anchor.getAttribute('href') || ''), anchor.ownerDocument.baseURI);
     const kind = inferCachedRssMediaKind(href);
-    const text = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    const text = String(anchor.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (!kind || !/^(单独打开|打开|收听|播放)/.test(text)) {
       return;
     }
@@ -2994,7 +3025,11 @@ function normalizeCachedRssHtml(html: string) {
     const currentMarkup = String(container.innerHTML || '').trim();
     if (/&(?:amp;)*(lt|#60);/i.test(currentMarkup)) {
       const decodedMarkup = decodeHtmlEntitiesDeep(currentMarkup).trim();
-      if (/<(?:\/)?(?:p|div|img|figure|figcaption|blockquote|table|thead|tbody|tr|td|th|ul|ol|li|a|span|section|article|audio|video|source|h[1-6]|br|hr)\b[\s\S]*>/i.test(decodedMarkup)) {
+      if (
+        /<(?:\/)?(?:p|div|img|figure|figcaption|blockquote|table|thead|tbody|tr|td|th|ul|ol|li|a|span|section|article|audio|video|source|h[1-6]|br|hr)\b[\s\S]*>/i.test(
+          decodedMarkup
+        )
+      ) {
         container.innerHTML = decodedMarkup;
         changed = true;
       }
@@ -3103,7 +3138,13 @@ async function generateArticleSummaryForArticle(
       summary: '',
       model: '',
       error: normalizeRuntimeErrorMessage(
-        String(error?.data?.message || error?.data?.statusMessage || error?.statusMessage || error?.message || 'AI 摘要生成失败')
+        String(
+          error?.data?.message ||
+            error?.data?.statusMessage ||
+            error?.statusMessage ||
+            error?.message ||
+            'AI 摘要生成失败'
+        )
       ),
     });
   }
@@ -3188,18 +3229,15 @@ function getArticleAiTags(article?: Partial<ReaderArticle> | null): ArticleTagDi
     return [];
   }
   const structuredTags = getStructuredSummaryTags(article);
-  const sourceTags = structuredTags.length > 0
-    ? structuredTags
-    : Array.isArray(article.ai_tags)
-      ? article.ai_tags
-      : [];
+  const sourceTags = structuredTags.length > 0 ? structuredTags : Array.isArray(article.ai_tags) ? article.ai_tags : [];
   return Array.from(
     new Map(
       sourceTags
         .map(tag => String(tag || '').trim())
         .filter(Boolean)
         .map(tag => {
-          const display = aiTagDisplayMap.value.get(tag) || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim());
+          const display =
+            aiTagDisplayMap.value.get(tag) || aiTagDisplayMap.value.get(tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim());
           const label = display?.label || tag;
           return [
             label,
@@ -3247,6 +3285,21 @@ function patchArticleAiFields(link: string, patch: Partial<Pick<ReaderArticle, '
       ...articleSummaryDialogArticle.value,
       ...(patch.ai_summary !== undefined ? { ai_summary: patch.ai_summary } : {}),
       ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
+    };
+  }
+
+  if (mobileArticlesUnderlaySnapshot.value) {
+    mobileArticlesUnderlaySnapshot.value = {
+      ...mobileArticlesUnderlaySnapshot.value,
+      articles: mobileArticlesUnderlaySnapshot.value.articles.map(article =>
+        article.link === link
+          ? {
+              ...article,
+              ...(patch.ai_summary !== undefined ? { ai_summary: patch.ai_summary } : {}),
+              ...(nextTags !== undefined ? { ai_tags: nextTags } : {}),
+            }
+          : article
+      ),
     };
   }
 }
@@ -3410,9 +3463,9 @@ async function regenerateArticleSummaryFromDialog() {
   }
 
   const activeArticle =
-    articleRows.value.find(item => item.link === articleSummaryDialogArticle.value?.link)
-    || (selectedArticle.value?.link === articleSummaryDialogArticle.value.link ? selectedArticle.value : null)
-    || articleSummaryDialogArticle.value;
+    articleRows.value.find(item => item.link === articleSummaryDialogArticle.value?.link) ||
+    (selectedArticle.value?.link === articleSummaryDialogArticle.value.link ? selectedArticle.value : null) ||
+    articleSummaryDialogArticle.value;
 
   const contentHtml = await loadArticleSummarySourceHtml(activeArticle);
   await generateArticleSummaryForArticle(activeArticle, {
@@ -3429,7 +3482,7 @@ async function openArticleByLinkFromReport(link: string) {
 
   try {
     const localArticle = articleRows.value.find(article => article.link === normalizedLink);
-    const targetArticle = localArticle || await getReaderArticleByLink(normalizedLink);
+    const targetArticle = localArticle || (await getReaderArticleByLink(normalizedLink));
     if (targetArticle) {
       await openArticle(targetArticle);
       return;
@@ -4163,11 +4216,9 @@ async function syncCurrentAccount(forceRssHistory = false) {
     toast.success(
       '同步完成',
       isRssAccount(account)
-        ? (
-          rssHistory
-            ? `RSS 订阅【${account.nickname || account.fakeid}】已继续同步历史内容`
-            : `RSS 订阅【${account.nickname || account.fakeid}】已同步`
-        )
+        ? rssHistory
+          ? `RSS 订阅【${account.nickname || account.fakeid}】已继续同步历史内容`
+          : `RSS 订阅【${account.nickname || account.fakeid}】已同步`
         : `公众号【${account.nickname || account.fakeid}】文章已同步`
     );
   } catch (error) {
@@ -4318,9 +4369,7 @@ async function syncAllAccountsInCurrentScope() {
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
       } else if (firstMessage === `all ${finalSnapshot?.failedCount} accounts failed` && rssFailedCount === 0) {
         setBatchSyncNotice(
-          failedNames
-            ? `同步失败：${failedNames}`
-            : `同步失败：全部 ${totalFailedCount} 个订阅源同步失败`,
+          failedNames ? `同步失败：${failedNames}` : `同步失败：全部 ${totalFailedCount} 个订阅源同步失败`,
           5000
         );
         toast.error('同步失败', failedDetails || `全部 ${totalFailedCount} 个订阅源同步失败`);
@@ -4336,10 +4385,7 @@ async function syncAllAccountsInCurrentScope() {
           : `部分同步失败：成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`,
         5000
       );
-      toast.warning(
-        '部分同步失败',
-        failedDetails || `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`
-      );
+      toast.warning('部分同步失败', failedDetails || `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`);
     }
   } finally {
     batchSyncProgress.value = {
@@ -4384,7 +4430,8 @@ function isLikelyMobileHandset() {
   const viewportHeight = window.visualViewport?.height || window.innerHeight || 0;
   const shortestSide = Math.min(viewportWidth, viewportHeight);
   const hasTouch = navigator.maxTouchPoints > 0;
-  const coarsePointer = typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)').matches : false;
+  const coarsePointer =
+    typeof window.matchMedia === 'function' ? window.matchMedia('(pointer: coarse)').matches : false;
   const userAgent = navigator.userAgent || '';
   const mobileUa = /Android.+Mobile|iPhone|iPod|Windows Phone|Mobile/i.test(userAgent);
 

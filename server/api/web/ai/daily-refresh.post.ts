@@ -15,7 +15,7 @@ export default defineEventHandler(async event => {
     });
   }
 
-  const body = await readBody<DailyRefreshBody>(event).catch(() => ({} as DailyRefreshBody));
+  const body = await readBody<DailyRefreshBody>(event).catch(() => ({}) as DailyRefreshBody);
 
   return {
     data: await runAiDailyDigest(authKey, String(body?.date || '').trim() || undefined, {

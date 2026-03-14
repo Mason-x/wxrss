@@ -539,11 +539,7 @@ function extractPictureGalleryImages(rawHTML: string): DynamicGalleryImage[] {
   $('#img_swiper img, #img_list img, .img_swiper_area img, .share_media_text img').each((_, el) => {
     const $img = $(el);
     const rawUrl =
-      $img.attr('src') ||
-      $img.attr('data-src') ||
-      $img.attr('data-cdn-src') ||
-      $img.attr('data-ori-src') ||
-      '';
+      $img.attr('src') || $img.attr('data-src') || $img.attr('data-cdn-src') || $img.attr('data-ori-src') || '';
     const url = normalizeMediaUrl(decodeMaybeURIComponent(rawUrl));
     if (url && images.has(url)) {
       orderedUrls.add(url);

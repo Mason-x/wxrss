@@ -228,8 +228,8 @@
 <script setup lang="ts">
 import dayjs from 'dayjs';
 import { testNewrankCookie } from '~/apis';
-import useSavePreferences from '~/composables/useSavePreferences';
 import toastFactory from '~/composables/toast';
+import useSavePreferences from '~/composables/useSavePreferences';
 import type { Preferences } from '~/types/preferences';
 
 const { getActualDateRange, getSelectOptions } = useSyncDeadline();
@@ -274,9 +274,7 @@ async function saveMiscSettings() {
     await saveNow();
     toast.success('已保存');
   } catch (error: any) {
-    toast.error(String(
-      error?.data?.statusMessage || error?.statusMessage || error?.message || '保存失败'
-    ));
+    toast.error(String(error?.data?.statusMessage || error?.statusMessage || error?.message || '保存失败'));
   }
 }
 

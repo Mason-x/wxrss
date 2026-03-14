@@ -1,8 +1,8 @@
 import { USER_AGENT } from '~/config';
 import {
+  type CachedNewrankRecommendationRecord,
   getCachedNewrankRecommendations,
   upsertCachedNewrankRecommendations,
-  type CachedNewrankRecommendationRecord,
 } from '~/server/repositories/newrank';
 
 const NEWRANK_TOKEN = '3b2f8f99af0545cc989cfae76477d9bf';
@@ -365,22 +365,18 @@ const NEWRANK_RECOMMEND_CATEGORIES: NewrankCategoryDefinition[] = [
   },
 ];
 
-let wxMonthCache:
-  | {
-      expiresAt: number;
-      month: string;
-      label: string;
-    }
-  | null = null;
+let wxMonthCache: {
+  expiresAt: number;
+  month: string;
+  label: string;
+} | null = null;
 
-let aiMonthCache:
-  | {
-      expiresAt: number;
-      month: string;
-      label: string;
-      endTime: string;
-    }
-  | null = null;
+let aiMonthCache: {
+  expiresAt: number;
+  month: string;
+  label: string;
+  endTime: string;
+} | null = null;
 
 const pageParamCache = new Map<
   string,
@@ -653,7 +649,12 @@ async function fetchLatestAiWxMonth(cookie: string): Promise<{ month: string; la
   };
 }
 
-function normalizeRankRow(row: any, category: NewrankRecommendCategory, monthLabel: string, rank: number): NewrankRecommendItem | null {
+function normalizeRankRow(
+  row: any,
+  category: NewrankRecommendCategory,
+  monthLabel: string,
+  rank: number
+): NewrankRecommendItem | null {
   const nickname = normalizeText(row?.name || row?.nickname);
   const alias = normalizeText(row?.account || row?.alias);
   if (!nickname && !alias) {
@@ -849,8 +850,7 @@ export async function getNewrankMpRecommendations(options: {
   limit?: number;
 }): Promise<NewrankRecommendationsResult> {
   const categories = [...NEWRANK_RECOMMEND_CATEGORIES];
-  const selectedCategory =
-    categories.find(item => item.id === String(options.category || '').trim()) || categories[0];
+  const selectedCategory = categories.find(item => item.id === String(options.category || '').trim()) || categories[0];
   const limit = Math.min(30, Math.max(4, Number(options.limit) || 30));
   const cookie = normalizeCookieInput(options.cookie || process.env.NEWRANK_COOKIE || '');
   const cached = await readCachedCategoryRanking(selectedCategory, limit);
@@ -905,9 +905,10 @@ export async function getNewrankMpRecommendations(options: {
       });
     }
 
-    const result = selectedCategory.kind === 'rankai'
-      ? await fetchAiCategoryRanking(cookie, selectedCategory, limit)
-      : await fetchRanklistCategoryRanking(cookie, selectedCategory, limit);
+    const result =
+      selectedCategory.kind === 'rankai'
+        ? await fetchAiCategoryRanking(cookie, selectedCategory, limit)
+        : await fetchRanklistCategoryRanking(cookie, selectedCategory, limit);
 
     if (result.items.length > 0) {
       await writeCachedCategoryRanking(selectedCategory, result);
@@ -923,7 +924,16 @@ export async function getNewrankMpRecommendations(options: {
       items: result.items,
     });
   } catch (error) {
-    const message = normalizeText(error?.data?.msg || error?.data?.message || error?.message) || '加载新榜推荐失败';
+    const normalizedError = error as {
+      data?: {
+        msg?: unknown;
+        message?: unknown;
+      };
+      message?: unknown;
+    };
+    const message =
+      normalizeText(normalizedError.data?.msg || normalizedError.data?.message || normalizedError.message) ||
+      '加载新榜推荐失败';
 
     if (cached?.items.length) {
       return buildRecommendationsResult({

@@ -1,155 +1,157 @@
 :root {
-  /* --ag-selected-row-background-color: transparent; */
-  --app-bg:
-    radial-gradient(circle at top left, rgba(255, 132, 61, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(248, 250, 252, 0.72), transparent 24%),
-    linear-gradient(180deg, #f8fafc 0%, #f4f6fb 52%, #eef2f7 100%);
-  --app-surface: rgba(255, 255, 255, 0.8);
-  --app-surface-strong: rgba(255, 255, 255, 0.92);
-  --app-surface-muted: rgba(248, 250, 252, 0.78);
-  --app-glass: rgba(255, 255, 255, 0.66);
-  --app-border: rgba(148, 163, 184, 0.2);
-  --app-border-strong: rgba(255, 255, 255, 0.78);
-  --app-text-muted: #64748b;
-  --app-shadow-soft: 0 18px 44px rgba(15, 23, 42, 0.08);
-  --app-shadow-strong: 0 30px 80px rgba(15, 23, 42, 0.14);
-  --app-backdrop-blur: 18px;
-  --app-radius-xl: 28px;
-  --app-radius-lg: 22px;
-  --app-radius-md: 16px;
-  --app-accent: #ff6b2c;
+    /* --ag-selected-row-background-color: transparent; */
+    --app-bg:
+        radial-gradient(circle at top left, rgba(255, 132, 61, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(248, 250, 252, 0.72), transparent 24%),
+        linear-gradient(180deg, #f8fafc 0%, #f4f6fb 52%, #eef2f7 100%);
+    --app-surface: rgba(255, 255, 255, 0.8);
+    --app-surface-strong: rgba(255, 255, 255, 0.92);
+    --app-surface-muted: rgba(248, 250, 252, 0.78);
+    --app-glass: rgba(255, 255, 255, 0.66);
+    --app-border: rgba(148, 163, 184, 0.2);
+    --app-border-strong: rgba(255, 255, 255, 0.78);
+    --app-text-muted: #64748b;
+    --app-shadow-soft: 0 18px 44px rgba(15, 23, 42, 0.08);
+    --app-shadow-strong: 0 30px 80px rgba(15, 23, 42, 0.14);
+    --app-backdrop-blur: 18px;
+    --app-radius-xl: 28px;
+    --app-radius-lg: 22px;
+    --app-radius-md: 16px;
+    --app-accent: #ff6b2c;
 }
 
 html.dark {
-  --app-bg:
-    radial-gradient(circle at top left, rgba(255, 107, 44, 0.14), transparent 24%),
-    radial-gradient(circle at top right, rgba(15, 23, 42, 0.46), transparent 24%),
-    linear-gradient(180deg, #020617 0%, #020817 48%, #02040d 100%);
-  --app-surface: rgba(2, 6, 23, 0.72);
-  --app-surface-strong: rgba(2, 6, 23, 0.9);
-  --app-surface-muted: rgba(15, 23, 42, 0.58);
-  --app-glass: rgba(15, 23, 42, 0.58);
-  --app-border: rgba(148, 163, 184, 0.18);
-  --app-border-strong: rgba(255, 255, 255, 0.08);
-  --app-text-muted: #94a3b8;
-  --app-shadow-soft: 0 18px 44px rgba(0, 0, 0, 0.32);
-  --app-shadow-strong: 0 34px 90px rgba(0, 0, 0, 0.42);
+    --app-bg:
+        radial-gradient(circle at top left, rgba(255, 107, 44, 0.14), transparent 24%),
+        radial-gradient(circle at top right, rgba(15, 23, 42, 0.46), transparent 24%),
+        linear-gradient(180deg, #020617 0%, #020817 48%, #02040d 100%);
+    --app-surface: rgba(2, 6, 23, 0.72);
+    --app-surface-strong: rgba(2, 6, 23, 0.9);
+    --app-surface-muted: rgba(15, 23, 42, 0.58);
+    --app-glass: rgba(15, 23, 42, 0.58);
+    --app-border: rgba(148, 163, 184, 0.18);
+    --app-border-strong: rgba(255, 255, 255, 0.08);
+    --app-text-muted: #94a3b8;
+    --app-shadow-soft: 0 18px 44px rgba(0, 0, 0, 0.32);
+    --app-shadow-strong: 0 34px 90px rgba(0, 0, 0, 0.42);
 }
 
 html,
 body,
 body > #__nuxt {
-  min-height: 100%;
+    min-height: 100%;
 }
 
 body {
-  overscroll-behavior: none;
-  background: var(--app-bg);
-  color: #0f172a;
+    overscroll-behavior: none;
+    background: var(--app-bg);
+    color: #0f172a;
 }
 
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.42), transparent 32%),
-    linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.02));
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.42), transparent 32%),
+        linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.02));
 }
 
 html.dark body::before {
-  background:
-    radial-gradient(circle at top left, rgba(255, 107, 44, 0.12), transparent 26%),
-    linear-gradient(180deg, rgba(2, 6, 23, 0.08), rgba(2, 6, 23, 0.28));
+    background:
+        radial-gradient(circle at top left, rgba(255, 107, 44, 0.12), transparent 26%),
+        linear-gradient(180deg, rgba(2, 6, 23, 0.08), rgba(2, 6, 23, 0.28));
 }
 
 html.dark body {
-  color: #e2e8f0;
+    color: #e2e8f0;
 }
 
 .ag-header-cell-label {
-  justify-content: center;
+    justify-content: center;
 }
 
 .deleted-row {
-  background-color: #fef9c3;
+    background-color: #fef9c3;
 }
 
 .ag-side-bar .ag-side-button-label {
-  letter-spacing: 0.2em;
-  font-size: 15px;
-  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, sans-serif;
+    letter-spacing: 0.2em;
+    font-size: 15px;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, sans-serif;
 }
 
 ::selection {
-  background-color: rgba(255, 107, 44, 0.2);
-  color: inherit;
+    background-color: rgba(255, 107, 44, 0.2);
+    color: inherit;
 }
 
 .highlight {
-  color: red;
+    color: red;
 }
 
 .app-shell-bg {
-  background: transparent;
+    background: transparent;
 }
 
 .app-shell-panel {
-  background: var(--app-surface);
-  border: 1px solid var(--app-border-strong);
-  box-shadow: var(--app-shadow-soft);
-  backdrop-filter: blur(var(--app-backdrop-blur));
-  -webkit-backdrop-filter: blur(var(--app-backdrop-blur));
+    background: var(--app-surface);
+    border: 1px solid var(--app-border-strong);
+    box-shadow: var(--app-shadow-soft);
+    backdrop-filter: blur(var(--app-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--app-backdrop-blur));
 }
 
 .app-shell-glass {
-  background: var(--app-glass);
-  border: 1px solid var(--app-border);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3), 0 14px 32px rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(var(--app-backdrop-blur));
-  -webkit-backdrop-filter: blur(var(--app-backdrop-blur));
+    background: var(--app-glass);
+    border: 1px solid var(--app-border);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.3),
+        0 14px 32px rgba(15, 23, 42, 0.06);
+    backdrop-filter: blur(var(--app-backdrop-blur));
+    -webkit-backdrop-filter: blur(var(--app-backdrop-blur));
 }
 
 .app-shell-muted {
-  background: var(--app-surface-muted);
-  border: 1px solid var(--app-border);
-  backdrop-filter: blur(calc(var(--app-backdrop-blur) * 0.6));
-  -webkit-backdrop-filter: blur(calc(var(--app-backdrop-blur) * 0.6));
+    background: var(--app-surface-muted);
+    border: 1px solid var(--app-border);
+    backdrop-filter: blur(calc(var(--app-backdrop-blur) * 0.6));
+    -webkit-backdrop-filter: blur(calc(var(--app-backdrop-blur) * 0.6));
 }
 
 .app-shell-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.38) transparent;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.38) transparent;
 }
 
 .app-shell-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+    width: 8px;
+    height: 8px;
 }
 
 .app-shell-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+    background: transparent;
 }
 
 .app-shell-scrollbar::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.34);
-  background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.34);
+    background-clip: padding-box;
 }
 
 .app-shell-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.46);
-  background-clip: padding-box;
+    background: rgba(100, 116, 139, 0.46);
+    background-clip: padding-box;
 }
 
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
 
 .no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }

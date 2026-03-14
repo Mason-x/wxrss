@@ -2,12 +2,15 @@ import { request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
+type RuntimeDatabase = import('sqlite').Database;
+type Sqlite3DatabaseConstructor = typeof import('sqlite3').Database;
+
 type Sqlite3Module = {
-  Database: new (...args: any[]) => any;
+  Database: Sqlite3DatabaseConstructor;
 };
 
 type SqliteModule = {
-  open: (options: { filename: string; driver: new (...args: any[]) => any }) => Promise<any>;
+  open: (options: { filename: string; driver: Sqlite3DatabaseConstructor }) => Promise<RuntimeDatabase>;
 };
 
 function createRuntimeRequire() {
@@ -43,7 +46,7 @@ const runtimeRequire = createRuntimeRequire();
 const sqlite3 = runtimeRequire('sqlite3') as Sqlite3Module;
 const { open } = runtimeRequire('sqlite') as SqliteModule;
 
-type Database = Awaited<ReturnType<SqliteModule['open']>>;
+type Database = RuntimeDatabase;
 
 type ChildStartMessage = {
   type: 'start';

@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
-import { getAccountByFakeid, type ReaderAccount, upsertArticles } from '~/server/repositories/reader';
 import { upsertHtmlCache } from '~/server/repositories/cache';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
+import { getAccountByFakeid, type ReaderAccount, upsertArticles } from '~/server/repositories/reader';
 
 const MAX_RSS_ITEMS = 200;
 const RSS_HISTORY_STEP = 20;
@@ -143,11 +143,7 @@ function parseRssHistoryMeta(value: string): { limit: number; state: RssHistoryS
     const parsed = new URL(normalized);
     const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : parsed.hash;
     const hashParams = new URLSearchParams(hash);
-    const limit = Number(
-      parsed.searchParams.get('limit')
-      || hashParams.get(RSS_HISTORY_LIMIT_PARAM)
-      || 0
-    );
+    const limit = Number(parsed.searchParams.get('limit') || hashParams.get(RSS_HISTORY_LIMIT_PARAM) || 0);
     return {
       limit: Number.isFinite(limit) && limit > 0 ? limit : 0,
       state: hashParams.get(RSS_HISTORY_STATE_PARAM) === 'exhausted' ? 'exhausted' : 'unknown',
@@ -425,19 +421,29 @@ function extractCoverUrl(contentHtml: string, fallbackLink: string): string {
 }
 
 function isAudioMimeType(value: string): boolean {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   return normalized.startsWith('audio/');
 }
 
 function isVideoMimeType(value: string): boolean {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   return normalized.startsWith('video/');
 }
 
 function inferMediaKind(url: string, mimeType: string, medium = ''): 'audio' | 'video' | '' {
-  const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
-  const normalizedMedium = String(medium || '').trim().toLowerCase();
-  const normalizedUrl = String(url || '').trim().toLowerCase();
+  const normalizedMimeType = String(mimeType || '')
+    .trim()
+    .toLowerCase();
+  const normalizedMedium = String(medium || '')
+    .trim()
+    .toLowerCase();
+  const normalizedUrl = String(url || '')
+    .trim()
+    .toLowerCase();
 
   if (isAudioMimeType(normalizedMimeType) || normalizedMedium === 'audio') {
     return 'audio';
@@ -532,9 +538,10 @@ function extractMediaAttachmentFromContentHtml(contentHtml: string, baseUrl: str
 
   $('audio[src], video[src], source[src], a[href]').each((_, element) => {
     const tagName = String((element as any)?.tagName || (element as any)?.name || '').toLowerCase();
-    const rawUrl = tagName === 'a'
-      ? normalizeWhitespace(String(element.attribs?.href || ''))
-      : normalizeWhitespace(String(element.attribs?.src || ''));
+    const rawUrl =
+      tagName === 'a'
+        ? normalizeWhitespace(String(element.attribs?.href || ''))
+        : normalizeWhitespace(String(element.attribs?.src || ''));
     const url = resolveAbsoluteUrl(rawUrl, baseUrl);
     const mimeType = normalizeWhitespace(String(element.attribs?.type || ''));
     const kind = inferMediaKind(url, mimeType);
@@ -555,7 +562,8 @@ function extractMediaAttachmentFromContentHtml(contentHtml: string, baseUrl: str
 
 function buildRssMediaEmbedHtml(attachment: RssMediaAttachment, title: string, authorName: string): string {
   const metaParts = [authorName, attachment.duration].filter(Boolean);
-  const metaHtml = metaParts.length > 0 ? `<p class="rss-media-card-meta">${escapeHtml(metaParts.join(' · '))}</p>` : '';
+  const metaHtml =
+    metaParts.length > 0 ? `<p class="rss-media-card-meta">${escapeHtml(metaParts.join(' · '))}</p>` : '';
 
   if (attachment.kind === 'audio') {
     return `
@@ -666,7 +674,11 @@ function buildRssHtmlDocument(contentHtml: string, baseUrl: string): string {
   ].join('');
 }
 
-function parseRssItem($item: cheerio.Cheerio<any>, feedUrl: string, fallbackAuthor: string): {
+function parseRssItem(
+  $item: cheerio.Cheerio<any>,
+  feedUrl: string,
+  fallbackAuthor: string
+): {
   article: ParsedRssItem;
   html: string;
 } | null {
@@ -683,14 +695,13 @@ function parseRssItem($item: cheerio.Cheerio<any>, feedUrl: string, fallbackAuth
   );
   const link = resolveAbsoluteUrl(atomLink || itemLinkText, feedUrl);
   const fallbackLink = link || `${feedUrl}#${hashString(`${title}:${itemLinkText}`)}`;
-  const authorName =
-    firstTextByLocalNames($item, ['creator', 'author', 'name']) || fallbackAuthor || 'RSS';
+  const authorName = firstTextByLocalNames($item, ['creator', 'author', 'name']) || fallbackAuthor || 'RSS';
 
   const contentMarkup = extractMarkupByLocalNames($item, ['encoded', 'content', 'description', 'summary']);
   const normalizedHtml = normalizeBodyHtml(contentMarkup, firstTextByLocalNames($item, ['description', 'summary']));
   const mediaAttachment =
-    extractRssMediaAttachment($item, fallbackLink)
-    || extractMediaAttachmentFromContentHtml(normalizedHtml, fallbackLink);
+    extractRssMediaAttachment($item, fallbackLink) ||
+    extractMediaAttachmentFromContentHtml(normalizedHtml, fallbackLink);
   const contentHtml =
     mediaAttachment && !/<(?:audio|video)[\s>]/i.test(normalizedHtml)
       ? [buildRssMediaEmbedHtml(mediaAttachment, title, authorName), normalizedHtml].filter(Boolean).join('\n')
@@ -743,8 +754,10 @@ async function fetchAndParseRssFeed(sourceUrl: string): Promise<ParsedRssFeed> {
     throw new Error(`RSS 拉取失败(${response.status})`);
   }
   const $ = cheerio.load(xml, {
-    xmlMode: true,
-    decodeEntities: false,
+    xml: {
+      xmlMode: true,
+      decodeEntities: false,
+    },
   });
 
   const channel = $('rss > channel').first();
@@ -810,10 +823,10 @@ export async function syncRssFeed(authKey: string, input: SyncRssFeedInput): Pro
   const resolvedSourceUrl = await resolveRssSourceUrl(storedSourceUrl, authKey);
   const sourceUrl = input.history
     ? buildNextRssHistorySourceUrl(
-      resolvedSourceUrl,
-      Number(currentAccount?.articles || currentAccount?.count || currentAccount?.total_count || 0),
-      historyMeta.limit
-    )
+        resolvedSourceUrl,
+        Number(currentAccount?.articles || currentAccount?.count || currentAccount?.total_count || 0),
+        historyMeta.limit
+      )
     : resolvedSourceUrl;
   const feed = await fetchAndParseRssFeed(sourceUrl);
   const fakeid = currentAccount?.fakeid || buildRssFakeid(sourceUrl);

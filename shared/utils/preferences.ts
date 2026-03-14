@@ -1,16 +1,16 @@
-﻿import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
+﻿import {
+  DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
+  FIXED_AI_SUMMARY_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT,
+  FIXED_AI_SUMMARY_PROMPT_NOTE as CLEAN_FIXED_AI_SUMMARY_PROMPT_NOTE,
+  FIXED_AI_TAG_PROMPT_NOTE as CLEAN_FIXED_AI_TAG_PROMPT_NOTE,
+} from '#shared/utils/ai-prompts';
 import {
   BUILTIN_AI_QUALITY_TAG_DEFINITIONS,
   BUILTIN_AI_SPONSORED_TAG_DEFINITION,
   BUILTIN_AI_TAG_DEFINITIONS,
   DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS as BUILTIN_DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS,
 } from '#shared/utils/ai-tags';
-import {
-  DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT,
-  FIXED_AI_SUMMARY_SYSTEM_PROMPT as CLEAN_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT,
-  FIXED_AI_SUMMARY_PROMPT_NOTE as CLEAN_FIXED_AI_SUMMARY_PROMPT_NOTE,
-  FIXED_AI_TAG_PROMPT_NOTE as CLEAN_FIXED_AI_TAG_PROMPT_NOTE,
-} from '#shared/utils/ai-prompts';
+import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
 import { MP_ORIGIN_TIMESTAMP } from '~/config';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
@@ -28,22 +28,21 @@ const SYNC_DATE_RANGE_VALUES: Preferences['syncDateRange'][] = [
 
 const LEGACY_READING_TAGS = new Set(['{{featured}}', '{{low_signal}}', '{{sponsored}}']);
 
-export const SYSTEM_AI_QUALITY_TAG_DEFINITIONS: AiTagDefinition[] =
-  BUILTIN_AI_QUALITY_TAG_DEFINITIONS.map(item => ({ ...item }));
+export const SYSTEM_AI_QUALITY_TAG_DEFINITIONS: AiTagDefinition[] = BUILTIN_AI_QUALITY_TAG_DEFINITIONS.map(item => ({
+  ...item,
+}));
 
 export const SYSTEM_AI_SPONSORED_TAG_DEFINITION: AiTagDefinition = {
   ...BUILTIN_AI_SPONSORED_TAG_DEFINITION,
 };
 
-export const SYSTEM_AI_TAG_DEFINITIONS: AiTagDefinition[] =
-  BUILTIN_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
+export const SYSTEM_AI_TAG_DEFINITIONS: AiTagDefinition[] = BUILTIN_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
 
 export const DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS = [...BUILTIN_DEFAULT_AI_DAILY_REPORT_INCLUDED_LABELS];
 
 const SYSTEM_AI_TAG_VARIABLES = new Set(SYSTEM_AI_TAG_DEFINITIONS.map(item => item.variable));
 
-export const DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] =
-  SYSTEM_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
+export const DEFAULT_AI_TAG_DEFINITIONS: AiTagDefinition[] = SYSTEM_AI_TAG_DEFINITIONS.map(item => ({ ...item }));
 
 export const DEFAULT_AI_SUMMARY_SYSTEM_PROMPT = CLEAN_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT;
 
@@ -136,7 +135,9 @@ function normalizeSyncDateRange(value?: string): Preferences['syncDateRange'] {
 }
 
 function normalizeThemeMode(value?: string): Preferences['themeMode'] {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   if (normalized === 'light' || normalized === 'dark' || normalized === 'system') {
     return normalized;
   }
@@ -197,13 +198,15 @@ function looksLikeReplacementPlaceholder(text: string): boolean {
 
 function looksLikeMojibake(text: string): boolean {
   const normalized = String(text || '');
-  return looksLikeReplacementPlaceholder(normalized)
-    || normalized.includes('浣犳槸')
-    || normalized.includes('鏃ユ姤')
-    || normalized.includes('闃呰浠峰€')
-    || normalized.includes('鍐呭')
-    || normalized.includes('璇疯繑鍥')
-    || normalized.includes('鏌ョ湅姝ｆ枃');
+  return (
+    looksLikeReplacementPlaceholder(normalized) ||
+    normalized.includes('浣犳槸') ||
+    normalized.includes('鏃ユ姤') ||
+    normalized.includes('闃呰浠峰€') ||
+    normalized.includes('鍐呭') ||
+    normalized.includes('璇疯繑鍥') ||
+    normalized.includes('鏌ョ湅姝ｆ枃')
+  );
 }
 
 function normalizeAiPrompt(value: unknown, fallback: string): string {
@@ -211,12 +214,13 @@ function normalizeAiPrompt(value: unknown, fallback: string): string {
   if (!normalized) {
     return fallback;
   }
-  const looksCorrupted = looksLikeMojibake(normalized)
-    || /\?{6,}/.test(normalized)
-    || /label\s*\?\s*summary/i.test(normalized)
-    || /report_html\s+\?{2,}/i.test(normalized)
-    || normalized.includes('???? AI ???')
-    || normalized.includes('???????');
+  const looksCorrupted =
+    looksLikeMojibake(normalized) ||
+    /\?{6,}/.test(normalized) ||
+    /label\s*\?\s*summary/i.test(normalized) ||
+    /report_html\s+\?{2,}/i.test(normalized) ||
+    normalized.includes('???? AI ???') ||
+    normalized.includes('???????');
   return looksCorrupted ? fallback : normalized;
 }
 
@@ -233,7 +237,10 @@ function resolveDefaultAiTagColor(variableOrLabel: unknown): string {
     .toLowerCase();
 
   const matched = [...SYSTEM_AI_TAG_DEFINITIONS, ...RUNTIME_DEFAULT_CUSTOM_AI_TAG_DEFINITIONS].find(item => {
-    const variable = item.variable.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+    const variable = item.variable
+      .replace(/^\{\{\s*|\s*\}\}$/g, '')
+      .trim()
+      .toLowerCase();
     const label = item.label.trim().toLowerCase();
     return source === variable || source === label;
   });
@@ -253,9 +260,7 @@ function normalizeAiTagColor(value: unknown, fallback = '#94a3b8'): string {
 function normalizeAiTagVariable(value: unknown, fallbackLabel = ''): string {
   const raw = String(value || '').trim();
   const fallback = String(fallbackLabel || '').trim();
-  const source = (raw || fallback)
-    .replace(/^\{\{\s*|\s*\}\}$/g, '')
-    .toLowerCase();
+  const source = (raw || fallback).replace(/^\{\{\s*|\s*\}\}$/g, '').toLowerCase();
   const normalized = source
     .replace(/[^a-z0-9_\-\s]+/g, ' ')
     .replace(/[\s-]+/g, '_')
@@ -266,9 +271,7 @@ function normalizeAiTagVariable(value: unknown, fallbackLabel = ''): string {
     return `{{${normalized}}}`;
   }
 
-  const plain = (raw || fallback)
-    .replace(/^\{\{\s*|\s*\}\}$/g, '')
-    .slice(0, 48);
+  const plain = (raw || fallback).replace(/^\{\{\s*|\s*\}\}$/g, '').slice(0, 48);
   return plain ? `{{${plain}}}` : '';
 }
 
@@ -328,8 +331,8 @@ function shouldReplaceWithDefaultAiTagDefinitions(list: AiTagDefinition[]): bool
 
   const variables = list.map(item => normalizeAiTagVariable(item.variable, item.label)).filter(Boolean);
   if (
-    variables.length > 0
-    && variables.every(variable => LEGACY_READING_TAGS.has(variable) || SYSTEM_AI_TAG_VARIABLES.has(variable))
+    variables.length > 0 &&
+    variables.every(variable => LEGACY_READING_TAGS.has(variable) || SYSTEM_AI_TAG_VARIABLES.has(variable))
   ) {
     return true;
   }
@@ -340,22 +343,19 @@ function shouldReplaceWithDefaultAiTagDefinitions(list: AiTagDefinition[]): bool
 function normalizeAiTagDefinitions(value: unknown, legacyValue: unknown): AiTagDefinition[] {
   const hasExplicitStructuredDefinitions = Array.isArray(value);
   const source = Array.isArray(value) ? value : [];
-  const normalizedList = source
-    .map(normalizeAiTagDefinition)
-    .filter((item): item is AiTagDefinition => Boolean(item));
+  const normalizedList = source.map(normalizeAiTagDefinition).filter((item): item is AiTagDefinition => Boolean(item));
 
   const legacyList = buildLegacyTagDefinitions(legacyValue);
-  const fallback = normalizedList.length > 0
-    ? normalizedList
-    : legacyList.length > 0
-      ? legacyList
-      : hasExplicitStructuredDefinitions
-        ? []
-        : cloneDefaultAiTagDefinitions();
+  const fallback =
+    normalizedList.length > 0
+      ? normalizedList
+      : legacyList.length > 0
+        ? legacyList
+        : hasExplicitStructuredDefinitions
+          ? []
+          : cloneDefaultAiTagDefinitions();
 
-  const effectiveList = shouldReplaceWithDefaultAiTagDefinitions(fallback)
-    ? cloneDefaultAiTagDefinitions()
-    : fallback;
+  const effectiveList = shouldReplaceWithDefaultAiTagDefinitions(fallback) ? cloneDefaultAiTagDefinitions() : fallback;
 
   const byVariable = new Map<string, AiTagDefinition>();
   for (const item of effectiveList) {
@@ -402,33 +402,33 @@ function normalizeAiDailyReportIncludedLabels(value: unknown, customDefinitions:
 function isLegacyDefaultAiSummaryPrompt(text: string): boolean {
   const normalized = normalizePromptForCompare(text);
   return (
-    looksLikeMojibake(normalized)
-    || normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT)
-    || normalized.includes('{{low_signal}}')
-    || normalized.includes('"rating"')
-    || normalized.includes('阅读价值')
-    || normalized.includes('一句话总述')
+    looksLikeMojibake(normalized) ||
+    normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_SUMMARY_SYSTEM_PROMPT) ||
+    normalized.includes('{{low_signal}}') ||
+    normalized.includes('"rating"') ||
+    normalized.includes('阅读价值') ||
+    normalized.includes('一句话总述')
   );
 }
 
 function isLegacyDefaultAiTagPrompt(text: string): boolean {
   const normalized = normalizePromptForCompare(text);
   return (
-    looksLikeMojibake(normalized)
-    || normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_TAG_SYSTEM_PROMPT)
-    || normalized.includes('{{low_signal}}')
-    || normalized.includes('只返回一个标签')
+    looksLikeMojibake(normalized) ||
+    normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_TAG_SYSTEM_PROMPT) ||
+    normalized.includes('{{low_signal}}') ||
+    normalized.includes('只返回一个标签')
   );
 }
 
 function isLegacyDefaultAiDailyReportPrompt(text: string): boolean {
   const normalized = normalizePromptForCompare(text);
   return (
-    looksLikeMojibake(normalized)
-    || normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT)
-    || normalized.includes('{{low_signal}}')
-    || normalized.includes('"rating"')
-    || normalized.includes('阅读价值')
+    looksLikeMojibake(normalized) ||
+    normalized === normalizePromptForCompare(LEGACY_DEFAULT_AI_DAILY_REPORT_SYSTEM_PROMPT) ||
+    normalized.includes('{{low_signal}}') ||
+    normalized.includes('"rating"') ||
+    normalized.includes('阅读价值')
   );
 }
 
@@ -451,10 +451,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
   const source = input || {};
   const syncDelayRange = normalizeSyncDelayRange(source, DEFAULT_PREFERENCES);
   const dailySyncConfig = resolveDailySyncConfig(source);
-  const legacyCombinedPrompt = normalizeAiPrompt(
-    source.aiTagReportSystemPrompt,
-    DEFAULT_PREFERENCES.aiTagSystemPrompt
-  );
+  const legacyCombinedPrompt = normalizeAiPrompt(source.aiTagReportSystemPrompt, DEFAULT_PREFERENCES.aiTagSystemPrompt);
   const aiTagDefinitions = normalizeAiTagDefinitions(source.aiTagDefinitions, source.aiTagListText);
 
   return {
@@ -473,8 +470,7 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
       source.aiTagSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiTagSystemPrompt
     ),
-    aiAutoSummaryOnSyncEnabled:
-      source.aiAutoSummaryOnSyncEnabled ?? DEFAULT_PREFERENCES.aiAutoSummaryOnSyncEnabled,
+    aiAutoSummaryOnSyncEnabled: source.aiAutoSummaryOnSyncEnabled ?? DEFAULT_PREFERENCES.aiAutoSummaryOnSyncEnabled,
     aiDailyReportSystemPrompt: normalizeStoredDailyPrompt(
       source.aiDailyReportSystemPrompt,
       source.aiTagReportSystemPrompt ? legacyCombinedPrompt : DEFAULT_PREFERENCES.aiDailyReportSystemPrompt
@@ -519,5 +515,3 @@ export function clonePreferences(input?: Partial<Preferences> | null): Preferenc
 export function isDefaultPreferences(input?: Partial<Preferences> | null): boolean {
   return JSON.stringify(normalizePreferences(input)) === JSON.stringify(DEFAULT_PREFERENCES);
 }
-
-

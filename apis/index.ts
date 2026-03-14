@@ -276,9 +276,7 @@ export async function getArticleList(
   } = {}
 ): Promise<[AppMsgEx[], boolean, number, number, number]> {
   const initialPageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Number(options.initialPageSize) || 0);
-  const pageSizeHint = begin === 0 && !keyword
-    ? (initialPageSize || FIRST_PAGE_PROBE_SIZE)
-    : ARTICLE_LIST_PAGE_SIZE;
+  const pageSizeHint = begin === 0 && !keyword ? initialPageSize || FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE;
   const resp = await requestArticleListPage(account, begin, keyword, pageSizeHint);
 
   if (resp.base_resp.ret === 0) {
@@ -340,7 +338,11 @@ export async function subscribeRssFeed(url: string): Promise<RssSyncResult> {
   return resp.data;
 }
 
-export async function syncRssFeed(payload: { fakeid?: string; url?: string; history?: boolean }): Promise<RssSyncResult> {
+export async function syncRssFeed(payload: {
+  fakeid?: string;
+  url?: string;
+  history?: boolean;
+}): Promise<RssSyncResult> {
   const resp = await request<{ data: RssSyncResult }>('/api/web/reader/rss-sync', {
     method: 'POST',
     body: {
@@ -352,23 +354,20 @@ export async function syncRssFeed(payload: { fakeid?: string; url?: string; hist
   return resp.data;
 }
 
-export async function searchRsshubRoutes(options: {
-  keyword?: string;
-  category?: string;
-  limit?: number;
-}): Promise<{
+export async function searchRsshubRoutes(options: { keyword?: string; category?: string; limit?: number }): Promise<{
   categories: RsshubCategoryItem[];
   routes: RsshubDiscoverItem[];
 }> {
   const resp = await request<{ categories?: RsshubCategoryItem[]; routes?: RsshubDiscoverItem[] }>(
     '/api/web/reader/rss-discover',
     {
-    query: {
-      keyword: options.keyword || '',
-      category: options.category || '',
-      limit: options.limit || 20,
-    },
-  });
+      query: {
+        keyword: options.keyword || '',
+        category: options.category || '',
+        limit: options.limit || 20,
+      },
+    }
+  );
   return {
     categories: Array.isArray(resp.categories) ? resp.categories : [],
     routes: Array.isArray(resp.routes) ? resp.routes : [],
@@ -404,7 +403,9 @@ export async function getReaderArticleByLink(url: string): Promise<ReaderArticle
   return resp.article || null;
 }
 
-export async function refreshAiDailyDigest(options: { date?: string; force?: boolean } = {}): Promise<AiDailyProcessResult> {
+export async function refreshAiDailyDigest(
+  options: { date?: string; force?: boolean } = {}
+): Promise<AiDailyProcessResult> {
   const resp = await request<{ data: AiDailyProcessResult }>('/api/web/ai/daily-refresh', {
     method: 'POST',
     body: {

@@ -52,8 +52,8 @@
 
 <script setup lang="ts">
 import ExternalLink from '~/components/base/ExternalLink.vue';
-import useSavePreferences from '~/composables/useSavePreferences';
 import toastFactory from '~/composables/toast';
+import useSavePreferences from '~/composables/useSavePreferences';
 import { docsWebSite } from '~/config';
 import { validatePrivateProxyList } from '~/config/proxy';
 import type { Preferences } from '~/types/preferences';

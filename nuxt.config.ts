@@ -30,9 +30,12 @@ export default defineNuxtConfig({
     debugMpRequest: false,
   },
   app: {
-    viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
     head: {
       meta: [
+        {
+          name: 'viewport',
+          content: 'width=device-width, initial-scale=1, viewport-fit=cover',
+        },
         {
           name: 'referrer',
           content: 'no-referrer',

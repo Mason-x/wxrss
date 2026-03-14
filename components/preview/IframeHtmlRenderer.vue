@@ -1011,7 +1011,12 @@ watch(preparedHtml, async () => {
 });
 
 watch(
-  [() => props.html, () => props.theme, () => preferences.value.privateProxyAuthorization, () => preferences.value.privateProxyList],
+  [
+    () => props.html,
+    () => props.theme,
+    () => preferences.value.privateProxyAuthorization,
+    () => preferences.value.privateProxyList,
+  ],
   () => {
     void refreshPreparedHtml();
   },

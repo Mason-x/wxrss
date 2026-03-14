@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, type Component, type ComponentPublicInstance } from 'vue';
+import { type Component, type ComponentPublicInstance, nextTick } from 'vue';
 import SettingAiSummary from '~/components/setting/AiSummary.vue';
 import SettingExport from '~/components/setting/Export.vue';
 import SettingMisc from '~/components/setting/Misc.vue';

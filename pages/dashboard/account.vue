@@ -15,9 +15,9 @@ import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import {
-  INITIAL_SUBSCRIBE_PAGE_SIZE,
   bootstrapAccountAi,
   getArticleList,
+  INITIAL_SUBSCRIBE_PAGE_SIZE,
   refreshAiDailyDigest,
   syncRssFeed,
 } from '~/apis';
@@ -33,7 +33,14 @@ import { IMAGE_PROXY, websiteName } from '~/config';
 import { sharedGridOptions } from '~/config/shared-grid-options';
 import { deleteAccountData } from '~/store/v2';
 import { getArticleCacheSummary } from '~/store/v2/article';
-import { getAllInfo, getInfoCache, importMpAccounts, isRssAccount, type MpAccount, updateAccountCategory } from '~/store/v2/info';
+import {
+  getAllInfo,
+  getInfoCache,
+  importMpAccounts,
+  isRssAccount,
+  type MpAccount,
+  updateAccountCategory,
+} from '~/store/v2/info';
 import type { AccountManifest } from '~/types/account';
 import type { Preferences } from '~/types/preferences';
 import type { AccountInfo } from '~/types/types';

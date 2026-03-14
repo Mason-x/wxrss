@@ -209,7 +209,10 @@ function normalizeAiTags(input: unknown): string[] {
         .map(tag => String(tag || '').trim())
         .filter(Boolean)
         .map(tag => {
-          const plain = tag.replace(/^\{\{\s*|\s*\}\}$/g, '').trim().toLowerCase();
+          const plain = tag
+            .replace(/^\{\{\s*|\s*\}\}$/g, '')
+            .trim()
+            .toLowerCase();
           if (!plain) {
             return '';
           }
@@ -511,7 +514,7 @@ export async function listAccounts(
   const params: any[] = [authKey];
 
   if (keyword) {
-    where.push("(nickname LIKE ? OR source_url LIKE ? OR site_url LIKE ?)");
+    where.push('(nickname LIKE ? OR source_url LIKE ? OR site_url LIKE ?)');
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
 

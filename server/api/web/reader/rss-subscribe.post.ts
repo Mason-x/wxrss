@@ -1,5 +1,5 @@
-import { syncRssFeed } from '~/server/utils/rss';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
+import { syncRssFeed } from '~/server/utils/rss';
 
 interface RssSubscribeBody {
   url?: string;
