@@ -530,58 +530,58 @@ function estimateArticleSummaryShareCardHeight(options: {
   tags: SummaryShareCardTag[];
 }): number {
   const context = createSummaryShareCanvasContext();
-  const contentWidth = 1200 - 56 * 2 - 40 * 2;
-  let height = 56 + 40 + 32 + 24;
+  const cardWidth = 900;
+  const outerPadding = 34;
+  const cardPadding = 30;
+  const chipGap = 8;
+  const chipRowHeight = 32;
+  const contentWidth = cardWidth - outerPadding * 2 - cardPadding * 2;
+  let height = outerPadding + cardPadding;
 
-  context.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
-  height += 30;
-
-  context.font = '800 38px "PingFang SC", "Microsoft YaHei", sans-serif';
-  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
-  height += titleLines.length * 54 + 12;
-
-  if (options.tags.length > 0) {
-    let rowWidth = 0;
-    let rows = 1;
-    context.font = '700 14px "PingFang SC", "Microsoft YaHei", sans-serif';
-    for (const tag of options.tags) {
-      const tagWidth = Math.ceil(context.measureText(tag.label).width) + 28;
-      if (rowWidth > 0 && rowWidth + 10 + tagWidth > contentWidth) {
-        rows += 1;
-        rowWidth = tagWidth;
-      } else {
-        rowWidth = rowWidth > 0 ? rowWidth + 10 + tagWidth : tagWidth;
-      }
+  let chipRowWidth = 92;
+  let chipRows = 1;
+  context.font = '700 13px "PingFang SC", "Microsoft YaHei", sans-serif';
+  for (const tag of options.tags) {
+    const tagWidth = Math.ceil(context.measureText(tag.label).width) + 24;
+    if (chipRowWidth > 0 && chipRowWidth + chipGap + tagWidth > contentWidth) {
+      chipRows += 1;
+      chipRowWidth = tagWidth;
+    } else {
+      chipRowWidth = chipRowWidth > 0 ? chipRowWidth + chipGap + tagWidth : tagWidth;
     }
-    height += rows * 34 + (rows - 1) * 10 + 26;
   }
+  height += chipRows * chipRowHeight + (chipRows - 1) * chipGap + 18;
 
-  context.font = '400 25px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '800 30px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
+  height += titleLines.length * 42 + 18;
+
+  context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
   for (const paragraph of options.paragraphs) {
-    const lines = wrapSummaryShareText(context, stripHtmlToText(paragraph), contentWidth - 44, 20);
-    height += 20 + lines.length * 46 + 20 + 16;
+    const lines = wrapSummaryShareText(context, stripHtmlToText(paragraph), contentWidth - 40, 20);
+    height += 18 + lines.length * 34 + 18 + 14;
   }
 
   if (options.highlights.length > 0) {
-    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    height += 20 + 20 + 12;
+    context.font = '400 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+    height += 18 + 18 + 10;
     for (const highlight of options.highlights) {
-      const lines = wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 54, 6);
-      height += Math.max(1, lines.length) * 34 + 10;
+      const lines = wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 48, 6);
+      height += Math.max(1, lines.length) * 28 + 8;
     }
-    height += 18;
+    height += 14;
   }
 
-  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
   const footerLine = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
-  height += wrapSummaryShareText(context, footerLine, contentWidth - 44, 4).length * 30;
-  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  height += wrapSummaryShareText(context, footerLine, contentWidth - 40, 4).length * 24;
+  context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
   if (String(options.article.link || '').trim()) {
     height +=
-      wrapSummaryShareText(context, String(options.article.link || '').trim(), contentWidth - 44, 4).length * 24 + 12;
+      wrapSummaryShareText(context, String(options.article.link || '').trim(), contentWidth - 40, 4).length * 20 + 10;
   }
 
-  return Math.max(920, Math.min(2400, height + 56 + 40));
+  return Math.max(1240, Math.min(2400, height + outerPadding + cardPadding));
 }
 
 async function renderArticleSummaryShareCardPng(options: {
@@ -590,7 +590,7 @@ async function renderArticleSummaryShareCardPng(options: {
   highlights: string[];
   tags: SummaryShareCardTag[];
 }): Promise<Blob> {
-  const width = 1200;
+  const width = 900;
   const height = estimateArticleSummaryShareCardHeight(options);
   const scale = 2;
   const canvas = document.createElement('canvas');
@@ -604,8 +604,8 @@ async function renderArticleSummaryShareCardPng(options: {
   context.scale(scale, scale);
   context.textBaseline = 'top';
 
-  const outerPadding = 56;
-  const cardPadding = 40;
+  const outerPadding = 34;
+  const cardPadding = 30;
   const cardX = outerPadding;
   const cardY = outerPadding;
   const cardWidth = width - outerPadding * 2;
@@ -621,15 +621,15 @@ async function renderArticleSummaryShareCardPng(options: {
 
   context.save();
   context.shadowColor = 'rgba(15, 23, 42, 0.10)';
-  context.shadowBlur = 80;
-  context.shadowOffsetY = 28;
-  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 32);
+  context.shadowBlur = 56;
+  context.shadowOffsetY = 18;
+  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 28);
   context.fillStyle = 'rgba(255,255,255,0.96)';
   context.fill();
   context.restore();
 
   context.save();
-  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 32);
+  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 28);
   context.strokeStyle = 'rgba(186, 230, 253, 0.72)';
   context.lineWidth = 1;
   context.stroke();
@@ -637,80 +637,81 @@ async function renderArticleSummaryShareCardPng(options: {
 
   let cursorY = cardY + cardPadding;
   const startX = cardX + cardPadding;
+  const chipGap = 8;
+  const chipHeight = 32;
 
-  drawSummaryShareRoundedRect(context, startX, cursorY, 92, 30, 15);
+  let chipX = startX;
+  let chipY = cursorY;
+
+  drawSummaryShareRoundedRect(context, chipX, chipY, 92, chipHeight, 16);
   context.fillStyle = '#eff6ff';
   context.fill();
   context.strokeStyle = 'rgba(125, 211, 252, 0.85)';
   context.lineWidth = 1;
   context.stroke();
   context.fillStyle = '#0369a1';
-  context.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
-  context.fillText('AI 摘要', startX + 14, cursorY + 7);
-  cursorY += 42;
-
-  context.fillStyle = '#0f172a';
-  context.font = '800 38px "PingFang SC", "Microsoft YaHei", sans-serif';
-  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
-  for (const line of titleLines) {
-    context.fillText(line, startX, cursorY, contentWidth);
-    cursorY += 54;
-  }
+  context.font = '700 13px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.fillText('AI 摘要', chipX + 14, chipY + 9);
+  chipX += 92 + chipGap;
 
   if (options.tags.length > 0) {
-    cursorY += 12;
-    context.font = '700 14px "PingFang SC", "Microsoft YaHei", sans-serif';
-    let tagX = startX;
-    let tagY = cursorY;
     for (const tag of options.tags) {
-      const tagWidth = Math.ceil(context.measureText(tag.label).width) + 28;
-      if (tagX > startX && tagX + tagWidth > startX + contentWidth) {
-        tagX = startX;
-        tagY += 44;
+      const tagWidth = Math.ceil(context.measureText(tag.label).width) + 24;
+      if (chipX > startX && chipX + tagWidth > startX + contentWidth) {
+        chipX = startX;
+        chipY += chipHeight + chipGap;
       }
-      drawSummaryShareRoundedRect(context, tagX, tagY, tagWidth, 34, 17);
+      drawSummaryShareRoundedRect(context, chipX, chipY, tagWidth, chipHeight, 16);
       context.fillStyle = tag.backgroundColor;
       context.fill();
       context.strokeStyle = tag.borderColor;
       context.lineWidth = 1;
       context.stroke();
       context.fillStyle = tag.color;
-      context.fillText(tag.label, tagX + 14, tagY + 10);
-      tagX += tagWidth + 10;
+      context.fillText(tag.label, chipX + 12, chipY + 9);
+      chipX += tagWidth + chipGap;
     }
-    cursorY = tagY + 34 + 26;
-  } else {
-    cursorY += 26;
   }
 
-  context.font = '400 25px "PingFang SC", "Microsoft YaHei", sans-serif';
+  cursorY = chipY + chipHeight + 18;
+
+  context.fillStyle = '#0f172a';
+  context.font = '800 30px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
+  for (const line of titleLines) {
+    context.fillText(line, startX, cursorY, contentWidth);
+    cursorY += 42;
+  }
+  cursorY += 18;
+
+  context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
   for (const paragraph of options.paragraphs) {
     const text = stripHtmlToText(paragraph);
-    const lines = wrapSummaryShareText(context, text, contentWidth - 44, 20);
-    const paragraphHeight = 20 + lines.length * 46 + 20;
-    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, paragraphHeight, 20);
+    const lines = wrapSummaryShareText(context, text, contentWidth - 40, 20);
+    const paragraphHeight = 18 + lines.length * 34 + 18;
+    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, paragraphHeight, 18);
     context.fillStyle = 'rgba(255,255,255,0.96)';
     context.fill();
     context.fillStyle = '#1e293b';
-    let lineY = cursorY + 20;
+    let lineY = cursorY + 18;
     for (const line of lines) {
-      context.fillText(line, startX + 22, lineY, contentWidth - 44);
-      lineY += 46;
+      context.fillText(line, startX + 20, lineY, contentWidth - 40);
+      lineY += 34;
     }
-    cursorY += paragraphHeight + 16;
+    cursorY += paragraphHeight + 14;
   }
 
   if (options.highlights.length > 0) {
     const highlightTitle = '要点';
-    context.font = '800 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    let blockHeight = 20 + 20 + 12;
-    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.font = '800 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+    let blockHeight = 18 + 18 + 10;
+    context.font = '400 17px "PingFang SC", "Microsoft YaHei", sans-serif';
     const highlightLines = options.highlights.map(highlight =>
-      wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 54, 6)
+      wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 48, 6)
     );
-    blockHeight += highlightLines.reduce((total, lines) => total + Math.max(1, lines.length) * 34 + 10, 0) + 8;
+    blockHeight += highlightLines.reduce((total, lines) => total + Math.max(1, lines.length) * 28 + 8, 0) + 8;
 
-    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, blockHeight, 22);
+    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, blockHeight, 18);
     context.fillStyle = 'rgba(240,249,255,0.95)';
     context.fill();
     context.strokeStyle = 'rgba(186,230,253,0.88)';
@@ -718,57 +719,57 @@ async function renderArticleSummaryShareCardPng(options: {
     context.stroke();
 
     context.fillStyle = '#0f172a';
-    context.font = '800 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    context.fillText(highlightTitle, startX + 24, cursorY + 20);
+    context.font = '800 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.fillText(highlightTitle, startX + 20, cursorY + 18);
 
-    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
-    let highlightY = cursorY + 52;
+    context.font = '400 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+    let highlightY = cursorY + 46;
     for (const lines of highlightLines) {
       context.fillStyle = '#38bdf8';
       context.beginPath();
-      context.arc(startX + 10, highlightY + 15, 4.5, 0, Math.PI * 2);
+      context.arc(startX + 10, highlightY + 12, 4, 0, Math.PI * 2);
       context.fill();
       context.fillStyle = '#334155';
       for (const line of lines) {
-        context.fillText(line, startX + 24, highlightY, contentWidth - 54);
-        highlightY += 34;
+        context.fillText(line, startX + 22, highlightY, contentWidth - 48);
+        highlightY += 28;
       }
-      highlightY += 10;
+      highlightY += 8;
     }
 
-    cursorY += blockHeight + 24;
+    cursorY += blockHeight + 18;
   }
 
   const footerText = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
-  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
-  const footerLines = wrapSummaryShareText(context, footerText, contentWidth - 44, 4);
-  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const footerLines = wrapSummaryShareText(context, footerText, contentWidth - 40, 4);
+  context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
   const link = String(options.article.link || '').trim();
-  const linkLines = link ? wrapSummaryShareText(context, link, contentWidth - 44, 4) : [];
-  const footerHeight = 18 + footerLines.length * 30 + (linkLines.length > 0 ? linkLines.length * 24 + 12 : 0) + 18;
+  const linkLines = link ? wrapSummaryShareText(context, link, contentWidth - 40, 4) : [];
+  const footerHeight = 16 + footerLines.length * 24 + (linkLines.length > 0 ? linkLines.length * 20 + 10 : 0) + 16;
 
-  drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, footerHeight, 22);
+  drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, footerHeight, 18);
   context.fillStyle = 'rgba(248,250,252,0.96)';
   context.fill();
   context.strokeStyle = 'rgba(226,232,240,0.92)';
   context.lineWidth = 1;
   context.stroke();
 
-  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
   context.fillStyle = '#475569';
-  let footerY = cursorY + 18;
+  let footerY = cursorY + 16;
   for (const line of footerLines) {
-    context.fillText(line, startX + 22, footerY, contentWidth - 44);
-    footerY += 30;
+    context.fillText(line, startX + 20, footerY, contentWidth - 40);
+    footerY += 24;
   }
 
   if (linkLines.length > 0) {
-    context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
     context.fillStyle = '#94a3b8';
     footerY += 4;
     for (const line of linkLines) {
-      context.fillText(line, startX + 22, footerY, contentWidth - 44);
-      footerY += 24;
+      context.fillText(line, startX + 20, footerY, contentWidth - 40);
+      footerY += 20;
     }
   }
 
@@ -6521,11 +6522,23 @@ onUnmounted(() => {
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex flex-col items-start gap-2">
-                <span
-                  class="inline-flex shrink-0 items-center rounded-full border border-sky-200/80 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
-                >
-                  AI 摘要
-                </span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span
+                    class="inline-flex shrink-0 items-center rounded-full border border-sky-200/80 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+                  >
+                    AI 摘要
+                  </span>
+                  <div v-if="articleSummaryDialogTagDisplays.length > 0" class="flex flex-wrap items-center gap-2">
+                    <div
+                      v-for="tag in articleSummaryDialogTagDisplays"
+                      :key="`dialog-summary-header-tag-${tag.key}`"
+                      class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                      :style="getArticleTagStyle(tag)"
+                    >
+                      {{ tag.label }}
+                    </div>
+                  </div>
+                </div>
                 <h3 class="min-w-0 w-full text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
                   {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
                 </h3>
@@ -6580,17 +6593,7 @@ onUnmounted(() => {
         >
           <template v-if="articleSummaryDialogPayload">
             <div class="mx-auto max-w-[760px]">
-              <div v-if="articleSummaryDialogTagDisplays.length > 0" class="flex flex-wrap gap-2">
-                <div
-                  v-for="tag in articleSummaryDialogTagDisplays"
-                  :key="`dialog-summary-tag-${tag.key}`"
-                  class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                  :style="getArticleTagStyle(tag)"
-                >
-                  {{ tag.label }}
-                </div>
-              </div>
-              <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
+              <div class="space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
                 <p
                   v-for="(paragraph, index) in articleSummaryDialogParagraphs"
                   :key="`dialog-summary-paragraph-${index}`"
