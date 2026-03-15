@@ -1514,6 +1514,11 @@ const accountsInCategory = computed(() => {
   });
 });
 
+const aggregateArticlesSourceCount = computed(() => accounts.value.length);
+const aggregateArticlesOptionSelected = computed(
+  () => articlePaneMode.value === 'articles' && !selectedAccount.value && selectedCategory.value === '__all__'
+);
+
 const displayedArticles = computed<ReaderArticle[]>(() => articleRows.value);
 const displayedDailyReports = computed<AiDailyReportItem[]>(() => dailyReportRows.value);
 
@@ -4334,10 +4339,13 @@ async function showMobileAccounts() {
   void animateMobileDrawerTo(0, mobilePageTransition.value);
 }
 
-function showMobileAggregateArticles() {
+function showAggregateArticles() {
+  rememberMobileArticlesUnderlaySnapshot();
+  syncMobileAccountsPanelScrollTop();
   articlePaneMode.value = 'articles';
   selectedDailyReport.value = null;
   selectedArticle.value = null;
+  selectedArticleHtml.value = '';
   selectedArticleKeys.value.clear();
   selectionMode.value = false;
   selectedCategory.value = '__all__';
@@ -4573,11 +4581,7 @@ function deleteCurrentAccount() {
         isDeleting.value = true;
         await deleteAccountData([fakeid]);
         accountEventBus.emit('account-removed', { fakeid });
-        articlePaneMode.value = 'articles';
-        selectedDailyReport.value = null;
-        selectedAccount.value = null;
-        selectedArticle.value = null;
-        selectedArticleHtml.value = '';
+        showAggregateArticles();
       } finally {
         isDeleting.value = false;
         await refreshData();
@@ -5984,6 +5988,41 @@ onUnmounted(() => {
               <div ref="mobileAccountsListRef" class="relative z-0 flex-1 overflow-y-auto px-3 py-3">
                 <ul class="space-y-3">
                   <li
+                    class="rounded-[24px] border px-4 py-3 transition-all duration-200"
+                    :class="
+                      aggregateArticlesOptionSelected
+                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                        : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
+                    "
+                  >
+                    <button type="button" class="flex w-full items-start gap-3 text-left" @click="showAggregateArticles()">
+                      <div
+                        class="flex size-11 shrink-0 items-center justify-center rounded-full"
+                        :class="
+                          aggregateArticlesOptionSelected
+                            ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
+                            : 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300'
+                        "
+                      >
+                        <UIcon name="i-lucide:newspaper" class="size-5" />
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate text-sm font-semibold">全部文章</p>
+                        <p
+                          class="mt-1 text-xs"
+                          :class="
+                            aggregateArticlesOptionSelected
+                              ? 'text-slate-200 dark:text-slate-700'
+                              : 'text-slate-500 dark:text-slate-400'
+                          "
+                        >
+                          查看全部订阅源文章
+                          <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                  <li
                     v-for="account in accountsInCategory"
                     :key="account.fakeid"
                     class="rounded-[24px] border px-4 py-3 transition-all duration-200"
@@ -6209,6 +6248,28 @@ onUnmounted(() => {
       </header>
 
       <ul class="app-shell-scrollbar relative z-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
+        <li
+          class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
+          :class="
+            aggregateArticlesOptionSelected
+              ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
+              : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
+          "
+          @click="showAggregateArticles()"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex size-9 items-center justify-center rounded-full bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300 shrink-0">
+              <UIcon name="i-lucide:newspaper" class="size-4.5" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold truncate">全部文章</p>
+              <p class="text-xs text-slate-500 mt-1">
+                查看全部订阅源文章
+                <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
+              </p>
+            </div>
+          </div>
+        </li>
         <li
           v-for="account in accountsInCategory"
           :key="account.fakeid"
