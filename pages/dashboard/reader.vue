@@ -142,6 +142,7 @@ interface MobileArticlesLayerSnapshot {
     title: string;
     description: string;
   };
+  focusArticleKey: string | null;
   scrollTop: number;
 }
 
@@ -2255,7 +2256,7 @@ watch(mobileView, () => {
   }
 });
 
-function buildMobileArticlesLayerSnapshot(): MobileArticlesLayerSnapshot {
+function buildMobileArticlesLayerSnapshot(focusArticleKey: string | null = null): MobileArticlesLayerSnapshot {
   return {
     categoryId: selectedCategory.value,
     accountId: selectedAccount.value,
@@ -2267,16 +2268,17 @@ function buildMobileArticlesLayerSnapshot(): MobileArticlesLayerSnapshot {
     pageOffset: articlePageOffset.value,
     pageHasMore: articlePageHasMore.value,
     emptyState: { ...articleListEmptyState.value },
+    focusArticleKey,
     scrollTop: resolveScrollableElement(mobileArticlesListRef.value)?.scrollTop || 0,
   };
 }
 
-function rememberMobileArticlesUnderlaySnapshot() {
+function rememberMobileArticlesUnderlaySnapshot(focusArticleKey: string | null = null) {
   if (isDesktopViewport.value || mobileView.value !== 'articles') {
     return;
   }
 
-  mobileArticlesUnderlaySnapshot.value = buildMobileArticlesLayerSnapshot();
+  mobileArticlesUnderlaySnapshot.value = buildMobileArticlesLayerSnapshot(focusArticleKey);
 }
 
 function mergeMobileSnapshotArticles(snapshotArticles: ReaderArticle[], liveArticles: ReaderArticle[]) {
@@ -2319,7 +2321,33 @@ function restoreMobileArticlesLayerSnapshot(snapshot: MobileArticlesLayerSnapsho
   };
 }
 
-function restoreMobileArticlesScrollTop(scrollTop: number) {
+function findArticleElementInContainer(container: HTMLElement, key: string | null): HTMLElement | null {
+  if (!key) {
+    return null;
+  }
+
+  const articleElements = Array.from(container.querySelectorAll<HTMLElement>('[data-article-key]'));
+  return articleElements.find(element => element.getAttribute('data-article-key') === key) || null;
+}
+
+function ensureArticleVisibleInContainer(container: HTMLElement, key: string | null) {
+  const articleElement = findArticleElementInContainer(container, key);
+  if (!articleElement) {
+    return;
+  }
+
+  const containerRect = container.getBoundingClientRect();
+  const articleRect = articleElement.getBoundingClientRect();
+  if (articleRect.top >= containerRect.top && articleRect.bottom <= containerRect.bottom) {
+    return;
+  }
+
+  articleElement.scrollIntoView({
+    block: 'nearest',
+  });
+}
+
+function restoreMobileArticlesScrollTop(scrollTop: number, focusArticleKey: string | null = null) {
   requestAnimationFrame(() => {
     const container = resolveScrollableElement(mobileArticlesListRef.value);
     if (!container) {
@@ -2328,6 +2356,13 @@ function restoreMobileArticlesScrollTop(scrollTop: number) {
 
     container.scrollTop = scrollTop;
     onMobileReaderScroll();
+
+    if (focusArticleKey) {
+      requestAnimationFrame(() => {
+        ensureArticleVisibleInContainer(container, focusArticleKey);
+        onMobileReaderScroll();
+      });
+    }
   });
 }
 
@@ -2959,7 +2994,7 @@ async function applyMobileHistoryState(state: MobileHistoryState) {
       if (matchesMobileArticlesSnapshot(snapshot, state) && snapshot) {
         mobilePendingArticlesRestore.value = snapshot;
         restoreMobileArticlesLayerSnapshot(snapshot);
-        restoreMobileArticlesScrollTop(snapshot.scrollTop);
+        restoreMobileArticlesScrollTop(snapshot.scrollTop, snapshot.focusArticleKey);
       }
       return true;
     }
@@ -3403,6 +3438,7 @@ async function onDrawerDragEnd(_event: PointerEvent, info: PanInfo) {
 }
 
 async function openArticle(article: ReaderArticle, options: { trackHistory?: boolean } = {}) {
+  rememberMobileArticlesUnderlaySnapshot(articleKey(article));
   clearMobileUnderlay();
   mobileArticleSwipeX.set(0);
   mobileArticlesSwipeX.set(0);
@@ -4260,7 +4296,13 @@ async function backFromMobileView() {
     return;
   }
   if (selectedArticle.value) {
+    const snapshot = mobileArticlesUnderlaySnapshot.value;
     selectedArticle.value = null;
+    selectedArticleHtml.value = '';
+    if (snapshot) {
+      restoreMobileArticlesLayerSnapshot(snapshot);
+      restoreMobileArticlesScrollTop(snapshot.scrollTop, snapshot.focusArticleKey);
+    }
     return;
   }
   if (selectedAccount.value) {
@@ -5452,6 +5494,7 @@ onUnmounted(() => {
               <motion.li
                 v-for="(article, index) in displayedArticles"
                 :key="articleKey(article)"
+                :data-article-key="articleKey(article)"
                 layout
                 class="rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.07)] transition-colors dark:border-white/10 dark:bg-slate-900/80"
                 :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
@@ -6438,6 +6481,7 @@ onUnmounted(() => {
         <li
           v-for="row in virtualDisplayedArticles"
           :key="articleKey(row.data)"
+          :data-article-key="articleKey(row.data)"
           class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
           :class="
             selectedArticle && articleKey(selectedArticle) === articleKey(row.data)

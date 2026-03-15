@@ -724,6 +724,26 @@ function buildFallbackArticleHtml(fallback: DynamicArticleFallback | null): stri
   return `<section id="js_article"><div id="js_content" class="article_dynamic_fallback${hasGallery ? ' article_dynamic_fallback--gallery' : ''}">${contentHtml}</div></section>`;
 }
 
+function resolveUnavailableArticleMessage(
+  status: 'Success' | 'Deleted' | 'Exception' | 'Error',
+  message: string | null
+): string {
+  if (status === 'Deleted') {
+    return '该内容已被发布者删除，无法查看正文。';
+  }
+
+  if (status === 'Exception') {
+    return String(message || '').trim() || '该内容暂时无法查看。';
+  }
+
+  return '';
+}
+
+function buildUnavailableArticleHtml(message: string): string {
+  const text = escapeHtml(String(message || '').trim() || '该内容暂时无法查看。');
+  return `<section id="js_article"><div id="js_content" class="article_dynamic_fallback article_dynamic_fallback--unavailable"><div class="dynamic-fallback-body"><p class="dynamic-fallback-tip">${text}</p></div></div></section>`;
+}
+
 function normalizeTextResult(text: string): string {
   const lines = text
     .trim()
@@ -745,6 +765,11 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
   rawHTML = unwrapViewSourceHtml(rawHTML);
 
   rawHTML = fixBrokenAnchorMarkup(rawHTML);
+
+  const unavailableMessage = resolveUnavailableArticleMessage(...validateHTMLContent(rawHTML));
+  if (format === 'text' && unavailableMessage) {
+    return normalizeTextResult(unavailableMessage);
+  }
 
   const originalArticleUrl = extractOriginalArticleUrl(rawHTML);
 
@@ -776,9 +801,11 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
 
   simplifyEmbeddedVideos($, $jsArticleContent, rawHTML);
 
-  const galleryImages = extractPictureGalleryImages(rawHTML);
-  const hasStaticPictureGallery = galleryImages.length > 0 && isPictureShareShell($jsArticleContent);
-  const hasNativeArticle = !hasStaticPictureGallery && hasRenderableArticleContent($jsArticleContent);
+  const galleryImages = unavailableMessage ? [] : extractPictureGalleryImages(rawHTML);
+  const hasStaticPictureGallery =
+    !unavailableMessage && galleryImages.length > 0 && isPictureShareShell($jsArticleContent);
+  const hasNativeArticle =
+    !unavailableMessage && !hasStaticPictureGallery && hasRenderableArticleContent($jsArticleContent);
   const fallback = hasNativeArticle
     ? null
     : mergeFallbackWithGallery(extractDynamicArticleFallback(rawHTML), galleryImages);
@@ -796,9 +823,11 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
   } else if (format === 'html') {
     // 鑾峰彇淇敼鍚庣殑 HTML
     const bodyCls = $('body').attr('class');
-    const pageContentHTML = hasNativeArticle
-      ? $('<div>').append($jsArticleContent.clone()).html()
-      : buildFallbackArticleHtml(fallback);
+    const pageContentHTML = unavailableMessage
+      ? buildUnavailableArticleHtml(unavailableMessage)
+      : hasNativeArticle
+        ? $('<div>').append($jsArticleContent.clone()).html()
+        : buildFallbackArticleHtml(fallback);
     const originalArticleUrlMeta = originalArticleUrl
       ? `<meta name="wechat-article-url" content="${escapeHtml(originalArticleUrl)}">`
       : '';
@@ -845,6 +874,9 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
           }
           .article_dynamic_fallback--gallery {
               padding: 0 0 24px 0;
+          }
+          .article_dynamic_fallback--unavailable {
+              padding-top: 40px;
           }
           .article_dynamic_fallback .dynamic-fallback-body {
               padding: 0;
@@ -958,6 +990,10 @@ export function normalizeHtml(rawHTML: string, format: 'html' | 'text' = 'html')
           }
           .article_dynamic_fallback .dynamic-fallback-tip {
               color: #64748b;
+          }
+          .article_dynamic_fallback--unavailable .dynamic-fallback-tip {
+              color: #b45309;
+              font-weight: 500;
           }
           .article_embedded_video {
               max-width: 667px;
