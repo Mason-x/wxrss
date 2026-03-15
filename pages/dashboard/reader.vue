@@ -325,6 +325,11 @@ const articleSummaryByKey = ref<Record<string, ArticleSummaryState>>({});
 const articleSummaryDialogOpen = ref(false);
 const articleSummaryDialogArticle = ref<ReaderArticle | null>(null);
 const articleSummarySharePending = ref(false);
+const articleSummarySharePreviewOpen = ref(false);
+const articleSummarySharePreviewUrl = ref('');
+const articleSummarySharePreviewBlob = ref<Blob | null>(null);
+const articleSummarySharePreviewFilename = ref('');
+const articleSummarySharePreviewArticle = ref<ReaderArticle | null>(null);
 const articlePaneMode = ref<ArticlePaneMode>('articles');
 const dailyReportRows = ref<AiDailyReportItem[]>([]);
 const dailyReportTotalCount = ref(0);
@@ -951,6 +956,77 @@ function buildArticleSummaryShareFilename(article: ReaderArticle): string {
     .trim()
     .slice(0, 48);
   return `${safeTitle || 'ai-summary'}-ai-summary.png`;
+}
+
+function resetArticleSummarySharePreview() {
+  if (articleSummarySharePreviewUrl.value) {
+    URL.revokeObjectURL(articleSummarySharePreviewUrl.value);
+  }
+  articleSummarySharePreviewOpen.value = false;
+  articleSummarySharePreviewUrl.value = '';
+  articleSummarySharePreviewBlob.value = null;
+  articleSummarySharePreviewFilename.value = '';
+  articleSummarySharePreviewArticle.value = null;
+}
+
+async function continueArticleSummaryShareFromPreview() {
+  const blob = articleSummarySharePreviewBlob.value;
+  const filename = String(articleSummarySharePreviewFilename.value || '').trim();
+  const article = articleSummarySharePreviewArticle.value;
+  if (!blob || !filename || !article) {
+    return;
+  }
+  if (articleSummarySharePending.value) {
+    return;
+  }
+
+  articleSummarySharePending.value = true;
+  try {
+    const file = new File([blob], filename, { type: 'image/png' });
+    const nav = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+
+    if (typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({
+          files: [file],
+          title: articleDisplayTitle(article),
+          text: `${articleSourceAccountName(article)} · ${articleDisplayPublishTime(article)}`,
+        });
+        resetArticleSummarySharePreview();
+        return;
+      } catch (error) {
+        const message = String((error as Error)?.message || '').toLowerCase();
+        if (message.includes('abort') || message.includes('cancel')) {
+          return;
+        }
+      }
+    }
+
+    const clipboardItemCtor = (window as Window & { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+    if (clipboardItemCtor && navigator.clipboard?.write) {
+      try {
+        await navigator.clipboard.write([
+          new clipboardItemCtor({
+            'image/png': blob,
+          }),
+        ]);
+        toast.success('分享卡片已复制', '图片已复制，可直接粘贴到微信或聊天窗口');
+        resetArticleSummarySharePreview();
+        return;
+      } catch {
+        // Fall back to download.
+      }
+    }
+
+    triggerBlobDownload(blob, filename);
+    toast.success('分享卡片已下载', 'PNG 已保存，可发送到微信或其他聊天窗口');
+    resetArticleSummarySharePreview();
+  } finally {
+    articleSummarySharePending.value = false;
+  }
 }
 
 function normalizeRuntimeErrorMessage(rawMessage: string): string {
@@ -4065,45 +4141,12 @@ async function shareArticleSummaryFromDialog() {
       tags,
     });
     const filename = buildArticleSummaryShareFilename(article);
-    const file = new File([pngBlob], filename, { type: 'image/png' });
-    const nav = navigator as Navigator & {
-      canShare?: (data?: ShareData) => boolean;
-      share?: (data?: ShareData) => Promise<void>;
-    };
-
-    if (typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
-      try {
-        await nav.share({
-          files: [file],
-          title: articleDisplayTitle(article),
-          text: `${articleSourceAccountName(article)} · ${articleDisplayPublishTime(article)}`,
-        });
-        return;
-      } catch (error) {
-        const message = String((error as Error)?.message || '').toLowerCase();
-        if (message.includes('abort') || message.includes('cancel')) {
-          return;
-        }
-      }
-    }
-
-    const clipboardItemCtor = (window as Window & { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
-    if (clipboardItemCtor && navigator.clipboard?.write) {
-      try {
-        await navigator.clipboard.write([
-          new clipboardItemCtor({
-            'image/png': pngBlob,
-          }),
-        ]);
-        toast.success('分享卡片已复制', '图片已复制，可直接粘贴到微信或聊天窗口');
-        return;
-      } catch {
-        // Fall back to download.
-      }
-    }
-
-    triggerBlobDownload(pngBlob, filename);
-    toast.success('分享卡片已下载', 'PNG 已保存，可发送到微信或其他聊天窗口');
+    resetArticleSummarySharePreview();
+    articleSummarySharePreviewBlob.value = pngBlob;
+    articleSummarySharePreviewFilename.value = filename;
+    articleSummarySharePreviewArticle.value = article;
+    articleSummarySharePreviewUrl.value = URL.createObjectURL(pngBlob);
+    articleSummarySharePreviewOpen.value = true;
   } catch (error) {
     toast.error('生成分享卡片失败', (error as Error).message || '请稍后重试');
   } finally {
@@ -5138,6 +5181,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', updateDesktopViewport);
   window.visualViewport?.removeEventListener('resize', updateDesktopViewport);
   screen.orientation?.removeEventListener?.('change', updateDesktopViewport);
+  resetArticleSummarySharePreview();
 });
 </script>
 
@@ -6818,6 +6862,61 @@ onUnmounted(() => {
               @click="regenerateArticleSummaryFromDialog"
             >
               {{ articleSummaryDialogState.status === 'success' ? '重新生成' : '生成摘要' }}
+            </UButton>
+          </div>
+        </template>
+      </UCard>
+    </UModal>
+
+    <UModal
+      v-model="articleSummarySharePreviewOpen"
+      :ui="{
+        width: 'w-full sm:max-w-[420px]',
+        container: 'flex min-h-full items-center justify-center text-center p-4',
+        margin: 'my-0',
+        rounded: 'rounded-[28px]',
+      }"
+      @update:model-value="value => !value && resetArticleSummarySharePreview()"
+    >
+      <UCard class="overflow-hidden rounded-[28px] border-0 shadow-none">
+        <template #header>
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 text-left">
+              <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">分享卡片预览</h3>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">确认卡片样式后再继续分享</p>
+            </div>
+            <UButton
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:x"
+              class="icon-btn"
+              @click="resetArticleSummarySharePreview"
+            />
+          </div>
+        </template>
+
+        <div class="rounded-[24px] bg-slate-100/80 p-3 dark:bg-slate-900/70">
+          <img
+            v-if="articleSummarySharePreviewUrl"
+            :src="articleSummarySharePreviewUrl"
+            alt="分享卡片预览"
+            class="mx-auto w-full rounded-[24px] border border-white/70 bg-white object-contain shadow-[0_18px_42px_rgba(15,23,42,0.12)] dark:border-slate-800 dark:bg-slate-950"
+          />
+        </div>
+
+        <template #footer>
+          <div class="flex items-center justify-between gap-3">
+            <UButton size="xs" color="gray" variant="ghost" @click="resetArticleSummarySharePreview">关闭</UButton>
+            <UButton
+              size="xs"
+              color="primary"
+              variant="soft"
+              icon="i-lucide:share-2"
+              :loading="articleSummarySharePending"
+              @click="continueArticleSummaryShareFromPreview"
+            >
+              继续分享
             </UButton>
           </div>
         </template>
