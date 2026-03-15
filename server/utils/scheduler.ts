@@ -10,7 +10,7 @@ import {
   setSchedulerArticles,
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
-import { listArticlesPage } from '~/server/repositories/reader';
+import { listAccounts, listArticlesPage } from '~/server/repositories/reader';
 import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { cookieStore } from '~/server/utils/CookieStore';
 import { syncRssFeed } from '~/server/utils/rss';
@@ -325,9 +325,22 @@ async function syncOneRssAccount(authKey: string, account: SchedulerAccount, con
 }
 
 async function runSchedulerForState(state: SchedulerState): Promise<void> {
-  const { authKey, config, accounts } = state;
+  const { authKey, config } = state;
   if (!isDueToday(config, state.lastRunDate)) {
     return;
+  }
+
+  const accounts =
+    state.accounts.length > 0
+      ? state.accounts
+      : (
+          await listAccounts(authKey, {
+            offset: 0,
+            limit: 2000,
+          })
+        ).list;
+  if (state.accounts.length === 0 && accounts.length > 0) {
+    await upsertSchedulerState(authKey, { accounts });
   }
 
   const rssAccounts = accounts.filter(account => isRssSchedulerAccount(account));

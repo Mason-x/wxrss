@@ -12,13 +12,13 @@ declare global {
 }
 
 export default defineNitroPlugin(nitroApp => {
-  const devEnabled = process.env.NUXT_ENABLE_DEV_SCHEDULER === 'true';
-  const prodEnabled = process.env.NUXT_ENABLE_SCHEDULER === 'true';
+  const rawFlag = import.meta.dev ? process.env.NUXT_ENABLE_DEV_SCHEDULER : process.env.NUXT_ENABLE_SCHEDULER;
+  const normalizedFlag = String(rawFlag || '')
+    .trim()
+    .toLowerCase();
 
-  // Scheduler is opt-in now:
-  // - dev: set NUXT_ENABLE_DEV_SCHEDULER=true
-  // - prod/serve: set NUXT_ENABLE_SCHEDULER=true
-  if (import.meta.dev ? !devEnabled : !prodEnabled) {
+  // Scheduler is enabled by default. Set the env flag to "false" to disable it explicitly.
+  if (normalizedFlag === 'false' || normalizedFlag === '0') {
     return;
   }
 
