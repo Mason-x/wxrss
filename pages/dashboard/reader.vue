@@ -392,6 +392,22 @@ function articleDisplayTitle(article: ReaderArticle): string {
   return normalizeDisplayTitle(article.title, article.digest);
 }
 
+function articleSourceAccountName(article?: ReaderArticle | null): string {
+  if (!article) {
+    return '未知公众号';
+  }
+
+  return String(article.accountName || findAccount(article.fakeid)?.nickname || article.fakeid || '未知公众号').trim();
+}
+
+function articleDisplayPublishTime(article?: ReaderArticle | null): string {
+  if (!article) {
+    return '-';
+  }
+
+  return formatTimeStamp(article.update_time || article.create_time);
+}
+
 function normalizeRuntimeErrorMessage(rawMessage: string): string {
   if (rawMessage.includes('Worker terminated due to reaching memory limit')) {
     return '服务进程内存不足，请重启开发服务并使用 yarn dev --no-fork';
@@ -6031,11 +6047,17 @@ onUnmounted(() => {
       <UCard class="overflow-hidden rounded-[28px] border-0 shadow-none">
         <template #header>
           <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <h3 class="text-base font-semibold">AI 摘要</h3>
-              <p class="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
-                {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
-              </p>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-start gap-2">
+                <h3 class="min-w-0 flex-1 text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                  {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
+                </h3>
+                <span
+                  class="inline-flex shrink-0 items-center rounded-full border border-sky-200/80 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+                >
+                  AI 摘要
+                </span>
+              </div>
             </div>
             <UButton
               size="2xs"
@@ -6126,6 +6148,25 @@ onUnmounted(() => {
 
         <div v-else class="rounded-[20px] border border-slate-200/80 bg-white px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-400">
           暂无摘要，点击下方按钮生成。
+        </div>
+
+        <div
+          v-if="articleSummaryDialogArticle"
+          class="mt-4 rounded-[18px] border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-300"
+        >
+          <span class="text-slate-500 dark:text-slate-400">来源于</span>
+          <a
+            :href="articleSummaryDialogArticle.link"
+            target="_blank"
+            rel="noreferrer"
+            class="ml-1 font-medium text-sky-600 underline decoration-sky-300 underline-offset-4 transition hover:text-sky-500 dark:text-sky-300 dark:decoration-sky-500/60"
+          >
+            {{ articleDisplayTitle(articleSummaryDialogArticle) }}
+          </a>
+          <span class="mx-2 text-slate-300 dark:text-slate-600">/</span>
+          <span>{{ articleSourceAccountName(articleSummaryDialogArticle) }}</span>
+          <span class="mx-2 text-slate-300 dark:text-slate-600">/</span>
+          <span>{{ articleDisplayPublishTime(articleSummaryDialogArticle) }}</span>
         </div>
 
         <template #footer>
