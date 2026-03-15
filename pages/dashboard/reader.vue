@@ -103,6 +103,11 @@ interface SummaryShareCardTag {
   borderColor: string;
 }
 
+interface SummaryShareTextSegment {
+  text: string;
+  bold: boolean;
+}
+
 interface StructuredArticleSummaryPayload {
   tags: string[];
   rating: string;
@@ -502,6 +507,132 @@ function wrapSummaryShareText(
   return lines.slice(0, maxLines);
 }
 
+function parseSummaryShareTextSegments(text: string): SummaryShareTextSegment[] {
+  const normalized = String(text || '').replace(/\r\n?/g, '\n');
+  if (!normalized) {
+    return [];
+  }
+
+  const segments: SummaryShareTextSegment[] = [];
+  let buffer = '';
+  let bold = false;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const current = normalized[index];
+    const next = normalized[index + 1];
+
+    if (current === '*' && next === '*') {
+      if (buffer) {
+        segments.push({ text: buffer, bold });
+        buffer = '';
+      }
+      bold = !bold;
+      index += 1;
+      continue;
+    }
+
+    buffer += current;
+  }
+
+  if (buffer) {
+    segments.push({ text: buffer, bold });
+  }
+
+  return segments;
+}
+
+function wrapSummaryShareRichText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  options: {
+    normalFont: string;
+    boldFont: string;
+    maxLines?: number;
+  }
+): SummaryShareTextSegment[][] {
+  const segments = parseSummaryShareTextSegments(text);
+  const maxLines = Number.isFinite(options.maxLines) ? Number(options.maxLines) : Number.POSITIVE_INFINITY;
+  if (segments.length === 0) {
+    return [[{ text: '', bold: false }]];
+  }
+
+  const lines: SummaryShareTextSegment[][] = [];
+  let currentLine: SummaryShareTextSegment[] = [];
+  let currentWidth = 0;
+
+  const appendRun = (char: string, bold: boolean) => {
+    const last = currentLine.at(-1);
+    if (last && last.bold === bold) {
+      last.text += char;
+      return;
+    }
+    currentLine.push({ text: char, bold });
+  };
+
+  const flushLine = () => {
+    lines.push(currentLine.length > 0 ? currentLine : [{ text: '', bold: false }]);
+    currentLine = [];
+    currentWidth = 0;
+  };
+
+  for (const segment of segments) {
+    for (const char of Array.from(segment.text)) {
+      if (char === '\n') {
+        flushLine();
+        if (lines.length >= maxLines) {
+          return lines.slice(0, maxLines);
+        }
+        continue;
+      }
+
+      context.font = segment.bold ? options.boldFont : options.normalFont;
+      const charWidth = context.measureText(char).width;
+      if (currentLine.length > 0 && currentWidth + charWidth > maxWidth) {
+        flushLine();
+        if (lines.length >= maxLines) {
+          return lines.slice(0, maxLines);
+        }
+      }
+
+      appendRun(char, segment.bold);
+      currentWidth += charWidth;
+    }
+  }
+
+  if (currentLine.length > 0 || lines.length === 0) {
+    flushLine();
+  }
+
+  return lines.slice(0, maxLines);
+}
+
+function drawSummaryShareRichTextLines(
+  context: CanvasRenderingContext2D,
+  lines: SummaryShareTextSegment[][],
+  options: {
+    x: number;
+    y: number;
+    lineHeight: number;
+    color: string;
+    normalFont: string;
+    boldFont: string;
+  }
+) {
+  let cursorY = options.y;
+  context.fillStyle = options.color;
+
+  for (const line of lines) {
+    let cursorX = options.x;
+    for (const segment of line) {
+      context.font = segment.bold ? options.boldFont : options.normalFont;
+      context.fillText(segment.text, cursorX, cursorY);
+      cursorX += context.measureText(segment.text).width;
+    }
+    cursorY += options.lineHeight;
+  }
+}
+
 function drawSummaryShareRoundedRect(
   context: CanvasRenderingContext2D,
   x: number,
@@ -552,14 +683,19 @@ function estimateArticleSummaryShareCardHeight(options: {
   }
   height += chipRows * chipRowHeight + (chipRows - 1) * chipGap + 18;
 
-  context.font = '800 24px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '800 26px "PingFang SC", "Microsoft YaHei", sans-serif';
   const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
-  height += titleLines.length * 34 + 18;
+  height += titleLines.length * 36 + 18;
 
-  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const paragraphNormalFont = '400 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const paragraphBoldFont = '700 17px "PingFang SC", "Microsoft YaHei", sans-serif';
   for (const paragraph of options.paragraphs) {
-    const lines = wrapSummaryShareText(context, stripHtmlToText(paragraph), contentWidth, 24);
-    height += lines.length * 26 + 18;
+    const lines = wrapSummaryShareRichText(context, String(paragraph || ''), contentWidth, {
+      normalFont: paragraphNormalFont,
+      boldFont: paragraphBoldFont,
+      maxLines: 24,
+    });
+    height += lines.length * 28 + 18;
   }
 
   if (options.highlights.length > 0) {
@@ -572,10 +708,10 @@ function estimateArticleSummaryShareCardHeight(options: {
     height += 16;
   }
 
-  context.font = '400 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
   const footerLine = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
   height += wrapSummaryShareText(context, footerLine, contentWidth - 28, 4).length * 22;
-  context.font = '400 12px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
   if (String(options.article.link || '').trim()) {
     height +=
       wrapSummaryShareText(context, String(options.article.link || '').trim(), contentWidth - 28, 4).length * 18 + 8;
@@ -687,25 +823,31 @@ async function renderArticleSummaryShareCardPng(options: {
   cursorY = chipY + chipHeight + 18;
 
   context.fillStyle = '#111827';
-  context.font = '800 24px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '800 26px "PingFang SC", "Microsoft YaHei", sans-serif';
   const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
   for (const line of titleLines) {
     context.fillText(line, startX, cursorY, contentWidth);
-    cursorY += 34;
+    cursorY += 36;
   }
   cursorY += 14;
 
-  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const paragraphNormalFont = '400 17px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const paragraphBoldFont = '700 17px "PingFang SC", "Microsoft YaHei", sans-serif';
   for (const paragraph of options.paragraphs) {
-    const text = stripHtmlToText(paragraph);
-    const lines = wrapSummaryShareText(context, text, contentWidth, 24);
-    context.fillStyle = '#374151';
-    let lineY = cursorY;
-    for (const line of lines) {
-      context.fillText(line, startX, lineY, contentWidth);
-      lineY += 26;
-    }
-    cursorY = lineY + 18;
+    const lines = wrapSummaryShareRichText(context, String(paragraph || ''), contentWidth, {
+      normalFont: paragraphNormalFont,
+      boldFont: paragraphBoldFont,
+      maxLines: 24,
+    });
+    drawSummaryShareRichTextLines(context, lines, {
+      x: startX,
+      y: cursorY,
+      lineHeight: 28,
+      color: '#374151',
+      normalFont: paragraphNormalFont,
+      boldFont: paragraphBoldFont,
+    });
+    cursorY += lines.length * 28 + 18;
   }
 
   if (options.highlights.length > 0) {
@@ -748,9 +890,9 @@ async function renderArticleSummaryShareCardPng(options: {
   }
 
   const footerText = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
-  context.font = '400 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
   const footerLines = wrapSummaryShareText(context, footerText, contentWidth - 28, 4);
-  context.font = '400 12px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
   const link = String(options.article.link || '').trim();
   const linkLines = link ? wrapSummaryShareText(context, link, contentWidth - 28, 4) : [];
   const footerHeight = 14 + footerLines.length * 22 + (linkLines.length > 0 ? linkLines.length * 18 + 8 : 0) + 14;
@@ -762,7 +904,7 @@ async function renderArticleSummaryShareCardPng(options: {
   context.lineWidth = 1;
   context.stroke();
 
-  context.font = '400 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.font = '400 15px "PingFang SC", "Microsoft YaHei", sans-serif';
   context.fillStyle = '#475569';
   let footerY = cursorY + 14;
   for (const line of footerLines) {
@@ -771,7 +913,7 @@ async function renderArticleSummaryShareCardPng(options: {
   }
 
   if (linkLines.length > 0) {
-    context.font = '400 12px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.font = '400 13px "PingFang SC", "Microsoft YaHei", sans-serif';
     context.fillStyle = '#94a3b8';
     footerY += 2;
     for (const line of linkLines) {
@@ -3936,7 +4078,6 @@ async function shareArticleSummaryFromDialog() {
           title: articleDisplayTitle(article),
           text: `${articleSourceAccountName(article)} · ${articleDisplayPublishTime(article)}`,
         });
-        toast.success('分享卡片已生成', '已打开系统分享面板');
         return;
       } catch (error) {
         const message = String((error as Error)?.message || '').toLowerCase();
