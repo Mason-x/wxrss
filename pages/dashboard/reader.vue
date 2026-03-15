@@ -436,15 +436,6 @@ function stripHtmlToText(value: string): string {
     .trim();
 }
 
-function escapeSvgHtml(value: string): string {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 function buildSummaryShareCardTagStyles(tag: ArticleTagDisplayItem): SummaryShareCardTag {
   const color = String(tag.color || '#0f172a').trim() || '#0f172a';
   const fallbackBackground = `${color}14`;
@@ -459,236 +450,138 @@ function buildSummaryShareCardTagStyles(tag: ArticleTagDisplayItem): SummaryShar
   };
 }
 
-function estimateSummaryShareCardHeight(options: {
-  paragraphs: string[];
-  highlights: string[];
-  tags: SummaryShareCardTag[];
-}): number {
-  const paragraphHeight = options.paragraphs.reduce((total, paragraph) => {
-    const normalized = stripHtmlToText(paragraph);
-    const lineCount = Math.max(1, Math.ceil(normalized.length / 28));
-    return total + 82 + lineCount * 14;
-  }, 0);
-  const highlightsHeight = options.highlights.length > 0 ? 48 + options.highlights.length * 42 : 0;
-  const tagRows = options.tags.length > 0 ? Math.ceil(options.tags.length / 4) : 0;
-  const tagsHeight = tagRows > 0 ? tagRows * 42 : 0;
-
-  return Math.min(2200, Math.max(900, 340 + paragraphHeight + highlightsHeight + tagsHeight));
+function createSummaryShareCanvasContext() {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('浏览器不支持分享卡片绘制');
+  }
+  return context;
 }
 
-function buildArticleSummaryShareCardSvg(options: {
+function wrapSummaryShareText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines = Number.POSITIVE_INFINITY
+): string[] {
+  const normalized = String(text || '').replace(/\r\n?/g, '\n');
+  if (!normalized.trim()) {
+    return [''];
+  }
+
+  const lines: string[] = [];
+  const paragraphs = normalized.split('\n');
+
+  for (const paragraph of paragraphs) {
+    const content = paragraph.trim();
+    if (!content) {
+      lines.push('');
+      continue;
+    }
+
+    let current = '';
+    for (const char of Array.from(content)) {
+      const next = current + char;
+      if (current && context.measureText(next).width > maxWidth) {
+        lines.push(current);
+        current = char;
+        if (lines.length >= maxLines) {
+          return lines;
+        }
+      } else {
+        current = next;
+      }
+    }
+    lines.push(current || '');
+    if (lines.length >= maxLines) {
+      return lines;
+    }
+  }
+
+  return lines.slice(0, maxLines);
+}
+
+function drawSummaryShareRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function estimateArticleSummaryShareCardHeight(options: {
   article: ReaderArticle;
   paragraphs: string[];
   highlights: string[];
   tags: SummaryShareCardTag[];
-}): { svg: string; width: number; height: number } {
-  const width = 1200;
-  const height = estimateSummaryShareCardHeight(options);
-  const title = escapeSvgHtml(articleDisplayTitle(options.article));
-  const sourceTitle = escapeSvgHtml(articleDisplayTitle(options.article));
-  const accountName = escapeSvgHtml(articleSourceAccountName(options.article));
-  const publishTime = escapeSvgHtml(articleDisplayPublishTime(options.article));
-  const articleLink = escapeSvgHtml(String(options.article.link || '').trim());
-  const paragraphs = options.paragraphs
-    .map(
-      paragraph => `
-        <div class="paragraph">
-          ${escapeSvgHtml(stripHtmlToText(paragraph)).replace(/\n/g, '<br />')}
-        </div>
-      `
-    )
-    .join('');
-  const tags = options.tags
-    .map(
-      tag => `
-        <span class="tag" style="color:${escapeSvgHtml(tag.color)};background:${escapeSvgHtml(tag.backgroundColor)};border-color:${escapeSvgHtml(tag.borderColor)};">
-          ${escapeSvgHtml(tag.label)}
-        </span>
-      `
-    )
-    .join('');
-  const highlights = options.highlights
-    .map(
-      highlight => `
-        <div class="highlight-item">
-          <span class="highlight-dot"></span>
-          <span>${escapeSvgHtml(stripHtmlToText(highlight))}</span>
-        </div>
-      `
-    )
-    .join('');
+}): number {
+  const context = createSummaryShareCanvasContext();
+  const contentWidth = 1200 - 56 * 2 - 40 * 2;
+  let height = 56 + 40 + 32 + 24;
 
-  const contentHtml = `
-    <div xmlns="http://www.w3.org/1999/xhtml" class="shell">
-      <style>
-        * { box-sizing: border-box; }
-        .shell {
-          width: ${width}px;
-          min-height: ${height}px;
-          padding: 56px;
-          background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 46%, #f7fafc 100%);
-          color: #0f172a;
-          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-        }
-        .card {
-          border-radius: 32px;
-          padding: 40px;
-          background: rgba(255, 255, 255, 0.96);
-          border: 1px solid rgba(186, 230, 253, 0.72);
-          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.10);
-        }
-        .header {
-          display: flex;
-          align-items: flex-start;
-          gap: 14px;
-        }
-        .badge {
-          display: inline-flex;
-          align-items: center;
-          height: 30px;
-          padding: 0 14px;
-          border-radius: 999px;
-          border: 1px solid rgba(125, 211, 252, 0.85);
-          background: #eff6ff;
-          color: #0369a1;
-          font-size: 15px;
-          font-weight: 700;
-          line-height: 1;
-          white-space: nowrap;
-        }
-        .title {
-          margin: 0;
-          font-size: 38px;
-          line-height: 1.42;
-          font-weight: 800;
-          letter-spacing: 0.01em;
-        }
-        .tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 28px;
-        }
-        .tag {
-          display: inline-flex;
-          align-items: center;
-          min-height: 34px;
-          padding: 0 14px;
-          border-radius: 999px;
-          border: 1px solid;
-          font-size: 14px;
-          font-weight: 700;
-          line-height: 1;
-        }
-        .content {
-          margin-top: 26px;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .paragraph {
-          border-radius: 20px;
-          padding: 20px 22px;
-          background: rgba(255,255,255,0.96);
-          box-shadow: 0 14px 32px rgba(15, 23, 42, 0.05);
-          color: #1e293b;
-          font-size: 25px;
-          line-height: 1.85;
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-        .highlights {
-          margin-top: 24px;
-          padding: 20px 24px;
-          border-radius: 22px;
-          background: rgba(240, 249, 255, 0.95);
-          border: 1px solid rgba(186, 230, 253, 0.88);
-        }
-        .highlight-title {
-          margin: 0 0 12px;
-          color: #0f172a;
-          font-size: 20px;
-          font-weight: 800;
-        }
-        .highlight-item {
-          display: flex;
-          gap: 12px;
-          align-items: flex-start;
-          color: #334155;
-          font-size: 20px;
-          line-height: 1.7;
-        }
-        .highlight-item + .highlight-item {
-          margin-top: 10px;
-        }
-        .highlight-dot {
-          width: 9px;
-          height: 9px;
-          margin-top: 13px;
-          border-radius: 999px;
-          background: #38bdf8;
-          flex: 0 0 auto;
-        }
-        .footer {
-          margin-top: 24px;
-          border-radius: 22px;
-          padding: 18px 22px;
-          background: rgba(248, 250, 252, 0.96);
-          border: 1px solid rgba(226, 232, 240, 0.92);
-          color: #475569;
-          font-size: 18px;
-          line-height: 1.8;
-        }
-        .footer-title {
-          color: #64748b;
-        }
-        .footer-link {
-          color: #0369a1;
-          font-weight: 700;
-        }
-        .footer-divider {
-          color: #cbd5e1;
-          margin: 0 8px;
-        }
-        .link-row {
-          margin-top: 8px;
-          color: #94a3b8;
-          font-size: 16px;
-          word-break: break-all;
-        }
-      </style>
-      <div class="card">
-        <div class="header">
-          <span class="badge">AI 摘要</span>
-          <h1 class="title">${title}</h1>
-        </div>
-        ${tags ? `<div class="tags">${tags}</div>` : ''}
-        <div class="content">
-          ${paragraphs}
-        </div>
-        ${highlights ? `<div class="highlights"><h2 class="highlight-title">要点</h2>${highlights}</div>` : ''}
-        <div class="footer">
-          <span class="footer-title">来源于</span>
-          <span class="footer-link">${sourceTitle}</span>
-          <span class="footer-divider">/</span>
-          <span>${accountName}</span>
-          <span class="footer-divider">/</span>
-          <span>${publishTime}</span>
-          ${articleLink ? `<div class="link-row">${articleLink}</div>` : ''}
-        </div>
-      </div>
-    </div>
-  `;
+  context.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+  height += 30;
 
-  return {
-    width,
-    height,
-    svg: `
-      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-        <foreignObject width="100%" height="100%">${contentHtml}</foreignObject>
-      </svg>
-    `,
-  };
+  context.font = '800 38px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
+  height += titleLines.length * 54 + 12;
+
+  if (options.tags.length > 0) {
+    let rowWidth = 0;
+    let rows = 1;
+    context.font = '700 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+    for (const tag of options.tags) {
+      const tagWidth = Math.ceil(context.measureText(tag.label).width) + 28;
+      if (rowWidth > 0 && rowWidth + 10 + tagWidth > contentWidth) {
+        rows += 1;
+        rowWidth = tagWidth;
+      } else {
+        rowWidth = rowWidth > 0 ? rowWidth + 10 + tagWidth : tagWidth;
+      }
+    }
+    height += rows * 34 + (rows - 1) * 10 + 26;
+  }
+
+  context.font = '400 25px "PingFang SC", "Microsoft YaHei", sans-serif';
+  for (const paragraph of options.paragraphs) {
+    const lines = wrapSummaryShareText(context, stripHtmlToText(paragraph), contentWidth - 44, 20);
+    height += 20 + lines.length * 46 + 20 + 16;
+  }
+
+  if (options.highlights.length > 0) {
+    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    height += 20 + 20 + 12;
+    for (const highlight of options.highlights) {
+      const lines = wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 54, 6);
+      height += Math.max(1, lines.length) * 34 + 10;
+    }
+    height += 18;
+  }
+
+  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const footerLine = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
+  height += wrapSummaryShareText(context, footerLine, contentWidth - 44, 4).length * 30;
+  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  if (String(options.article.link || '').trim()) {
+    height +=
+      wrapSummaryShareText(context, String(options.article.link || '').trim(), contentWidth - 44, 4).length * 24 + 12;
+  }
+
+  return Math.max(920, Math.min(2400, height + 56 + 40));
 }
 
 async function renderArticleSummaryShareCardPng(options: {
@@ -697,44 +590,197 @@ async function renderArticleSummaryShareCardPng(options: {
   highlights: string[];
   tags: SummaryShareCardTag[];
 }): Promise<Blob> {
-  const { svg, width, height } = buildArticleSummaryShareCardSvg(options);
-  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const width = 1200;
+  const height = estimateArticleSummaryShareCardHeight(options);
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('浏览器不支持分享卡片绘制');
+  }
 
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const nextImage = new Image();
-      nextImage.onload = () => resolve(nextImage);
-      nextImage.onerror = () => reject(new Error('分享卡片渲染失败'));
-      nextImage.src = url;
-    });
+  context.scale(scale, scale);
+  context.textBaseline = 'top';
 
-    const scale = 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      throw new Error('浏览器不支持分享卡片绘制');
+  const outerPadding = 56;
+  const cardPadding = 40;
+  const cardX = outerPadding;
+  const cardY = outerPadding;
+  const cardWidth = width - outerPadding * 2;
+  const cardHeight = height - outerPadding * 2;
+  const contentWidth = cardWidth - cardPadding * 2;
+
+  const background = context.createLinearGradient(0, 0, 0, height);
+  background.addColorStop(0, '#f8fbff');
+  background.addColorStop(0.46, '#eef6ff');
+  background.addColorStop(1, '#f7fafc');
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+
+  context.save();
+  context.shadowColor = 'rgba(15, 23, 42, 0.10)';
+  context.shadowBlur = 80;
+  context.shadowOffsetY = 28;
+  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 32);
+  context.fillStyle = 'rgba(255,255,255,0.96)';
+  context.fill();
+  context.restore();
+
+  context.save();
+  drawSummaryShareRoundedRect(context, cardX, cardY, cardWidth, cardHeight, 32);
+  context.strokeStyle = 'rgba(186, 230, 253, 0.72)';
+  context.lineWidth = 1;
+  context.stroke();
+  context.restore();
+
+  let cursorY = cardY + cardPadding;
+  const startX = cardX + cardPadding;
+
+  drawSummaryShareRoundedRect(context, startX, cursorY, 92, 30, 15);
+  context.fillStyle = '#eff6ff';
+  context.fill();
+  context.strokeStyle = 'rgba(125, 211, 252, 0.85)';
+  context.lineWidth = 1;
+  context.stroke();
+  context.fillStyle = '#0369a1';
+  context.font = '700 15px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.fillText('AI 摘要', startX + 14, cursorY + 7);
+  cursorY += 42;
+
+  context.fillStyle = '#0f172a';
+  context.font = '800 38px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const titleLines = wrapSummaryShareText(context, articleDisplayTitle(options.article), contentWidth, 4);
+  for (const line of titleLines) {
+    context.fillText(line, startX, cursorY, contentWidth);
+    cursorY += 54;
+  }
+
+  if (options.tags.length > 0) {
+    cursorY += 12;
+    context.font = '700 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+    let tagX = startX;
+    let tagY = cursorY;
+    for (const tag of options.tags) {
+      const tagWidth = Math.ceil(context.measureText(tag.label).width) + 28;
+      if (tagX > startX && tagX + tagWidth > startX + contentWidth) {
+        tagX = startX;
+        tagY += 44;
+      }
+      drawSummaryShareRoundedRect(context, tagX, tagY, tagWidth, 34, 17);
+      context.fillStyle = tag.backgroundColor;
+      context.fill();
+      context.strokeStyle = tag.borderColor;
+      context.lineWidth = 1;
+      context.stroke();
+      context.fillStyle = tag.color;
+      context.fillText(tag.label, tagX + 14, tagY + 10);
+      tagX += tagWidth + 10;
+    }
+    cursorY = tagY + 34 + 26;
+  } else {
+    cursorY += 26;
+  }
+
+  context.font = '400 25px "PingFang SC", "Microsoft YaHei", sans-serif';
+  for (const paragraph of options.paragraphs) {
+    const text = stripHtmlToText(paragraph);
+    const lines = wrapSummaryShareText(context, text, contentWidth - 44, 20);
+    const paragraphHeight = 20 + lines.length * 46 + 20;
+    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, paragraphHeight, 20);
+    context.fillStyle = 'rgba(255,255,255,0.96)';
+    context.fill();
+    context.fillStyle = '#1e293b';
+    let lineY = cursorY + 20;
+    for (const line of lines) {
+      context.fillText(line, startX + 22, lineY, contentWidth - 44);
+      lineY += 46;
+    }
+    cursorY += paragraphHeight + 16;
+  }
+
+  if (options.highlights.length > 0) {
+    const highlightTitle = '要点';
+    context.font = '800 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    let blockHeight = 20 + 20 + 12;
+    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    const highlightLines = options.highlights.map(highlight =>
+      wrapSummaryShareText(context, stripHtmlToText(highlight), contentWidth - 54, 6)
+    );
+    blockHeight += highlightLines.reduce((total, lines) => total + Math.max(1, lines.length) * 34 + 10, 0) + 8;
+
+    drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, blockHeight, 22);
+    context.fillStyle = 'rgba(240,249,255,0.95)';
+    context.fill();
+    context.strokeStyle = 'rgba(186,230,253,0.88)';
+    context.lineWidth = 1;
+    context.stroke();
+
+    context.fillStyle = '#0f172a';
+    context.font = '800 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.fillText(highlightTitle, startX + 24, cursorY + 20);
+
+    context.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif';
+    let highlightY = cursorY + 52;
+    for (const lines of highlightLines) {
+      context.fillStyle = '#38bdf8';
+      context.beginPath();
+      context.arc(startX + 10, highlightY + 15, 4.5, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = '#334155';
+      for (const line of lines) {
+        context.fillText(line, startX + 24, highlightY, contentWidth - 54);
+        highlightY += 34;
+      }
+      highlightY += 10;
     }
 
-    context.scale(scale, scale);
-    context.drawImage(image, 0, 0, width, height);
-
-    const pngBlob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob(output => {
-        if (output) {
-          resolve(output);
-          return;
-        }
-        reject(new Error('PNG 导出失败'));
-      }, 'image/png');
-    });
-
-    return pngBlob;
-  } finally {
-    URL.revokeObjectURL(url);
+    cursorY += blockHeight + 24;
   }
+
+  const footerText = `来源于 ${articleDisplayTitle(options.article)} / ${articleSourceAccountName(options.article)} / ${articleDisplayPublishTime(options.article)}`;
+  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const footerLines = wrapSummaryShareText(context, footerText, contentWidth - 44, 4);
+  context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+  const link = String(options.article.link || '').trim();
+  const linkLines = link ? wrapSummaryShareText(context, link, contentWidth - 44, 4) : [];
+  const footerHeight = 18 + footerLines.length * 30 + (linkLines.length > 0 ? linkLines.length * 24 + 12 : 0) + 18;
+
+  drawSummaryShareRoundedRect(context, startX, cursorY, contentWidth, footerHeight, 22);
+  context.fillStyle = 'rgba(248,250,252,0.96)';
+  context.fill();
+  context.strokeStyle = 'rgba(226,232,240,0.92)';
+  context.lineWidth = 1;
+  context.stroke();
+
+  context.font = '400 18px "PingFang SC", "Microsoft YaHei", sans-serif';
+  context.fillStyle = '#475569';
+  let footerY = cursorY + 18;
+  for (const line of footerLines) {
+    context.fillText(line, startX + 22, footerY, contentWidth - 44);
+    footerY += 30;
+  }
+
+  if (linkLines.length > 0) {
+    context.font = '400 16px "PingFang SC", "Microsoft YaHei", sans-serif';
+    context.fillStyle = '#94a3b8';
+    footerY += 4;
+    for (const line of linkLines) {
+      context.fillText(line, startX + 22, footerY, contentWidth - 44);
+      footerY += 24;
+    }
+  }
+
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(output => {
+      if (output) {
+        resolve(output);
+        return;
+      }
+      reject(new Error('PNG 导出失败'));
+    }, 'image/png');
+  });
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
@@ -6474,13 +6520,13 @@ onUnmounted(() => {
         <template #header>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="flex items-start gap-2">
+              <div class="flex flex-col items-start gap-2">
                 <span
                   class="inline-flex shrink-0 items-center rounded-full border border-sky-200/80 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
                 >
                   AI 摘要
                 </span>
-                <h3 class="min-w-0 flex-1 text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                <h3 class="min-w-0 w-full text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
                   {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
                 </h3>
               </div>
