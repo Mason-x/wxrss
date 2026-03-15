@@ -96,6 +96,13 @@ interface ArticleSummaryState {
   model: string;
 }
 
+interface SummaryShareCardTag {
+  label: string;
+  color: string;
+  backgroundColor: string;
+  borderColor: string;
+}
+
 interface StructuredArticleSummaryPayload {
   tags: string[];
   rating: string;
@@ -312,6 +319,7 @@ const selectedArticleHtml = ref('');
 const articleSummaryByKey = ref<Record<string, ArticleSummaryState>>({});
 const articleSummaryDialogOpen = ref(false);
 const articleSummaryDialogArticle = ref<ReaderArticle | null>(null);
+const articleSummarySharePending = ref(false);
 const articlePaneMode = ref<ArticlePaneMode>('articles');
 const dailyReportRows = ref<AiDailyReportItem[]>([]);
 const dailyReportTotalCount = ref(0);
@@ -406,6 +414,347 @@ function articleDisplayPublishTime(article?: ReaderArticle | null): string {
   }
 
   return formatTimeStamp(article.update_time || article.create_time);
+}
+
+function stripHtmlToText(value: string): string {
+  const html = String(value || '').trim();
+  if (!html) {
+    return '';
+  }
+
+  if (typeof window === 'undefined') {
+    return html
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  return String(container.textContent || container.innerText || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeSvgHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildSummaryShareCardTagStyles(tag: ArticleTagDisplayItem): SummaryShareCardTag {
+  const color = String(tag.color || '#0f172a').trim() || '#0f172a';
+  const fallbackBackground = `${color}14`;
+  const fallbackBorder = `${color}33`;
+  const style = getArticleTagStyle(tag);
+
+  return {
+    label: tag.label,
+    color: String(style.color || color),
+    backgroundColor: String(style.backgroundColor || fallbackBackground),
+    borderColor: String(style.borderColor || fallbackBorder),
+  };
+}
+
+function estimateSummaryShareCardHeight(options: {
+  paragraphs: string[];
+  highlights: string[];
+  tags: SummaryShareCardTag[];
+}): number {
+  const paragraphHeight = options.paragraphs.reduce((total, paragraph) => {
+    const normalized = stripHtmlToText(paragraph);
+    const lineCount = Math.max(1, Math.ceil(normalized.length / 28));
+    return total + 82 + lineCount * 14;
+  }, 0);
+  const highlightsHeight = options.highlights.length > 0 ? 48 + options.highlights.length * 42 : 0;
+  const tagRows = options.tags.length > 0 ? Math.ceil(options.tags.length / 4) : 0;
+  const tagsHeight = tagRows > 0 ? tagRows * 42 : 0;
+
+  return Math.min(2200, Math.max(900, 340 + paragraphHeight + highlightsHeight + tagsHeight));
+}
+
+function buildArticleSummaryShareCardSvg(options: {
+  article: ReaderArticle;
+  paragraphs: string[];
+  highlights: string[];
+  tags: SummaryShareCardTag[];
+}): { svg: string; width: number; height: number } {
+  const width = 1200;
+  const height = estimateSummaryShareCardHeight(options);
+  const title = escapeSvgHtml(articleDisplayTitle(options.article));
+  const sourceTitle = escapeSvgHtml(articleDisplayTitle(options.article));
+  const accountName = escapeSvgHtml(articleSourceAccountName(options.article));
+  const publishTime = escapeSvgHtml(articleDisplayPublishTime(options.article));
+  const articleLink = escapeSvgHtml(String(options.article.link || '').trim());
+  const paragraphs = options.paragraphs
+    .map(
+      paragraph => `
+        <div class="paragraph">
+          ${escapeSvgHtml(stripHtmlToText(paragraph)).replace(/\n/g, '<br />')}
+        </div>
+      `
+    )
+    .join('');
+  const tags = options.tags
+    .map(
+      tag => `
+        <span class="tag" style="color:${escapeSvgHtml(tag.color)};background:${escapeSvgHtml(tag.backgroundColor)};border-color:${escapeSvgHtml(tag.borderColor)};">
+          ${escapeSvgHtml(tag.label)}
+        </span>
+      `
+    )
+    .join('');
+  const highlights = options.highlights
+    .map(
+      highlight => `
+        <div class="highlight-item">
+          <span class="highlight-dot"></span>
+          <span>${escapeSvgHtml(stripHtmlToText(highlight))}</span>
+        </div>
+      `
+    )
+    .join('');
+
+  const contentHtml = `
+    <div xmlns="http://www.w3.org/1999/xhtml" class="shell">
+      <style>
+        * { box-sizing: border-box; }
+        .shell {
+          width: ${width}px;
+          min-height: ${height}px;
+          padding: 56px;
+          background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 46%, #f7fafc 100%);
+          color: #0f172a;
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        }
+        .card {
+          border-radius: 32px;
+          padding: 40px;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(186, 230, 253, 0.72);
+          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.10);
+        }
+        .header {
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+        }
+        .badge {
+          display: inline-flex;
+          align-items: center;
+          height: 30px;
+          padding: 0 14px;
+          border-radius: 999px;
+          border: 1px solid rgba(125, 211, 252, 0.85);
+          background: #eff6ff;
+          color: #0369a1;
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 1;
+          white-space: nowrap;
+        }
+        .title {
+          margin: 0;
+          font-size: 38px;
+          line-height: 1.42;
+          font-weight: 800;
+          letter-spacing: 0.01em;
+        }
+        .tags {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 28px;
+        }
+        .tag {
+          display: inline-flex;
+          align-items: center;
+          min-height: 34px;
+          padding: 0 14px;
+          border-radius: 999px;
+          border: 1px solid;
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 1;
+        }
+        .content {
+          margin-top: 26px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .paragraph {
+          border-radius: 20px;
+          padding: 20px 22px;
+          background: rgba(255,255,255,0.96);
+          box-shadow: 0 14px 32px rgba(15, 23, 42, 0.05);
+          color: #1e293b;
+          font-size: 25px;
+          line-height: 1.85;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+        .highlights {
+          margin-top: 24px;
+          padding: 20px 24px;
+          border-radius: 22px;
+          background: rgba(240, 249, 255, 0.95);
+          border: 1px solid rgba(186, 230, 253, 0.88);
+        }
+        .highlight-title {
+          margin: 0 0 12px;
+          color: #0f172a;
+          font-size: 20px;
+          font-weight: 800;
+        }
+        .highlight-item {
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          color: #334155;
+          font-size: 20px;
+          line-height: 1.7;
+        }
+        .highlight-item + .highlight-item {
+          margin-top: 10px;
+        }
+        .highlight-dot {
+          width: 9px;
+          height: 9px;
+          margin-top: 13px;
+          border-radius: 999px;
+          background: #38bdf8;
+          flex: 0 0 auto;
+        }
+        .footer {
+          margin-top: 24px;
+          border-radius: 22px;
+          padding: 18px 22px;
+          background: rgba(248, 250, 252, 0.96);
+          border: 1px solid rgba(226, 232, 240, 0.92);
+          color: #475569;
+          font-size: 18px;
+          line-height: 1.8;
+        }
+        .footer-title {
+          color: #64748b;
+        }
+        .footer-link {
+          color: #0369a1;
+          font-weight: 700;
+        }
+        .footer-divider {
+          color: #cbd5e1;
+          margin: 0 8px;
+        }
+        .link-row {
+          margin-top: 8px;
+          color: #94a3b8;
+          font-size: 16px;
+          word-break: break-all;
+        }
+      </style>
+      <div class="card">
+        <div class="header">
+          <span class="badge">AI 摘要</span>
+          <h1 class="title">${title}</h1>
+        </div>
+        ${tags ? `<div class="tags">${tags}</div>` : ''}
+        <div class="content">
+          ${paragraphs}
+        </div>
+        ${highlights ? `<div class="highlights"><h2 class="highlight-title">要点</h2>${highlights}</div>` : ''}
+        <div class="footer">
+          <span class="footer-title">来源于</span>
+          <span class="footer-link">${sourceTitle}</span>
+          <span class="footer-divider">/</span>
+          <span>${accountName}</span>
+          <span class="footer-divider">/</span>
+          <span>${publishTime}</span>
+          ${articleLink ? `<div class="link-row">${articleLink}</div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+
+  return {
+    width,
+    height,
+    svg: `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <foreignObject width="100%" height="100%">${contentHtml}</foreignObject>
+      </svg>
+    `,
+  };
+}
+
+async function renderArticleSummaryShareCardPng(options: {
+  article: ReaderArticle;
+  paragraphs: string[];
+  highlights: string[];
+  tags: SummaryShareCardTag[];
+}): Promise<Blob> {
+  const { svg, width, height } = buildArticleSummaryShareCardSvg(options);
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () => reject(new Error('分享卡片渲染失败'));
+      nextImage.src = url;
+    });
+
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('浏览器不支持分享卡片绘制');
+    }
+
+    context.scale(scale, scale);
+    context.drawImage(image, 0, 0, width, height);
+
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(output => {
+        if (output) {
+          resolve(output);
+          return;
+        }
+        reject(new Error('PNG 导出失败'));
+      }, 'image/png');
+    });
+
+    return pngBlob;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildArticleSummaryShareFilename(article: ReaderArticle): string {
+  const safeTitle = articleDisplayTitle(article)
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 48);
+  return `${safeTitle || 'ai-summary'}-ai-summary.png`;
 }
 
 function normalizeRuntimeErrorMessage(rawMessage: string): string {
@@ -3490,6 +3839,83 @@ async function regenerateArticleSummaryFromDialog() {
   });
 }
 
+async function shareArticleSummaryFromDialog() {
+  const article = articleSummaryDialogArticle.value;
+  if (!article) {
+    return;
+  }
+  if (articleSummaryDialogState.value.status !== 'success') {
+    toast.warning('无法分享', '请先生成 AI 摘要后再分享');
+    return;
+  }
+  if (articleSummarySharePending.value) {
+    return;
+  }
+
+  articleSummarySharePending.value = true;
+  try {
+    const paragraphs =
+      articleSummaryDialogParagraphs.value.length > 0
+        ? articleSummaryDialogParagraphs.value
+        : [articleSummaryDialogState.value.summary].filter(Boolean);
+    const highlights = Array.isArray(articleSummaryDialogPayload.value?.highlights)
+      ? articleSummaryDialogPayload.value?.highlights || []
+      : [];
+    const tags = articleSummaryDialogTagDisplays.value.map(buildSummaryShareCardTagStyles);
+    const pngBlob = await renderArticleSummaryShareCardPng({
+      article,
+      paragraphs,
+      highlights,
+      tags,
+    });
+    const filename = buildArticleSummaryShareFilename(article);
+    const file = new File([pngBlob], filename, { type: 'image/png' });
+    const nav = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+
+    if (typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({
+          files: [file],
+          title: articleDisplayTitle(article),
+          text: `${articleSourceAccountName(article)} · ${articleDisplayPublishTime(article)}`,
+        });
+        toast.success('分享卡片已生成', '已打开系统分享面板');
+        return;
+      } catch (error) {
+        const message = String((error as Error)?.message || '').toLowerCase();
+        if (message.includes('abort') || message.includes('cancel')) {
+          return;
+        }
+      }
+    }
+
+    const clipboardItemCtor = (window as Window & { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+    if (clipboardItemCtor && navigator.clipboard?.write) {
+      try {
+        await navigator.clipboard.write([
+          new clipboardItemCtor({
+            'image/png': pngBlob,
+          }),
+        ]);
+        toast.success('分享卡片已复制', '图片已复制，可直接粘贴到微信或聊天窗口');
+        return;
+      } catch {
+        // Fall back to download.
+      }
+    }
+
+    triggerBlobDownload(pngBlob, filename);
+    toast.success('分享卡片已下载', 'PNG 已保存，可发送到微信或其他聊天窗口');
+  } catch (error) {
+    toast.error('生成分享卡片失败', (error as Error).message || '请稍后重试');
+  } finally {
+    articleSummarySharePending.value = false;
+  }
+}
+
 async function openArticleByLinkFromReport(link: string) {
   const normalizedLink = String(link || '').trim();
   if (!normalizedLink) {
@@ -6171,7 +6597,21 @@ onUnmounted(() => {
 
         <template #footer>
           <div class="flex items-center justify-between gap-3">
-            <UButton size="xs" color="gray" variant="ghost" @click="articleSummaryDialogOpen = false">关闭</UButton>
+            <div class="flex items-center gap-2">
+              <UButton size="xs" color="gray" variant="ghost" @click="articleSummaryDialogOpen = false">关闭</UButton>
+              <UButton
+                v-if="articleSummaryDialogArticle"
+                size="xs"
+                color="gray"
+                variant="soft"
+                icon="i-lucide:share-2"
+                :loading="articleSummarySharePending"
+                :disabled="articleSummaryDialogState.status !== 'success'"
+                @click="shareArticleSummaryFromDialog"
+              >
+                分享卡片
+              </UButton>
+            </div>
             <UButton
               v-if="articleSummaryDialogArticle"
               size="xs"
