@@ -6048,15 +6048,15 @@ onUnmounted(() => {
         <template #header>
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-start gap-2">
-                <h3 class="min-w-0 flex-1 text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
-                  {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
-                </h3>
+              <div class="flex items-start gap-2">
                 <span
                   class="inline-flex shrink-0 items-center rounded-full border border-sky-200/80 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold leading-none text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
                 >
                   AI 摘要
                 </span>
+                <h3 class="min-w-0 flex-1 text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                  {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
+                </h3>
               </div>
             </div>
             <UButton
