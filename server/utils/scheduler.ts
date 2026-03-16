@@ -10,7 +10,7 @@ import {
   setSchedulerArticles,
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
-import { listAccounts, listArticlesPage } from '~/server/repositories/reader';
+import { listAccounts, listArticlesPage, upsertArticles } from '~/server/repositories/reader';
 import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { cookieStore } from '~/server/utils/CookieStore';
 import { syncRssFeed } from '~/server/utils/rss';
@@ -144,6 +144,21 @@ function dedupeArticles(newArticles: any[], oldArticles: any[]): any[] {
 
 function isRssSchedulerAccount(account: SchedulerAccount): boolean {
   return account.source_type === 'rss' || String(account.fakeid || '').startsWith('rss:');
+}
+
+function buildSchedulerAccountPayload(account: SchedulerAccount, totalCount: number) {
+  return {
+    fakeid: account.fakeid,
+    source_type: account.source_type || 'mp',
+    source_url: account.source_url || '',
+    site_url: account.site_url || '',
+    description: account.description || '',
+    nickname: account.nickname || '',
+    round_head_img: account.round_head_img || '',
+    category: account.category || '',
+    focused: Boolean(account.focused),
+    total_count: totalCount,
+  };
 }
 
 function filterArticlesBySyncThreshold(articles: any[], syncThreshold: number): any[] {
@@ -290,6 +305,12 @@ async function syncOneAccount(
   await setSchedulerArticles(authKey, fakeid, {
     articles: merged,
     totalCount,
+  });
+  await upsertArticles(authKey, {
+    account: buildSchedulerAccountPayload(account, totalCount),
+    articles: collected,
+    totalCount,
+    completed: false,
   });
 
   return collected.length;

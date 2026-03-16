@@ -2863,7 +2863,7 @@ async function refreshData() {
     clearSelectionOutOfScope();
 
     void syncSchedulerState(accountList);
-    if (articleTotalCount.value === 0 && !schedulerHydrationDone.value) {
+    if (!schedulerHydrationDone.value) {
       void hydrateSchedulerArticlesInBackground(accountList);
     }
   } catch (error: any) {
