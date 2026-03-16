@@ -357,6 +357,10 @@ const systemMenuOpen = ref(false);
 const desktopAvatarMenuOpen = ref(false);
 const mobileAvatarMenuOpen = ref(false);
 
+const SYNC_BLOCKED_ARTICLE_HTML =
+  '<div style="padding: 24px; color: #64748b;">当前正在同步文章列表，为避免打断同步，已暂停在线正文抓取。同步完成后再试，或先在“文章列表”的抓取菜单中下载文章内容后阅读。</div>';
+const SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE = '当前正在同步文章列表，为避免打断同步，请等待同步完成后再生成 AI 摘要。';
+
 const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
 const desktopAvatarMenuRef = ref<HTMLElement | null>(null);
 const mobileAvatarMenuRef = ref<HTMLElement | null>(null);
@@ -1031,6 +1035,10 @@ async function continueArticleSummaryShareFromPreview() {
 }
 
 function normalizeRuntimeErrorMessage(rawMessage: string): string {
+  const normalized = rawMessage.trim();
+  if (/^(?:internal )?server error$/i.test(normalized)) {
+    return '服务端处理失败，请稍后重试';
+  }
   if (rawMessage.includes('Worker terminated due to reaching memory limit')) {
     return '服务进程内存不足，请重启开发服务并使用 yarn dev --no-fork';
   }
@@ -3457,9 +3465,10 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
   selectedArticleHtml.value = '';
   contentLoading.value = true;
   const preferCachedHtml = String(article.fakeid || '').startsWith('rss:');
+  const shouldAvoidRemoteFetch = preferCachedHtml || isSyncing.value;
 
   try {
-    if (!preferCachedHtml) {
+    if (!shouldAvoidRemoteFetch) {
       const html = await request<string>('/api/public/v1/download', {
         query: {
           url: article.link,
@@ -3483,9 +3492,13 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
           ? stripWechatHeader(normalizeCachedRssHtml(rawHtml))
           : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
       } else {
-        selectedArticleHtml.value = preferCachedHtml
-          ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
-          : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
+        if (!preferCachedHtml && isSyncing.value) {
+          selectedArticleHtml.value = SYNC_BLOCKED_ARTICLE_HTML;
+        } else {
+          selectedArticleHtml.value = preferCachedHtml
+            ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
+            : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
+        }
       }
     } catch {
       selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
@@ -3553,6 +3566,27 @@ function stripWechatHeader(html: string) {
     return '<!doctype html>\n' + doc.documentElement.outerHTML;
   } catch {
     return html;
+  }
+}
+
+function applySyncBlockedArticleSummaryState(article: ReaderArticle, withToast = false) {
+  const key = articleKey(article);
+  if (!key) {
+    if (withToast) {
+      toast.warning('请稍后再试', SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE);
+    }
+    return;
+  }
+
+  updateArticleSummaryState(key, {
+    status: 'error',
+    summary: '',
+    model: '',
+    error: SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE,
+  });
+
+  if (withToast) {
+    toast.warning('请稍后再试', SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE);
   }
 }
 
@@ -3851,6 +3885,10 @@ async function loadArticleSummarySourceHtml(article: ReaderArticle): Promise<str
     return '';
   }
 
+  if (isSyncing.value) {
+    return '';
+  }
+
   try {
     const html = await request<string>('/api/public/v1/download', {
       query: {
@@ -4119,6 +4157,10 @@ async function generateSelectedArticleSummary() {
   if (!selectedArticle.value) {
     return;
   }
+  if (isSyncing.value) {
+    applySyncBlockedArticleSummaryState(selectedArticle.value, true);
+    return;
+  }
   await generateArticleSummaryForArticle(selectedArticle.value, {
     contentHtml: selectedArticleHtml.value,
     force: selectedArticleSummaryState.value.status === 'success',
@@ -4130,6 +4172,10 @@ async function openArticleSummaryDialog(article: ReaderArticle) {
   articleSummaryDialogOpen.value = true;
 
   if (!String(article.ai_summary || '').trim()) {
+    if (isSyncing.value) {
+      applySyncBlockedArticleSummaryState(article, true);
+      return;
+    }
     const contentHtml = await loadArticleSummarySourceHtml(article);
     await generateArticleSummaryForArticle(article, { contentHtml });
   }
@@ -4145,6 +4191,10 @@ async function regenerateArticleSummaryFromDialog() {
     (selectedArticle.value?.link === articleSummaryDialogArticle.value.link ? selectedArticle.value : null) ||
     articleSummaryDialogArticle.value;
 
+  if (isSyncing.value) {
+    applySyncBlockedArticleSummaryState(activeArticle, true);
+    return;
+  }
   const contentHtml = await loadArticleSummarySourceHtml(activeArticle);
   await generateArticleSummaryForArticle(activeArticle, {
     contentHtml,
@@ -5316,7 +5366,7 @@ onUnmounted(() => {
 
         <motion.div
           key="mobile-articles"
-          class="absolute inset-0 z-[2] flex h-full flex-col app-shell-bg"
+          class="absolute inset-0 z-[2] flex h-full min-h-0 flex-col app-shell-bg"
           :class="mobileArticlesUnderlayActive ? 'shadow-[-18px_0_40px_rgba(15,23,42,0.12)]' : ''"
           :drag="mobileView === 'article' ? false : 'x'"
           :dragControls="mobileArticlesDragControls"
@@ -5336,7 +5386,7 @@ onUnmounted(() => {
               : { x: mobileArticlesSwipeX, scale: 1, opacity: 1 }
           "
         >
-          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
             <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('articles', $event)">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -5449,7 +5499,7 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticlesListRef"
-            class="mobile-touch-surface flex-1 overflow-y-auto px-3 pt-3"
+            class="mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-3 pt-3"
             :class="[
               mobileView === 'article' ? 'pointer-events-none' : '',
               mobileView === 'articles' && shouldShowArticleFooterAction
@@ -5600,7 +5650,7 @@ onUnmounted(() => {
         <motion.div
           v-if="selectedArticle || selectedDailyReport"
           key="mobile-article"
-          class="mobile-article-sheet absolute inset-0 z-10 flex h-full flex-col bg-white text-slate-900 shadow-[-22px_0_44px_rgba(15,23,42,0.16)] dark:bg-slate-950 dark:text-slate-100"
+          class="mobile-article-sheet absolute inset-0 z-10 flex h-full min-h-0 flex-col bg-white text-slate-900 shadow-[-22px_0_44px_rgba(15,23,42,0.16)] dark:bg-slate-950 dark:text-slate-100"
           drag="x"
           :dragControls="mobileArticleDragControls"
           :dragListener="false"
@@ -5619,7 +5669,7 @@ onUnmounted(() => {
         >
           <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
 
-          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
             <div class="px-4 pb-3 pt-3" @pointerdown="beginMobileDrag('article', $event)">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -5690,7 +5740,7 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticleContentRef"
-            class="mobile-touch-surface flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            class="mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
@@ -5711,6 +5761,7 @@ onUnmounted(() => {
                     size="2xs"
                     color="primary"
                     variant="soft"
+                    :disabled="isSyncing"
                     :loading="selectedArticleSummaryState.status === 'loading'"
                     @click="generateSelectedArticleSummary"
                   >
@@ -5732,6 +5783,13 @@ onUnmounted(() => {
                   <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">
                     打开设置
                   </UButton>
+                </div>
+
+                <div
+                  v-else-if="selectedArticleSummaryState.status === 'idle' && isSyncing"
+                  class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                >
+                  {{ SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE }}
                 </div>
 
                 <div
@@ -5817,7 +5875,7 @@ onUnmounted(() => {
           @click.self="mobileAccountsPanelOpen = false"
         >
           <motion.aside
-            class="app-shell-panel mobile-accounts-drawer mobile-touch-surface relative flex h-full w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
+            class="app-shell-panel mobile-accounts-drawer mobile-touch-surface relative flex h-full min-h-0 w-[min(23rem,88vw)] flex-col border-r border-slate-200/60 shadow-[18px_0_48px_rgba(15,23,42,0.16)] dark:border-slate-800/70"
             :style="{ x: mobileDrawerSwipeX }"
             drag="x"
             :dragControls="mobileDrawerDragControls"
@@ -5985,7 +6043,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div ref="mobileAccountsListRef" class="relative z-0 flex-1 overflow-y-auto px-3 py-3">
+              <div ref="mobileAccountsListRef" class="relative z-0 min-h-0 flex-1 overflow-y-auto px-3 py-3">
                 <ul class="space-y-3">
                   <li
                     class="rounded-[24px] border px-4 py-3 transition-all duration-200"
@@ -6112,9 +6170,9 @@ onUnmounted(() => {
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
 
-    <div v-else class="flex h-full gap-3 overflow-hidden p-3">
-    <aside class="app-shell-panel w-[320px] flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
-      <header class="app-shell-glass relative z-20 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
+    <div v-else class="flex h-full min-h-0 gap-3 overflow-hidden p-3">
+    <aside class="app-shell-panel w-[320px] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
+      <header class="app-shell-glass relative z-20 shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
         <div class="flex items-center justify-start gap-2">
           <template v-if="loginAccount">
             <div ref="desktopAvatarMenuRef" class="relative flex items-center gap-2">
@@ -6247,7 +6305,7 @@ onUnmounted(() => {
 
       </header>
 
-      <ul class="app-shell-scrollbar relative z-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
+      <ul class="app-shell-scrollbar relative z-0 min-h-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
         <li
           class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
           :class="
@@ -6327,8 +6385,8 @@ onUnmounted(() => {
       </ul>
     </aside>
 
-    <section class="app-shell-panel w-[430px] flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
-      <header class="app-shell-glass space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
+    <section class="app-shell-panel w-[430px] min-h-0 flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
+      <header class="app-shell-glass shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 min-w-0">
             <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
@@ -6501,7 +6559,7 @@ onUnmounted(() => {
         />
       </div>
 
-      <div v-else-if="articlePaneMode === 'reports'" class="app-shell-scrollbar flex-1 overflow-y-auto px-2 py-2">
+      <div v-else-if="articlePaneMode === 'reports'" class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <ul class="space-y-2">
           <li
             v-for="report in displayedDailyReports"
@@ -6537,7 +6595,7 @@ onUnmounted(() => {
         />
       </div>
 
-      <div v-else v-bind="articleContainerProps" class="app-shell-scrollbar flex-1 h-0 overflow-y-auto px-2 py-2">
+      <div v-else v-bind="articleContainerProps" class="app-shell-scrollbar min-h-0 flex-1 h-0 overflow-y-auto px-2 py-2">
       <ul v-bind="articleWrapperProps" class="space-y-2">
         <li
           v-for="row in virtualDisplayedArticles"
@@ -6621,7 +6679,7 @@ onUnmounted(() => {
       </div>
       <div
         v-if="!loading && shouldShowArticleFooterAction"
-        class="border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
+        class="shrink-0 border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
       >
         <UButton
           size="2xs"
@@ -6637,8 +6695,8 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <main class="app-shell-panel flex-1 overflow-hidden rounded-[30px] flex flex-col">
-      <div class="app-shell-glass border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
+    <main class="app-shell-panel min-h-0 flex-1 overflow-hidden rounded-[30px] flex flex-col">
+      <div class="app-shell-glass shrink-0 border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
         <template v-if="selectedDailyReport || selectedArticle">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0 flex-1">
@@ -6694,7 +6752,7 @@ onUnmounted(() => {
           description="正在准备文章内容，请稍候。"
         />
       </div>
-      <div v-else class="app-shell-scrollbar flex-1 overflow-y-auto p-4">
+      <div v-else class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
         <div class="mx-auto w-full max-w-[920px]">
           <section
             v-if="selectedArticle"
@@ -6712,6 +6770,7 @@ onUnmounted(() => {
                 size="xs"
                 color="primary"
                 variant="soft"
+                :disabled="isSyncing"
                 :loading="selectedArticleSummaryState.status === 'loading'"
                 @click="generateSelectedArticleSummary"
               >
@@ -6731,6 +6790,13 @@ onUnmounted(() => {
             >
               <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
               <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">打开设置</UButton>
+            </div>
+
+            <div
+              v-else-if="selectedArticleSummaryState.status === 'idle' && isSyncing"
+              class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              {{ SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE }}
             </div>
 
             <div
@@ -6861,6 +6927,13 @@ onUnmounted(() => {
         </div>
 
         <div
+          v-else-if="articleSummaryDialogState.status === 'idle' && isSyncing"
+          class="rounded-[20px] border border-amber-200/80 bg-amber-50/90 px-4 py-4 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          <p>{{ SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE }}</p>
+        </div>
+
+        <div
           v-else-if="articleSummaryDialogState.status === 'loading'"
           class="rounded-[20px] border border-sky-100/80 bg-white px-4 py-4 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
         >
@@ -6878,6 +6951,7 @@ onUnmounted(() => {
             color="gray"
             variant="soft"
             class="mt-3"
+            :disabled="isSyncing"
             @click="regenerateArticleSummaryFromDialog"
           >
             重试生成
@@ -6963,6 +7037,7 @@ onUnmounted(() => {
               size="xs"
               color="primary"
               variant="soft"
+              :disabled="isSyncing"
               :loading="articleSummaryDialogState.status === 'loading'"
               @click="regenerateArticleSummaryFromDialog"
             >

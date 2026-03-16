@@ -102,6 +102,7 @@ html.dark body {
     box-shadow: var(--app-shadow-soft);
     backdrop-filter: blur(var(--app-backdrop-blur));
     -webkit-backdrop-filter: blur(var(--app-backdrop-blur));
+    min-height: 0;
 }
 
 .app-shell-glass {
