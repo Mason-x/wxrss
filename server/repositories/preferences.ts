@@ -19,6 +19,14 @@ export interface StoredPreferencesResult {
   updatedAt: number;
 }
 
+export interface StoredPreferencesEntry {
+  ownerKey: string;
+  identityKey: string;
+  authKey: string;
+  preferences: Preferences;
+  updatedAt: number;
+}
+
 function parsePreferencesJson(raw: string): Preferences {
   try {
     return normalizePreferences(JSON.parse(raw));
@@ -246,4 +254,23 @@ export async function upsertStoredPreferencesByAuthKey(
     preferences,
     updatedAt: now,
   };
+}
+
+export async function listStoredPreferencesEntries(): Promise<StoredPreferencesEntry[]> {
+  const db = await getSqliteDb();
+  const rows = await db.all<PreferencesRow>(
+    `
+    SELECT owner_key, identity_key, auth_key, data_json, updated_at
+    FROM mp_preferences
+    ORDER BY updated_at DESC
+    `
+  );
+
+  return (rows || []).map(row => ({
+    ownerKey: String(row.owner_key || '').trim(),
+    identityKey: String(row.identity_key || '').trim(),
+    authKey: String(row.auth_key || '').trim(),
+    preferences: parsePreferencesJson(row.data_json),
+    updatedAt: Number(row.updated_at) || 0,
+  }));
 }

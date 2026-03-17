@@ -4,12 +4,15 @@ import { USER_AGENT } from '~/config';
 import {
   getSchedulerArticles,
   listSchedulerStates,
+  normalizeSchedulerConfig,
   type SchedulerAccount,
   type SchedulerConfig,
   type SchedulerState,
   setSchedulerArticles,
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
+import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
+import { listStoredPreferencesEntries } from '~/server/repositories/preferences';
 import { listAccounts, listArticlesPage, upsertArticles } from '~/server/repositories/reader';
 import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { cookieStore } from '~/server/utils/CookieStore';
@@ -144,6 +147,35 @@ function dedupeArticles(newArticles: any[], oldArticles: any[]): any[] {
 
 function isRssSchedulerAccount(account: SchedulerAccount): boolean {
   return account.source_type === 'rss' || String(account.fakeid || '').startsWith('rss:');
+}
+
+function buildSchedulerConfigFromPreferences(preferences: {
+  dailySyncEnabled?: boolean;
+  dailySyncTime?: string;
+  accountSyncMinSeconds?: number;
+  accountSyncMaxSeconds?: number;
+  syncDateRange?: SchedulerConfig['syncDateRange'];
+  syncDatePoint?: number;
+}): SchedulerConfig {
+  return normalizeSchedulerConfig({
+    dailySyncEnabled: Boolean(preferences.dailySyncEnabled),
+    dailySyncTime: String(preferences.dailySyncTime || '03:00'),
+    accountSyncMinSeconds: Number(preferences.accountSyncMinSeconds || 3),
+    accountSyncMaxSeconds: Number(preferences.accountSyncMaxSeconds || 5),
+    syncDateRange: preferences.syncDateRange,
+    syncDatePoint: Number(preferences.syncDatePoint || 0),
+  });
+}
+
+function sameSchedulerConfig(left: SchedulerConfig, right: SchedulerConfig): boolean {
+  return (
+    left.dailySyncEnabled === right.dailySyncEnabled &&
+    left.dailySyncTime === right.dailySyncTime &&
+    left.accountSyncMinSeconds === right.accountSyncMinSeconds &&
+    left.accountSyncMaxSeconds === right.accountSyncMaxSeconds &&
+    left.syncDateRange === right.syncDateRange &&
+    left.syncDatePoint === right.syncDatePoint
+  );
 }
 
 function buildSchedulerAccountPayload(account: SchedulerAccount, totalCount: number) {
@@ -404,8 +436,80 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
   }
 }
 
+async function buildSchedulerExecutionStates(): Promise<SchedulerState[]> {
+  const storedPreferences = await listStoredPreferencesEntries();
+  const allRawStates = await listSchedulerStates();
+  const executionStates = new Map<string, SchedulerState>();
+  const coveredAuthKeys = new Set<string>();
+
+  for (const entry of storedPreferences) {
+    if (!entry.authKey) {
+      continue;
+    }
+
+    let effectiveAuthKey = entry.authKey;
+    if (entry.identityKey) {
+      const binding = await getAuthKeyBindingByIdentity(entry.identityKey);
+      const boundAuthKey = String(binding?.authKey || '').trim();
+      if (boundAuthKey) {
+        effectiveAuthKey = boundAuthKey;
+      }
+    }
+
+    coveredAuthKeys.add(entry.authKey);
+    coveredAuthKeys.add(effectiveAuthKey);
+
+    if (!entry.preferences.dailySyncEnabled) {
+      continue;
+    }
+
+    const desiredConfig = buildSchedulerConfigFromPreferences(entry.preferences);
+    const directState = allRawStates.find(state => state.authKey === effectiveAuthKey) || null;
+    const legacyState =
+      effectiveAuthKey !== entry.authKey ? allRawStates.find(state => state.authKey === entry.authKey) || null : null;
+    const seedState = directState || legacyState;
+
+    const nextAccounts = (directState?.accounts?.length ? directState.accounts : legacyState?.accounts) || [];
+    const shouldUpsertConfig = !directState || !sameSchedulerConfig(directState.config, desiredConfig);
+    const shouldSeedAccounts = (!directState || directState.accounts.length === 0) && nextAccounts.length > 0;
+    const shouldCarryRuntimeState = !directState && Boolean(seedState);
+
+    let state = directState;
+    if (shouldUpsertConfig || shouldSeedAccounts || shouldCarryRuntimeState) {
+      state = await upsertSchedulerState(effectiveAuthKey, {
+        config: desiredConfig,
+        ...(shouldSeedAccounts ? { accounts: nextAccounts } : {}),
+        ...(shouldCarryRuntimeState && seedState
+          ? {
+              lastRunDate: seedState.lastRunDate,
+              lastRunAt: seedState.lastRunAt,
+              lastStatus: seedState.lastStatus,
+              lastError: seedState.lastError,
+            }
+          : {}),
+      });
+    }
+
+    if (state) {
+      executionStates.set(effectiveAuthKey, state);
+    }
+  }
+
+  for (const state of allRawStates) {
+    if (!state.config.dailySyncEnabled) {
+      continue;
+    }
+    if (coveredAuthKeys.has(state.authKey) || executionStates.has(state.authKey)) {
+      continue;
+    }
+    executionStates.set(state.authKey, state);
+  }
+
+  return Array.from(executionStates.values());
+}
+
 export async function runDueSchedulerJobs(): Promise<void> {
-  const states = await listSchedulerStates();
+  const states = await buildSchedulerExecutionStates();
   for (const state of states) {
     await runSchedulerForState(state);
   }
