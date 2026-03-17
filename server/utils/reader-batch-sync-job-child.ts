@@ -64,6 +64,8 @@ interface ReaderBatchSyncJobChildInput {
   token: string;
   cookie: string;
   userAgent: string;
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
   accounts: ReaderBatchAccountRecord[];
   syncTimestamp: number;
   accountSyncMinSeconds: number;
@@ -93,6 +95,8 @@ interface ReaderBatchAccountSubprocessInput {
   token: string;
   cookie: string;
   userAgent: string;
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
@@ -378,6 +382,8 @@ async function runBatch(payload: ReaderBatchSyncJobChildInput): Promise<void> {
           token: payload.token,
           cookie: payload.cookie,
           userAgent: payload.userAgent,
+          privateProxyList: payload.privateProxyList,
+          privateProxyAuthorization: payload.privateProxyAuthorization,
           timeoutMs: payload.requestTimeoutMs,
           maxJsonBytes: payload.maxJsonBytes,
           syncTimestamp: payload.syncTimestamp,

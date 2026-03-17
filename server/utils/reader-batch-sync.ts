@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { USER_AGENT } from '~/config';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
 import { getMpCookie } from '~/server/kv/cookie';
+import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import { getAccountByFakeid, type ReaderAccount } from '~/server/repositories/reader';
 import { logMemory } from '~/server/utils/memory-debug';
 import {
@@ -483,6 +485,13 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
     throw new Error('no accounts available for batch sync');
   }
 
+  const storedPreferences = await getStoredPreferencesByAuthKey(job.authKey);
+  const privateProxyList = sanitizePrivateProxyList(storedPreferences.preferences.privateProxyList || []);
+  if (privateProxyList.length === 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
+  const privateProxyAuthorization = String(storedPreferences.preferences.privateProxyAuthorization || '').trim();
+
   const controller = startReaderBatchSyncInSubprocess(
     {
       authKey: job.authKey,
@@ -490,6 +499,8 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
       token: auth.token,
       cookie,
       userAgent: USER_AGENT,
+      privateProxyList,
+      privateProxyAuthorization,
       accounts,
       syncTimestamp: options.syncTimestamp,
       accountSyncMinSeconds: options.accountSyncMinSeconds,

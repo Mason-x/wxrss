@@ -17,6 +17,8 @@ interface AppmsgPublishSubprocessInput {
   endpoint: string;
   query: Record<string, string | number>;
   cookie: string;
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
   timeoutMs?: number;
 }
 
@@ -66,85 +68,123 @@ function getHeaderValue(headers, name) {
   return String(value || '');
 }
 
+function normalizeProxyList(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function buildTargetHeaders(cookie, userAgent) {
+  return {
+    Referer: 'https://mp.weixin.qq.com/',
+    Origin: 'https://mp.weixin.qq.com',
+    'User-Agent': userAgent,
+    'Accept-Encoding': 'identity',
+    Cookie: cookie || '',
+  };
+}
+
+function buildPrivateProxyEndpoint(proxy, targetEndpoint, targetHeaders, authorization) {
+  return proxy + '?url=' + encodeURIComponent(targetEndpoint) + '&headers=' + encodeURIComponent(JSON.stringify(targetHeaders)) + '&authorization=' + encodeURIComponent(String(authorization || '').trim());
+}
+
 async function readJson(payload) {
-  return await new Promise((resolve, reject) => {
-    const url = new URL(payload.endpoint);
-    if (payload.query) {
-      url.search = new URLSearchParams(payload.query).toString();
+  const proxies = normalizeProxyList(payload.privateProxyList);
+  if (proxies.length === 0) {
+    throw new Error('private proxy required');
+  }
+
+  const targetUrl = new URL(payload.endpoint);
+  if (payload.query) {
+    targetUrl.search = new URLSearchParams(payload.query).toString();
+  }
+  const targetHeaders = buildTargetHeaders(payload.cookie, payload.userAgent);
+
+  let lastError = null;
+  for (const proxy of proxies) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const url = new URL(
+          buildPrivateProxyEndpoint(proxy, targetUrl.toString(), targetHeaders, payload.privateProxyAuthorization)
+        );
+        const requestImpl = url.protocol === 'https:' ? httpsRequest : httpRequest;
+        const req = requestImpl({
+          protocol: url.protocol,
+          hostname: url.hostname,
+          port: url.port ? Number(url.port) : undefined,
+          path: url.pathname + url.search,
+          method: 'GET',
+          headers: {
+            'Accept-Encoding': 'identity',
+            Connection: 'close',
+          },
+          agent: false,
+        }, response => {
+          const status = Number(response.statusCode || 0);
+          const contentLength = Number(getHeaderValue(response.headers, 'content-length') || 0);
+          if (Number.isFinite(contentLength) && contentLength > payload.maxJsonBytes) {
+            response.resume();
+            reject(new Error('mp response too large(status=' + status + ', content-length=' + contentLength + ', limit=' + payload.maxJsonBytes + ')'));
+            return;
+          }
+
+          response.setEncoding('utf8');
+          let text = '';
+          let bytes = 0;
+          let settled = false;
+
+          const fail = error => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            response.destroy();
+            reject(error instanceof Error ? error : new Error(String(error)));
+          };
+
+          response.on('data', chunk => {
+            const chunkText = String(chunk || '');
+            bytes += Buffer.byteLength(chunkText, 'utf8');
+            if (bytes > payload.maxJsonBytes) {
+              fail(new Error('mp response too large(status=' + status + ', bytes=' + bytes + ', limit=' + payload.maxJsonBytes + ')'));
+              return;
+            }
+            text += chunkText;
+          });
+
+          response.on('end', () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            try {
+              resolve(JSON.parse(text || '{}'));
+            } catch {
+              reject(new Error('mp response is not json(status=' + status + '): ' + String(text || '').slice(0, 220)));
+            }
+          });
+
+          response.on('error', fail);
+        });
+
+        req.on('error', error => {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
+        req.setTimeout(payload.timeoutMs, () => {
+          req.destroy(new Error('mp request timeout(timeoutMs=' + payload.timeoutMs + ')'));
+        });
+        req.end();
+      });
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
     }
+  }
 
-    const requestImpl = url.protocol === 'https:' ? httpsRequest : httpRequest;
-    const req = requestImpl({
-      protocol: url.protocol,
-      hostname: url.hostname,
-      port: url.port ? Number(url.port) : undefined,
-      path: url.pathname + url.search,
-      method: 'GET',
-      headers: {
-        Referer: 'https://mp.weixin.qq.com/',
-        Origin: 'https://mp.weixin.qq.com',
-        'User-Agent': payload.userAgent,
-        'Accept-Encoding': 'identity',
-        Connection: 'close',
-        Cookie: payload.cookie || '',
-      },
-      agent: false,
-    }, response => {
-      const status = Number(response.statusCode || 0);
-      const contentLength = Number(getHeaderValue(response.headers, 'content-length') || 0);
-      if (Number.isFinite(contentLength) && contentLength > payload.maxJsonBytes) {
-        response.resume();
-        reject(new Error('mp response too large(status=' + status + ', content-length=' + contentLength + ', limit=' + payload.maxJsonBytes + ')'));
-        return;
-      }
-
-      response.setEncoding('utf8');
-      let text = '';
-      let bytes = 0;
-      let settled = false;
-
-      const fail = error => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        response.destroy();
-        reject(error instanceof Error ? error : new Error(String(error)));
-      };
-
-      response.on('data', chunk => {
-        const chunkText = String(chunk || '');
-        bytes += Buffer.byteLength(chunkText, 'utf8');
-        if (bytes > payload.maxJsonBytes) {
-          fail(new Error('mp response too large(status=' + status + ', bytes=' + bytes + ', limit=' + payload.maxJsonBytes + ')'));
-          return;
-        }
-        text += chunkText;
-      });
-
-      response.on('end', () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        try {
-          resolve(JSON.parse(text || '{}'));
-        } catch {
-          reject(new Error('mp response is not json(status=' + status + '): ' + String(text || '').slice(0, 220)));
-        }
-      });
-
-      response.on('error', fail);
-    });
-
-    req.on('error', error => {
-      reject(error instanceof Error ? error : new Error(String(error)));
-    });
-    req.setTimeout(payload.timeoutMs, () => {
-      req.destroy(new Error('mp request timeout(timeoutMs=' + payload.timeoutMs + ')'));
-    });
-    req.end();
-  });
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error('private proxy request failed');
 }
 
 function normalizeAppmsgpublishResponse(resp) {
@@ -260,6 +300,8 @@ export async function requestAppmsgpublishInSubprocess(
     endpoint: input.endpoint,
     query: input.query,
     cookie: input.cookie,
+    privateProxyList: input.privateProxyList,
+    privateProxyAuthorization: input.privateProxyAuthorization,
     timeoutMs,
     maxJsonBytes: getMaxJsonBytes(),
     userAgent: USER_AGENT,

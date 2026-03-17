@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -136,6 +137,8 @@ interface ReaderBatchAccountChildInput {
   token: string;
   cookie: string;
   userAgent: string;
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
@@ -193,6 +196,7 @@ const DEFAULT_SYNC_DELAY_MIN_SECONDS = 3;
 const DEFAULT_SYNC_DELAY_MAX_SECONDS = 5;
 const MIN_ALLOWED_SECONDS = 1;
 const MAX_ALLOWED_SECONDS = 30;
+const PRIVATE_PROXY_REQUIRED_MESSAGE = 'private proxy required';
 
 let cancelRequested = false;
 let started = false;
@@ -264,6 +268,35 @@ function nowSeconds(): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function normalizeProxyList(values: string[]): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.map(value => String(value || '').trim()).filter(Boolean);
+}
+
+function buildMpRequestHeaders(cookie: string, userAgent: string): Record<string, string> {
+  return {
+    Referer: 'https://mp.weixin.qq.com/',
+    Origin: 'https://mp.weixin.qq.com',
+    'User-Agent': userAgent,
+    'Accept-Encoding': 'identity',
+    Cookie: cookie,
+  };
+}
+
+function buildPrivateProxyEndpoint(
+  proxy: string,
+  targetEndpoint: string,
+  targetHeaders: Record<string, string>,
+  authorization: string
+): string {
+  return `${proxy}?url=${encodeURIComponent(targetEndpoint)}&headers=${encodeURIComponent(
+    JSON.stringify(targetHeaders)
+  )}&authorization=${encodeURIComponent(authorization)}`;
 }
 
 function resolveDbPath(): string {
@@ -723,6 +756,8 @@ async function fetchAppmsgPublishDirect(
   begin: number,
   size: number,
   userAgent: string,
+  privateProxyList: string[],
+  privateProxyAuthorization: string,
   timeoutMs: number,
   maxJsonBytes: number
 ): Promise<DirectAppmsgPublishResponse> {
@@ -743,79 +778,107 @@ async function fetchAppmsgPublishDirect(
     ajax: '1',
   }).toString();
 
-  const text = await new Promise<string>((resolve, reject) => {
-    const req = httpsRequest(
-      {
-        protocol: endpoint.protocol,
-        hostname: endpoint.hostname,
-        port: endpoint.port ? Number(endpoint.port) : undefined,
-        path: endpoint.pathname + endpoint.search,
-        method: 'GET',
-        headers: {
-          Referer: 'https://mp.weixin.qq.com/',
-          Origin: 'https://mp.weixin.qq.com',
-          'User-Agent': userAgent,
-          'Accept-Encoding': 'identity',
-          Connection: 'close',
-          Cookie: cookie,
-        },
-        agent: false,
-      },
-      response => {
-        const status = Number(response.statusCode || 0);
-        const contentLength = Number(response.headers['content-length'] || 0);
-        if (Number.isFinite(contentLength) && contentLength > maxJsonBytes) {
-          response.resume();
-          reject(
-            new Error(`mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`)
-          );
-          return;
-        }
+  const proxies = normalizeProxyList(privateProxyList);
+  if (proxies.length === 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
 
-        response.setEncoding('utf8');
-        let bytes = 0;
-        let body = '';
-        let settled = false;
+  const targetHeaders = buildMpRequestHeaders(cookie, userAgent);
+  let text = '';
+  let lastError: Error | null = null;
 
-        const fail = (error: Error) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          response.destroy();
-          reject(error);
-        };
-
-        response.on('data', chunk => {
-          const chunkText = String(chunk || '');
-          bytes += Buffer.byteLength(chunkText, 'utf8');
-          if (bytes > maxJsonBytes) {
-            fail(new Error(`mp response too large(status=${status}, bytes=${bytes}, limit=${maxJsonBytes})`));
-            return;
-          }
-          body += chunkText;
-        });
-        response.on('end', () => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          resolve(body);
-        });
-        response.on('error', error => {
-          fail(error instanceof Error ? error : new Error(String(error)));
-        });
-      }
+  for (const proxy of proxies) {
+    const proxyEndpoint = new URL(
+      buildPrivateProxyEndpoint(
+        proxy,
+        endpoint.toString(),
+        targetHeaders,
+        String(privateProxyAuthorization || '').trim()
+      )
     );
+    try {
+      text = await new Promise<string>((resolve, reject) => {
+        const requestImpl = proxyEndpoint.protocol === 'https:' ? httpsRequest : httpRequest;
+        const req = requestImpl(
+          {
+            protocol: proxyEndpoint.protocol,
+            hostname: proxyEndpoint.hostname,
+            port: proxyEndpoint.port ? Number(proxyEndpoint.port) : undefined,
+            path: proxyEndpoint.pathname + proxyEndpoint.search,
+            method: 'GET',
+            headers: {
+              'Accept-Encoding': 'identity',
+              Connection: 'close',
+            },
+            agent: false,
+          },
+          response => {
+            const status = Number(response.statusCode || 0);
+            const contentLength = Number(response.headers['content-length'] || 0);
+            if (Number.isFinite(contentLength) && contentLength > maxJsonBytes) {
+              response.resume();
+              reject(
+                new Error(
+                  `mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`
+                )
+              );
+              return;
+            }
 
-    req.on('error', error => {
-      reject(error instanceof Error ? error : new Error(String(error)));
-    });
-    req.setTimeout(Math.max(1000, timeoutMs), () => {
-      req.destroy(new Error(`mp request timeout(timeoutMs=${timeoutMs})`));
-    });
-    req.end();
-  });
+            response.setEncoding('utf8');
+            let bytes = 0;
+            let body = '';
+            let settled = false;
+
+            const fail = (error: Error) => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              response.destroy();
+              reject(error);
+            };
+
+            response.on('data', chunk => {
+              const chunkText = String(chunk || '');
+              bytes += Buffer.byteLength(chunkText, 'utf8');
+              if (bytes > maxJsonBytes) {
+                fail(new Error(`mp response too large(status=${status}, bytes=${bytes}, limit=${maxJsonBytes})`));
+                return;
+              }
+              body += chunkText;
+            });
+            response.on('end', () => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              resolve(body);
+            });
+            response.on('error', error => {
+              fail(error instanceof Error ? error : new Error(String(error)));
+            });
+          }
+        );
+
+        req.on('error', error => {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
+        req.setTimeout(Math.max(1000, timeoutMs), () => {
+          req.destroy(new Error(`mp request timeout(timeoutMs=${timeoutMs})`));
+        });
+        req.end();
+      });
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
 
   let raw: Record<string, any>;
   try {
@@ -922,6 +985,8 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
       begin,
       size,
       payload.userAgent,
+      payload.privateProxyList,
+      payload.privateProxyAuthorization,
       payload.timeoutMs,
       payload.maxJsonBytes
     );

@@ -28,6 +28,8 @@ export interface ReaderBatchSyncJobSubprocessInput {
   token: string;
   cookie: string;
   userAgent: string;
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
   accounts: ReaderBatchSyncJobSubprocessAccount[];
   syncTimestamp: number;
   accountSyncMinSeconds: number;

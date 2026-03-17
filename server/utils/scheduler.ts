@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { USER_AGENT } from '~/config';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
 import {
   getSchedulerArticles,
   listSchedulerStates,
@@ -12,7 +13,7 @@ import {
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
 import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
-import { listStoredPreferencesEntries } from '~/server/repositories/preferences';
+import { getStoredPreferencesByAuthKey, listStoredPreferencesEntries } from '~/server/repositories/preferences';
 import { listAccounts, listArticlesPage, upsertArticles } from '~/server/repositories/reader';
 import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { cookieStore } from '~/server/utils/CookieStore';
@@ -40,6 +41,11 @@ interface AppMsgPublishResponse {
   publish_page: string;
 }
 
+interface PrivateProxyConfig {
+  privateProxyList: string[];
+  privateProxyAuthorization: string;
+}
+
 function compactArticlePayload(article: Record<string, any>): Record<string, any> {
   return {
     aid: String(article?.aid || ''),
@@ -64,6 +70,40 @@ function compactArticlePayload(article: Record<string, any>): Record<string, any
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function buildMpRequestHeaders(cookie: string): Record<string, string> {
+  return {
+    Referer: 'https://mp.weixin.qq.com/',
+    Origin: 'https://mp.weixin.qq.com',
+    'User-Agent': USER_AGENT,
+    'Accept-Encoding': 'identity',
+    Cookie: cookie,
+  };
+}
+
+function buildPrivateProxyEndpoint(
+  proxy: string,
+  targetEndpoint: string,
+  targetHeaders: Record<string, string>,
+  authorization: string
+): string {
+  return `${proxy}?url=${encodeURIComponent(targetEndpoint)}&headers=${encodeURIComponent(
+    JSON.stringify(targetHeaders)
+  )}&authorization=${encodeURIComponent(authorization)}`;
+}
+
+async function resolvePrivateProxyConfig(authKey: string): Promise<PrivateProxyConfig> {
+  const storedPreferences = await getStoredPreferencesByAuthKey(authKey);
+  const privateProxyList = sanitizePrivateProxyList(storedPreferences.preferences.privateProxyList || []);
+  if (privateProxyList.length === 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
+
+  return {
+    privateProxyList,
+    privateProxyAuthorization: String(storedPreferences.preferences.privateProxyAuthorization || '').trim(),
+  };
 }
 
 function todayKey(now = new Date()): string {
@@ -209,17 +249,13 @@ function filterArticlesBySyncThreshold(articles: any[], syncThreshold: number): 
 }
 
 async function fetchAppMsgPublish(
-  authKey: string,
+  cookie: string,
   token: string,
   fakeid: string,
   begin: number,
-  size: number
+  size: number,
+  privateProxyConfig: PrivateProxyConfig
 ): Promise<AppMsgPublishResponse> {
-  const cookie = await cookieStore.getCookie(authKey);
-  if (!cookie) {
-    throw new Error('cookie not found');
-  }
-
   const query = new URLSearchParams({
     sub: 'list',
     search_field: 'null',
@@ -236,18 +272,31 @@ async function fetchAppMsgPublish(
     ajax: '1',
   });
 
-  const response = await fetch(`https://mp.weixin.qq.com/cgi-bin/appmsgpublish?${query.toString()}`, {
-    method: 'GET',
-    headers: {
-      Referer: 'https://mp.weixin.qq.com/',
-      Origin: 'https://mp.weixin.qq.com',
-      'User-Agent': USER_AGENT,
-      Cookie: cookie,
-      'Accept-Encoding': 'identity',
-    },
-  });
+  const targetEndpoint = `https://mp.weixin.qq.com/cgi-bin/appmsgpublish?${query.toString()}`;
+  const targetHeaders = buildMpRequestHeaders(cookie);
+  let lastError: Error | null = null;
 
-  return await response.json();
+  for (const proxy of privateProxyConfig.privateProxyList) {
+    try {
+      const response = await fetch(
+        buildPrivateProxyEndpoint(proxy, targetEndpoint, targetHeaders, privateProxyConfig.privateProxyAuthorization),
+        {
+          method: 'GET',
+          headers: {
+            'Accept-Encoding': 'identity',
+          },
+        }
+      );
+      return await response.json();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error('private proxy request failed');
 }
 
 function parseArticles(resp: AppMsgPublishResponse): { articles: any[]; completed: boolean; totalCount: number } {
@@ -281,9 +330,11 @@ function parseArticles(resp: AppMsgPublishResponse): { articles: any[]; complete
 
 async function syncOneAccount(
   authKey: string,
+  cookie: string,
   token: string,
   account: SchedulerAccount,
-  config: SchedulerConfig
+  config: SchedulerConfig,
+  privateProxyConfig: PrivateProxyConfig
 ): Promise<number> {
   const fakeid = account.fakeid;
   const cached = await getSchedulerArticles(authKey, fakeid);
@@ -298,7 +349,7 @@ async function syncOneAccount(
   let reachedBoundary = false;
 
   while (page < MAX_PAGE_PER_ACCOUNT) {
-    const resp = await fetchAppMsgPublish(authKey, token, fakeid, begin, 20);
+    const resp = await fetchAppMsgPublish(cookie, token, fakeid, begin, 20, privateProxyConfig);
     const { articles, completed, totalCount: latestTotalCount } = parseArticles(resp);
     totalCount = latestTotalCount || totalCount;
 
@@ -415,8 +466,9 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
       if (!token || !cookie) {
         throw new Error('cookie or token missing');
       }
+      const privateProxyConfig = await resolvePrivateProxyConfig(authKey);
       for (const account of mpAccounts) {
-        await syncOneAccount(authKey, token, account, config);
+        await syncOneAccount(authKey, cookie, token, account, config, privateProxyConfig);
       }
     }
 

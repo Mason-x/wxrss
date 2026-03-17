@@ -3,12 +3,15 @@
  */
 
 import PQueue from 'p-queue';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
+import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import {
   type AppmsgPublishSubprocessResult,
   requestAppmsgpublishInSubprocess,
 } from '~/server/utils/appmsgpublish-subprocess';
 import { getCookieFromStore, getTokenFromStore } from '~/server/utils/CookieStore';
 import { logMemory } from '~/server/utils/memory-debug';
+import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface AppMsgPublishQuery {
   begin?: number;
@@ -34,6 +37,7 @@ export default defineEventHandler(async event => {
   const queue = getAppmsgPublishQueue();
 
   return queue.add(async () => {
+    const authKey = getAuthKeyFromRequest(event);
     const token = await getTokenFromStore(event);
     const cookie = await getCookieFromStore(event);
 
@@ -45,6 +49,18 @@ export default defineEventHandler(async event => {
         },
       };
     }
+
+    const storedPreferences = await getStoredPreferencesByAuthKey(authKey);
+    const privateProxyList = sanitizePrivateProxyList(storedPreferences.preferences.privateProxyList || []);
+    if (privateProxyList.length === 0) {
+      return {
+        base_resp: {
+          ret: -1,
+          err_msg: PRIVATE_PROXY_REQUIRED_MESSAGE,
+        },
+      };
+    }
+    const privateProxyAuthorization = String(storedPreferences.preferences.privateProxyAuthorization || '').trim();
 
     const query = getQuery<AppMsgPublishQuery>(event);
     const id = String(query.id || '').trim();
@@ -97,6 +113,8 @@ export default defineEventHandler(async event => {
       endpoint: 'https://mp.weixin.qq.com/cgi-bin/appmsgpublish',
       query: params,
       cookie,
+      privateProxyList,
+      privateProxyAuthorization,
       timeoutMs: Math.max(1000, Number(process.env.MP_REQUEST_TIMEOUT_MS || 30000)),
     }).catch(error => {
       const message = String((error as Error)?.message || error || 'failed to fetch appmsgpublish');
