@@ -260,6 +260,7 @@ export default defineEventHandler(async event => {
         lang: 'zh_CN',
       },
       cookie: temporaryCookie,
+      allowDirect: true,
     }).then(resp => resp.text());
 
     const info = extractLoginMpInfo(homeHtml);

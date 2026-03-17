@@ -8,6 +8,8 @@ import dayjs from 'dayjs';
 import { H3Event, parseCookies } from 'h3';
 import { v4 as uuidv4 } from 'uuid';
 import { isDev, USER_AGENT } from '~/config';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
+import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import type { RequestOptions } from '~/server/types';
 import { cookieStore, getCookieFromStore } from '~/server/utils/CookieStore';
 import { logRequest, logResponse } from '~/server/utils/logger';
@@ -19,6 +21,11 @@ interface NativeTextResponse {
   headers: IncomingHttpHeaders;
   text: string;
   bytes: number;
+}
+
+interface PrivateProxyConfig {
+  proxies: string[];
+  authorization: string;
 }
 
 function toMb(value: number): number {
@@ -65,6 +72,86 @@ function createLocalProxyCookie(name: string, value: string, event: H3Event, exp
   const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
   const expiresAttr = expiresAt ? `; Expires=${expiresAt.toUTCString()}` : '';
   return `${name}=${value}; Path=/${expiresAttr}; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
+function headersToObject(headers: Headers): Record<string, string> {
+  return Object.fromEntries(headers.entries());
+}
+
+function buildPrivateProxyEndpoint(
+  proxy: string,
+  targetEndpoint: string,
+  targetHeaders: Headers,
+  authorization: string
+): string {
+  return `${proxy}?url=${encodeURIComponent(targetEndpoint)}&headers=${encodeURIComponent(
+    JSON.stringify(headersToObject(targetHeaders))
+  )}&authorization=${encodeURIComponent(authorization)}`;
+}
+
+function buildTransportHeaders(bodyText?: string): Headers {
+  const headers = new Headers();
+  if (bodyText) {
+    headers.set('content-type', 'application/x-www-form-urlencoded; charset=UTF-8');
+  }
+  return headers;
+}
+
+async function resolvePrivateProxyConfig(options: RequestOptions): Promise<PrivateProxyConfig | null> {
+  if (options.allowDirect || options.action) {
+    return null;
+  }
+
+  const authKey = getAuthKeyFromRequest(options.event);
+  if (!authKey) {
+    return null;
+  }
+
+  const stored = await getStoredPreferencesByAuthKey(authKey);
+  const proxies = sanitizePrivateProxyList(stored.preferences.privateProxyList || []);
+  if (proxies.length === 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
+
+  return {
+    proxies,
+    authorization: String(stored.preferences.privateProxyAuthorization || '').trim(),
+  };
+}
+
+function buildDebugRequest(
+  endpoint: string,
+  method: RequestOptions['method'],
+  headers: Headers,
+  redirect: RequestRedirect
+) {
+  return new Request(endpoint, {
+    method,
+    headers,
+    redirect,
+  });
+}
+
+async function fetchResponseWithTimeout(
+  endpoint: string,
+  requestInit: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(
+      new Request(endpoint, {
+        ...requestInit,
+        signal: controller.signal,
+      })
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function assertProxyHeapAvailable(
@@ -278,7 +365,7 @@ function isHttpsRequest(event: H3Event): boolean {
 }
 
 export async function proxyMpRequest(options: RequestOptions) {
-  const headers = new Headers({
+  const targetHeaders = new Headers({
     Referer: options.referer || 'https://mp.weixin.qq.com/',
     Origin: 'https://mp.weixin.qq.com',
     'User-Agent': USER_AGENT,
@@ -287,7 +374,7 @@ export async function proxyMpRequest(options: RequestOptions) {
 
   const cookie: string | null = options.cookie || (await getCookieFromStore(options.event));
   if (cookie) {
-    headers.set('Cookie', cookie);
+    targetHeaders.set('Cookie', cookie);
   }
 
   const redirect = options.redirect || 'follow';
@@ -302,7 +389,6 @@ export async function proxyMpRequest(options: RequestOptions) {
 
   const requestInit: RequestInit = {
     method: options.method,
-    headers,
     redirect,
   };
   if (bodyText) {
@@ -321,10 +407,7 @@ export async function proxyMpRequest(options: RequestOptions) {
 
   const requestId = uuidv4().replace(/-/g, '');
   const debugMpRequestEnabled = getDebugMpRequestEnabled();
-  const request = new Request(endpoint, requestInit);
-  if (debugMpRequestEnabled) {
-    await logRequest(requestId, request.clone());
-  }
+  const privateProxyConfig = await resolvePrivateProxyConfig(options);
 
   if (options.parseJson) {
     const maxJsonBytes = getMaxJsonBytes();
@@ -336,54 +419,103 @@ export async function proxyMpRequest(options: RequestOptions) {
       'proxy-mp:memory-pressure-before-request'
     );
 
-    const { text, bytes, status } = await readJsonTextWithNativeHttp({
-      endpoint,
-      method: options.method,
-      headers,
-      bodyText,
-      timeoutMs,
-      maxBytes: maxJsonBytes,
-      redirect,
-      requestId,
-      debugMemory,
-    });
+    const proxyCandidates = privateProxyConfig?.proxies || [null];
+    const transportHeaders = privateProxyConfig ? buildTransportHeaders(bodyText) : targetHeaders;
+    let lastError: unknown = null;
+
+    for (const proxy of proxyCandidates) {
+      const transportEndpoint = proxy
+        ? buildPrivateProxyEndpoint(proxy, endpoint, targetHeaders, privateProxyConfig?.authorization || '')
+        : endpoint;
+
+      if (debugMpRequestEnabled) {
+        await logRequest(
+          requestId,
+          buildDebugRequest(transportEndpoint, options.method, transportHeaders, redirect).clone()
+        );
+      }
+
+      try {
+        const { text, bytes, status } = await readJsonTextWithNativeHttp({
+          endpoint: transportEndpoint,
+          method: options.method,
+          headers: transportHeaders,
+          bodyText,
+          timeoutMs,
+          maxBytes: maxJsonBytes,
+          redirect,
+          requestId,
+          debugMemory,
+        });
+
+        try {
+          const parsed = JSON.parse(text || '{}');
+          if (debugMemory) {
+            logMemory('proxy-mp:json-parse-done', {
+              endpoint,
+              method: options.method,
+              requestId,
+              bytes,
+            });
+          }
+          return parsed;
+        } catch {
+          const preview = (text || '').slice(0, 220);
+          if (debugMemory) {
+            logMemory('proxy-mp:json-parse-failed', {
+              endpoint,
+              method: options.method,
+              requestId,
+              bytes,
+            });
+          }
+          throw new Error(`mp response is not json(status=${status}): ${preview}`);
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error('mp proxy request failed with unknown error');
+  }
+
+  const proxyCandidates = privateProxyConfig?.proxies || [null];
+  const transportHeaders = privateProxyConfig ? buildTransportHeaders(bodyText) : targetHeaders;
+  let mpResponse: Response | null = null;
+  let lastError: unknown = null;
+
+  for (const proxy of proxyCandidates) {
+    const transportEndpoint = proxy
+      ? buildPrivateProxyEndpoint(proxy, endpoint, targetHeaders, privateProxyConfig?.authorization || '')
+      : endpoint;
+    const transportRequestInit: RequestInit = {
+      ...requestInit,
+      headers: transportHeaders,
+    };
+
+    if (debugMpRequestEnabled) {
+      await logRequest(
+        requestId,
+        buildDebugRequest(transportEndpoint, options.method, transportHeaders, redirect).clone()
+      );
+    }
 
     try {
-      const parsed = JSON.parse(text || '{}');
-      if (debugMemory) {
-        logMemory('proxy-mp:json-parse-done', {
-          endpoint,
-          method: options.method,
-          requestId,
-          bytes,
-        });
-      }
-      return parsed;
-    } catch {
-      const preview = (text || '').slice(0, 220);
-      if (debugMemory) {
-        logMemory('proxy-mp:json-parse-failed', {
-          endpoint,
-          method: options.method,
-          requestId,
-          bytes,
-        });
-      }
-      throw new Error(`mp response is not json(status=${status}): ${preview}`);
+      mpResponse = await fetchResponseWithTimeout(transportEndpoint, transportRequestInit, timeoutMs);
+      break;
+    } catch (error) {
+      lastError = error;
     }
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
-  requestInit.signal = controller.signal;
-
-  let mpResponse: Response;
-  try {
-    mpResponse = await fetch(new Request(endpoint, requestInit));
-  } finally {
-    clearTimeout(timer);
+  if (!mpResponse) {
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    throw new Error('mp proxy request failed with unknown error');
   }
 
   if (debugMemory) {

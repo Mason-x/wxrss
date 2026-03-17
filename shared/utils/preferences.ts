@@ -12,6 +12,7 @@ import {
 } from '#shared/utils/ai-tags';
 import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
 import { MP_ORIGIN_TIMESTAMP } from '~/config';
+import { sanitizePrivateProxyList } from '~/config/proxy';
 import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
 const SYNC_DATE_RANGE_VALUES: Preferences['syncDateRange'][] = [
@@ -174,7 +175,7 @@ function normalizeProxyList(value?: string[]): string[] {
   if (!Array.isArray(value)) {
     return [...DEFAULT_PREFERENCES.privateProxyList];
   }
-  return value.map(item => String(item || '').trim()).filter(Boolean);
+  return sanitizePrivateProxyList(value.map(item => String(item || '').trim()).filter(Boolean));
 }
 
 function looksLikeReplacementPlaceholder(text: string): boolean {
