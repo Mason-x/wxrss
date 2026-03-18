@@ -6,7 +6,6 @@ export const USER_MANAGED_PREFERENCE_KEYS = [
   'dailySyncEnabled',
   'dailySyncTime',
   'aiTagDefinitions',
-  'aiDailyReportIncludedLabels',
   'syncDateRange',
   'syncDatePoint',
   'aiAutoSummaryOnSyncEnabled',
@@ -23,7 +22,6 @@ export const ADMIN_MANAGED_PREFERENCE_KEYS = [
   'aiSummaryModel',
   'aiSummarySystemPrompt',
   'aiTagSystemPrompt',
-  'aiDailyReportSystemPrompt',
   'exportConfig',
   'downloadConfig',
   'accountSyncMinSeconds',
@@ -39,7 +37,6 @@ export const USER_HIDDEN_PREFERENCE_KEYS = [
   'aiSummaryModel',
   'aiSummarySystemPrompt',
   'aiTagSystemPrompt',
-  'aiDailyReportSystemPrompt',
 ] as const satisfies PreferenceKey[];
 
 function pickPreferencesByKeys(

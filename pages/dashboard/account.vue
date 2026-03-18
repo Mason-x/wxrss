@@ -18,7 +18,6 @@ import {
   bootstrapAccountAi,
   getArticleList,
   INITIAL_SUBSCRIBE_PAGE_SIZE,
-  refreshAiDailyDigest,
   syncRssFeed,
 } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
@@ -91,7 +90,6 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
     }
     await refresh();
     await bootstrapAiAfterAddingAccount(account.fakeid);
-    await runAiRefreshAfterSync();
     toast.success(
       isRssAccount(account) ? 'RSS 添加成功' : '公众号添加成功',
       isRssAccount(account)
@@ -241,7 +239,6 @@ async function loadSelectedAccountArticle() {
     for (const account of rows) {
       await loadAccountArticle(account);
     }
-    await runAiRefreshAfterSync();
     toast.success(`已成功同步 ${rows.length} 个订阅源`);
   } catch (e: any) {
     toast.error('同步失败', e.message);
@@ -537,22 +534,9 @@ async function syncSingleAccount(account: MpAccount) {
   isCanceled.value = false;
   try {
     await loadAccountArticle(account);
-    await runAiRefreshAfterSync();
     toast.success('同步完成', `公众号【${account.nickname}】的文章已同步完毕`);
   } catch (e: any) {
     toast.error('同步失败', e.message);
-  }
-}
-
-async function runAiRefreshAfterSync() {
-  if (!aiAutoSummaryOnSyncEnabled.value) {
-    return;
-  }
-
-  try {
-    await refreshAiDailyDigest();
-  } catch (error) {
-    console.error('AI daily refresh failed:', error);
   }
 }
 

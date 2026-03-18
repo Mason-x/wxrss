@@ -1552,9 +1552,6 @@ const {
 });
 
 const articleListTitle = computed(() => {
-  if (articlePaneMode.value === 'reports') {
-    return 'AI 日报';
-  }
   const selected = findAccount(selectedAccount.value);
   if (selected) {
     return selected.nickname || selected.fakeid;
@@ -1568,19 +1565,9 @@ const articleListTitle = computed(() => {
   return `分类：${selectedCategory.value}`;
 });
 
-const currentListTotalCount = computed(() =>
-  articlePaneMode.value === 'reports' ? dailyReportTotalCount.value : articleTotalCount.value
-);
+const currentListTotalCount = computed(() => articleTotalCount.value);
 
 const articleListEmptyState = computed(() => {
-  if (articlePaneMode.value === 'reports') {
-    return {
-      icon: 'i-lucide:file-stack',
-      title: '还没有 AI 日报',
-      description: '当天同步后，服务端会自动为当天文章生成 AI 日报。',
-    };
-  }
-
   if (favoriteOnly.value) {
     return {
       icon: 'i-heroicons:star',
@@ -1605,9 +1592,6 @@ const articleListEmptyState = computed(() => {
 });
 
 const canSyncFromHeader = computed(() => {
-  if (articlePaneMode.value === 'reports') {
-    return false;
-  }
   if (selectedAccount.value) {
     return true;
   }
@@ -1615,9 +1599,6 @@ const canSyncFromHeader = computed(() => {
 });
 
 const syncHeaderTooltip = computed(() => {
-  if (articlePaneMode.value === 'reports') {
-    return 'AI 日报页不支持同步';
-  }
   if (selectedAccount.value) {
     return `同步当前${accountSourceLabel(selectedAccountInfo.value)}`;
   }
@@ -1627,7 +1608,7 @@ const syncHeaderTooltip = computed(() => {
   return '请选择订阅源后同步';
 });
 
-const showDailyReportEntryButton = computed(() => !selectedAccount.value && selectedCategory.value === '__all__');
+const showDailyReportEntryButton = computed(() => false);
 
 const selectedArticleDisplayTitle = computed(() => {
   if (!selectedArticle.value) return '';
@@ -4130,21 +4111,7 @@ async function regenerateSelectedDailyReport() {
 }
 
 async function runAiRefreshAfterSync() {
-  if (!aiAutoSummaryOnSyncEnabled.value) {
-    return;
-  }
-
-  try {
-    const result = await refreshAiDailyDigest();
-    if (!result.processed) {
-      return;
-    }
-    if (articlePaneMode.value === 'reports') {
-      await loadDailyReports({ autoSelectLatest: Boolean(selectedDailyReport.value) });
-    }
-  } catch (error) {
-    console.error('AI daily refresh failed:', error);
-  }
+  return;
 }
 
 async function bootstrapAiAfterAddingAccount(fakeid: string) {
@@ -5272,6 +5239,10 @@ onMounted(async () => {
   await runtimeStateSync.hydrate();
   await favoriteOnlySync.hydrate();
   initializeRuntimeState();
+  articlePaneMode.value = 'articles';
+  selectedDailyReport.value = null;
+  dailyReportRows.value = [];
+  dailyReportTotalCount.value = 0;
   await refreshData();
   resetMobileHistory();
   cookieTimer = window.setInterval(() => {
@@ -5477,27 +5448,6 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex items-center gap-2">
-                  <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
-                    <UButton
-                      size="2xs"
-                      color="gray"
-                      variant="ghost"
-                      icon="i-lucide:chevron-left"
-                      class="icon-btn"
-                      @click="closeAiDailyReports()"
-                    />
-                  </UTooltip>
-                  <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
-                    <UButton
-                      size="2xs"
-                      color="gray"
-                      variant="ghost"
-                      icon="i-lucide:sparkles"
-                      label="AI日报"
-                      class="toolbar-text-btn"
-                      @click="openAiDailyReports()"
-                    />
-                  </UTooltip>
                   <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
                     <UButton
                       size="2xs"
@@ -6493,27 +6443,6 @@ onUnmounted(() => {
           </div>
 
           <div class="flex items-center gap-2">
-            <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:chevron-left"
-                class="icon-btn"
-                @click="closeAiDailyReports()"
-              />
-            </UTooltip>
-            <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:sparkles"
-                label="AI日报"
-                class="toolbar-text-btn"
-                @click="openAiDailyReports()"
-              />
-            </UTooltip>
             <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
               <UButton
                 size="2xs"
@@ -6778,18 +6707,6 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-            <UButton
-              v-if="selectedDailyReport && canRegenerateSelectedDailyReport"
-              size="xs"
-              color="primary"
-              variant="soft"
-              icon="i-lucide:refresh-cw"
-              :loading="dailyReportRegenerating"
-              class="shrink-0"
-              @click="regenerateSelectedDailyReport"
-            >
-              重新生成
-            </UButton>
             <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
               <UButton
                 size="2xs"
@@ -6811,8 +6728,8 @@ onUnmounted(() => {
       <div v-if="!selectedArticle && !selectedDailyReport">
         <EmptyStatePanel
           icon="i-lucide-file-text"
-          :title="articlePaneMode === 'reports' ? '请选择一份 AI 日报' : '请选择一篇文章'"
-          :description="articlePaneMode === 'reports' ? '选择日报后，就可以在这里阅读内容。' : '选择文章后，就可以在这里阅读正文内容。'"
+          title="请选择一篇文章"
+          description="选择文章后，就可以在这里阅读正文内容。"
         />
       </div>
       <div v-else-if="selectedArticle && contentLoading">

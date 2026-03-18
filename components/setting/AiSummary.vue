@@ -4,7 +4,7 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-xl font-semibold md:text-2xl">AI 功能</h3>
-          <p class="text-sm text-slate-500 dark:text-slate-400">自定义标签、日报筛选与 AI 相关配置。</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">自定义标签与 AI 相关配置。</p>
         </div>
 
         <UButton
@@ -106,7 +106,7 @@
             <li><code class="font-mono">label.quality</code> 固定三选一：<code v-pre class="font-mono">{{featured}}</code> / <code v-pre class="font-mono">{{skim}}</code> / <code v-pre class="font-mono">{{skip}}</code></li>
             <li><code class="font-mono">label.sponsored</code> 只在明显软广时输出</li>
             <li><code class="font-mono">label.custom</code> 只从你配置的自定义标签里选，最多 3 个</li>
-            <li><code class="font-mono">summary</code> 会直接用于内容页摘要和 AI 日报</li>
+            <li><code class="font-mono">summary</code> 会直接用于内容页摘要</li>
           </ul>
         </div>
       </section>
@@ -242,70 +242,6 @@
         </div>
       </section>
 
-      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
-        <div class="mb-3">
-          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">AI 日报标签筛选</p>
-          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            AI 日报只会使用命中这些标签的文章摘要生成。默认只包含 <code v-pre class="font-mono text-[11px]">{{featured}}</code>。
-          </p>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <button
-            v-for="tag in availableDailyReportLabels"
-            :key="`report-label-${tag.variable}`"
-            type="button"
-            class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150"
-            :class="
-              isDailyReportLabelIncluded(tag.variable)
-                ? 'border-transparent text-white shadow-[0_10px_20px_rgba(15,23,42,0.12)]'
-                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:text-white'
-            "
-            :style="isDailyReportLabelIncluded(tag.variable) ? { backgroundColor: tag.color } : undefined"
-            @click="toggleDailyReportIncludedLabel(tag.variable)"
-          >
-            {{ tag.label }}
-          </button>
-        </div>
-      </section>
-
-      <section v-if="isAdmin" class="app-shell-muted rounded-[26px] p-4 sm:p-5">
-        <div class="mb-3">
-          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">AI 日报系统提示词</p>
-          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            日报只消费文章的标题、来源信息、标签和摘要，不会再把原文全文重复发给模型。
-          </p>
-        </div>
-
-        <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
-          <UButton
-            size="xs"
-            color="gray"
-            variant="soft"
-            icon="i-lucide:clipboard-paste"
-            @click="pasteTextIntoField('aiDailyReportSystemPrompt', 'AI 日报提示词')"
-          >
-            粘贴
-          </UButton>
-          <UButton
-            size="xs"
-            color="gray"
-            variant="soft"
-            icon="i-lucide:trash-2"
-            @click="clearTextField('aiDailyReportSystemPrompt', 'AI 日报提示词')"
-          >
-            清空
-          </UButton>
-        </div>
-
-        <UTextarea
-          v-model="preferences.aiDailyReportSystemPrompt"
-          :rows="8"
-          autoresize
-          placeholder="输入生成 AI 日报的系统提示词"
-          class="font-mono text-sm"
-        />
-      </section>
     </div>
     <div class="flex justify-end">
       <UButton color="black" icon="i-lucide:save" :loading="savingPreferences" @click="saveAiSettings">

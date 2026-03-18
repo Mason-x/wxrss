@@ -117,7 +117,7 @@ const sections = computed<SettingsSection[]>(() => {
     {
       id: 'ai',
       label: 'AI 功能',
-      description: '自定义标签与日报筛选',
+      description: '自定义标签与 AI 摘要配置',
       icon: 'i-lucide:sparkles',
       component: SettingAiSummary,
     },

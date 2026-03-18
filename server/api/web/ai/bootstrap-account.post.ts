@@ -1,4 +1,4 @@
-import { runAiAccountBootstrap, runAiDailyDigest } from '~/server/utils/ai-daily';
+import { runAiAccountBootstrap } from '~/server/utils/ai-daily';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 interface BootstrapAccountBody {
@@ -27,13 +27,7 @@ export default defineEventHandler(async event => {
     });
   }
 
-  const bootstrap = await runAiAccountBootstrap(authKey, fakeid, limit);
-  const daily = await runAiDailyDigest(authKey);
-
   return {
-    data: {
-      ...bootstrap,
-      daily,
-    },
+    data: await runAiAccountBootstrap(authKey, fakeid, limit),
   };
 });

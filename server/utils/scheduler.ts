@@ -15,7 +15,6 @@ import {
 import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
 import { getStoredPreferencesByAuthKey, listStoredPreferencesEntries } from '~/server/repositories/preferences';
 import { listAccounts, listArticlesPage, upsertArticles } from '~/server/repositories/reader';
-import { runAiDailyDigest } from '~/server/utils/ai-daily';
 import { cookieStore } from '~/server/utils/CookieStore';
 import { syncRssFeed } from '~/server/utils/rss';
 
@@ -471,8 +470,6 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
         await syncOneAccount(authKey, cookie, token, account, config, privateProxyConfig);
       }
     }
-
-    await runAiDailyDigest(authKey);
 
     await upsertSchedulerState(authKey, {
       lastRunDate: todayKey(),
