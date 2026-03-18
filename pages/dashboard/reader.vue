@@ -5432,10 +5432,10 @@ onUnmounted(() => {
             @pointerdown="beginMobileDrag('articles', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <div class="mobile-sticky-header sticky top-0 z-10 px-3 pb-3 pt-3">
+            <div class="mobile-sticky-header sticky top-0 z-10 px-3 pb-2 pt-2">
               <div class="app-shell-glass overflow-hidden border border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
-                <div class="px-4 pb-3 pt-3">
-                  <div class="flex items-start justify-between gap-3">
+                <div class="px-3 py-3">
+                  <div class="flex items-start gap-3">
                     <div class="min-w-0 flex flex-1 items-start gap-3">
                       <UButton
                         v-if="articlePaneMode !== 'reports' && selectedAccount"
@@ -5455,86 +5455,89 @@ onUnmounted(() => {
                         class="icon-btn mt-0.5"
                         @click="showMobileAccounts"
                       />
-                      <div v-else class="size-7 shrink-0" />
+                      <div v-else class="size-8 shrink-0" />
                       <div class="min-w-0 flex-1">
-                        <div v-if="selectedAccountInfo" class="flex items-center gap-2">
-                          <h1 class="truncate text-base font-semibold">{{ mobileArticlesHeaderState.title }}</h1>
-                          <UButton
-                            size="2xs"
-                            color="gray"
-                            variant="ghost"
-                            icon="i-lucide:pencil"
-                            :disabled="!selectedAccountInfo"
-                            class="icon-btn shrink-0"
-                            @click="editSelectedAccountCategory"
-                          />
-                          <UButton
-                            size="2xs"
-                            color="gray"
-                            variant="ghost"
-                            icon="i-lucide:minus"
-                            :disabled="!selectedAccount"
-                            :loading="isDeleting"
-                            class="icon-btn shrink-0"
-                            @click="deleteCurrentAccount"
-                          />
+                        <div class="flex items-start justify-between gap-2">
+                          <div class="min-w-0 flex-1">
+                            <h1 class="truncate text-[17px] font-semibold leading-6">
+                              {{ mobileArticlesHeaderState.title }}
+                            </h1>
+                            <p class="mt-1 truncate text-xs leading-4 text-slate-500 dark:text-slate-400">
+                              {{ mobileArticlesHeaderState.meta }}
+                            </p>
+                          </div>
+                          <div v-if="selectedAccountInfo" class="flex shrink-0 items-center gap-1.5">
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              icon="i-lucide:pencil"
+                              :disabled="!selectedAccountInfo"
+                              class="icon-btn"
+                              @click="editSelectedAccountCategory"
+                            />
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              icon="i-lucide:minus"
+                              :disabled="!selectedAccount"
+                              :loading="isDeleting"
+                              class="icon-btn"
+                              @click="deleteCurrentAccount"
+                            />
+                          </div>
                         </div>
-                        <h1 v-else class="truncate text-base font-semibold">
-                          {{ mobileArticlesHeaderState.title }}
-                        </h1>
-                        <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                          {{ mobileArticlesHeaderState.meta }}
-                        </p>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                          <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              icon="i-lucide:chevron-left"
+                              label="返回列表"
+                              class="toolbar-text-btn"
+                              @click="closeAiDailyReports()"
+                            />
+                          </UTooltip>
+                          <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              icon="i-lucide:sparkles"
+                              label="AI日报"
+                              class="toolbar-text-btn"
+                              @click="openAiDailyReports()"
+                            />
+                          </UTooltip>
+                          <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                              label="只看收藏"
+                              class="toolbar-text-btn mobile-favorite-toggle"
+                              :class="favoriteOnly ? 'is-active' : ''"
+                              @click="favoriteOnly = !favoriteOnly"
+                            />
+                          </UTooltip>
+                          <UTooltip :text="syncHeaderTooltip">
+                            <UButton
+                              size="2xs"
+                              color="gray"
+                              variant="ghost"
+                              icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                              label="同步"
+                              :disabled="!canSyncFromHeader"
+                              :loading="isSyncing"
+                              class="toolbar-text-btn"
+                              @click="onHeaderSyncClick"
+                            />
+                          </UTooltip>
+                        </div>
                       </div>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          icon="i-lucide:chevron-left"
-                          class="icon-btn"
-                          @click="closeAiDailyReports()"
-                        />
-                      </UTooltip>
-                      <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          icon="i-lucide:sparkles"
-                          label="AI日报"
-                          class="toolbar-text-btn"
-                          @click="openAiDailyReports()"
-                        />
-                      </UTooltip>
-                      <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                          label="只看收藏"
-                          class="toolbar-text-btn mobile-favorite-toggle"
-                          :class="favoriteOnly ? 'is-active' : ''"
-                          @click="favoriteOnly = !favoriteOnly"
-                        />
-                      </UTooltip>
-                      <UTooltip :text="syncHeaderTooltip">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          icon="i-heroicons:arrow-path-rounded-square-20-solid"
-                          label="同步"
-                          :disabled="!canSyncFromHeader"
-                          :loading="isSyncing"
-                          class="toolbar-text-btn"
-                          @click="onHeaderSyncClick"
-                        />
-                      </UTooltip>
                     </div>
                   </div>
                 </div>
@@ -5581,7 +5584,7 @@ onUnmounted(() => {
               class="space-y-3 px-3"
               :class="
                 shouldShowArticleFooterAction
-                  ? 'pb-[calc(env(safe-area-inset-bottom)+6.75rem)]'
+                  ? 'pb-6'
                   : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]'
               "
             >
@@ -5676,7 +5679,7 @@ onUnmounted(() => {
               class="px-3 py-8"
               :class="
                 shouldShowArticleFooterAction
-                  ? 'pb-[calc(env(safe-area-inset-bottom)+6.75rem)]'
+                  ? 'pb-6'
                   : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]'
               "
             >
@@ -5687,6 +5690,26 @@ onUnmounted(() => {
               />
             </div>
           </motion.div>
+
+          <div
+            v-if="shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
+            class="shrink-0 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2"
+          >
+            <div class="mobile-bottom-dock mx-auto w-full max-w-[720px] rounded-[28px] px-3 pt-3">
+              <UButton
+                size="sm"
+                color="gray"
+                variant="soft"
+                block
+                :loading="articleFooterActionLoading"
+                :disabled="articleFooterActionLoading"
+                class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+                @click="handleArticleFooterAction"
+              >
+                {{ articleFooterActionLabel }}
+              </UButton>
+            </div>
+          </div>
         </motion.div>
 
         <motion.div
@@ -5731,9 +5754,9 @@ onUnmounted(() => {
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <div class="mobile-sticky-header sticky top-0 z-10 px-4 pb-3 pt-3">
+            <div class="mobile-sticky-header sticky top-0 z-10 px-4 pb-2 pt-2">
               <div class="app-shell-glass overflow-hidden border border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
-                <div class="px-4 pb-3 pt-3">
+                <div class="px-3 py-3">
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0 flex flex-1 items-start gap-3">
                       <UButton
@@ -5745,10 +5768,10 @@ onUnmounted(() => {
                         @click="backFromMobileView"
                       />
                       <div class="min-w-0 flex-1">
-                        <h1 class="line-clamp-2 text-base font-semibold leading-5">
+                        <h1 class="line-clamp-2 text-[17px] font-semibold leading-6">
                           {{ mobileCurrentHeaderState.title }}
                         </h1>
-                        <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                        <p class="mt-1 truncate text-xs leading-4 text-slate-500 dark:text-slate-400">
                           {{ mobileCurrentHeaderState.meta }}
                         </p>
                       </div>
@@ -6214,26 +6237,6 @@ onUnmounted(() => {
           </motion.aside>
         </motion.div>
       </AnimatePresence>
-
-      <div
-        v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
-        class="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] md:hidden"
-      >
-        <div class="mx-auto w-full max-w-[720px] pointer-events-auto rounded-[28px] bg-[linear-gradient(180deg,rgba(248,250,252,0),rgba(248,250,252,0.94)_34%,rgba(248,250,252,0.99))] px-3 pt-5 dark:bg-[linear-gradient(180deg,rgba(2,6,23,0),rgba(2,6,23,0.94)_34%,rgba(2,6,23,0.99))]">
-          <UButton
-            size="sm"
-            color="gray"
-            variant="soft"
-            block
-            :loading="articleFooterActionLoading"
-            :disabled="articleFooterActionLoading"
-            class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
-            @click="handleArticleFooterAction"
-          >
-            {{ articleFooterActionLabel }}
-          </UButton>
-        </div>
-      </div>
 
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
@@ -7609,6 +7612,15 @@ onUnmounted(() => {
 
 :global(.dark) .mobile-sticky-header {
   background-image: linear-gradient(180deg, rgba(2, 6, 23, 0.98) 0%, rgba(2, 6, 23, 0.96) 72%, rgba(2, 6, 23, 0) 100%);
+}
+
+.mobile-bottom-dock {
+  background-image: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.94) 36%, rgba(248, 250, 252, 0.99) 100%);
+  backdrop-filter: blur(12px);
+}
+
+:global(.dark) .mobile-bottom-dock {
+  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.94) 36%, rgba(2, 6, 23, 0.99) 100%);
 }
 
 .reader-page-shell {
