@@ -4,13 +4,7 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 class="text-xl font-semibold md:text-2xl">AI 功能</h3>
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            {{
-              isAdmin
-                ? '管理员可维护摘要连接、全局提示词与默认标签体系；普通用户只会看到自己的标签与同步开关。'
-                : '你可以维护自己的自定义标签、日报筛选和自动摘要开关，其余 AI 设置由管理员统一维护。'
-            }}
-          </p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">自定义标签、日报筛选与 AI 相关配置。</p>
         </div>
 
         <UButton
@@ -26,14 +20,6 @@
     </template>
 
     <div class="ai-settings-form space-y-5">
-      <section
-        v-if="!isAdmin"
-        class="rounded-[24px] border border-sky-200/80 bg-white/85 px-4 py-3 text-sm text-sky-700 shadow-[0_12px_24px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
-      >
-        <p>AI 连接参数与系统提示词由管理员统一配置。</p>
-        <p v-if="!preferenceCapabilities.aiConfigured" class="mt-1">当前管理员还未完成 AI 配置，自动摘要和日报不会执行。</p>
-      </section>
-
       <section v-if="isAdmin" class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="mb-3">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">接口连接</p>
@@ -123,21 +109,6 @@
             <li><code class="font-mono">summary</code> 会直接用于内容页摘要和 AI 日报</li>
           </ul>
         </div>
-      </section>
-
-      <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
-        <div class="mb-3">
-          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">自动摘要开关</p>
-          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            同步新文章时是否自动生成摘要与标签。关闭后仍可在需要时手动生成。
-          </p>
-        </div>
-
-        <UCheckbox
-          v-model="preferences.aiAutoSummaryOnSyncEnabled"
-          name="aiAutoSummaryOnSyncEnabled"
-          label="同步时自动生成 AI 摘要与标签"
-        />
       </section>
 
       <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
@@ -359,7 +330,6 @@ import type { AiTagDefinition, Preferences } from '~/types/preferences';
 
 const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
 const preferenceAccess = usePreferencesAccess();
-const preferenceCapabilities = usePreferencesCapabilities();
 const { saveNow, saving: savingPreferences } = useSavePreferences();
 const toast = toastFactory();
 const testing = ref(false);
@@ -640,8 +610,6 @@ function toggleDailyReportIncludedLabel(variable: string) {
 }
 
 function resetAiDefaults() {
-  preferences.value.aiAutoSummaryOnSyncEnabled = DEFAULT_PREFERENCES.aiAutoSummaryOnSyncEnabled;
-
   if (isAdmin.value) {
     preferences.value.aiSummarySystemPrompt = FIXED_AI_SUMMARY_PROMPT_NOTE;
     preferences.value.aiTagSystemPrompt = FIXED_AI_TAG_PROMPT_NOTE;

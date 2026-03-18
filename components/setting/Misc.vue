@@ -2,19 +2,10 @@
   <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">其他选项</h3>
-      <p class="text-sm text-slate-500">
-        {{ isAdmin ? '同步节奏、缓存行为和列表显示规则。' : '你可以设置自己的同步时间范围，其余行为由管理员统一维护。' }}
-      </p>
+      <p class="text-sm text-slate-500">同步时间范围与系统行为设置。</p>
     </template>
 
     <div class="space-y-5">
-      <section
-        v-if="!isAdmin"
-        class="rounded-[24px] border border-sky-200/80 bg-white/85 px-4 py-3 text-sm text-sky-700 shadow-[0_12px_24px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
-      >
-        文章缓存、同步节奏、RSSHub 和新榜推荐配置由管理员统一设置，并对所有用户生效。
-      </section>
-
       <section v-if="isAdmin" class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="mb-4">
           <p class="text-sm font-medium text-slate-900 dark:text-slate-100">内容与缓存</p>

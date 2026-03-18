@@ -2,7 +2,7 @@
   <UCard class="app-shell-panel h-full overflow-hidden rounded-[30px]" :ui="cardUi">
     <template #header>
       <h3 class="text-xl font-semibold md:text-2xl">每日自动同步</h3>
-      <p class="text-sm text-slate-500">由服务端定时执行同步任务，页面无需保持打开。</p>
+      <p class="text-sm text-slate-500">设置每日自动同步的开关和执行时间。</p>
     </template>
 
     <div class="space-y-4">
@@ -28,16 +28,6 @@
         </div>
       </div>
 
-      <div class="grid gap-3 sm:grid-cols-2">
-        <div class="rounded-[22px] border border-white/75 bg-white/80 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
-          <p class="text-xs text-slate-500 dark:text-slate-400">执行方式</p>
-          <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">服务端定时任务</p>
-        </div>
-        <div class="rounded-[22px] border border-white/75 bg-white/80 px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
-          <p class="text-xs text-slate-500 dark:text-slate-400">页面要求</p>
-          <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">无需持续打开</p>
-        </div>
-      </div>
       <div class="flex justify-end">
         <UButton color="black" icon="i-lucide:save" :loading="savingPreferences" @click="saveSchedulerSettings">
           保存

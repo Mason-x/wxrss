@@ -39,14 +39,9 @@
               >
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        {{ loginAccount?.nickname || '当前登录账号' }}
-                      </p>
-                      <UBadge :color="isAdmin ? 'emerald' : 'gray'" variant="subtle">
-                        {{ isAdmin ? '管理员' : '普通用户' }}
-                      </UBadge>
-                    </div>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                      {{ loginAccount?.nickname || '当前登录账号' }}
+                    </p>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">当前登录账号的 Identity Key</p>
                     <p class="mt-2 break-all rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
                       {{ currentIdentityKey }}
@@ -59,13 +54,6 @@
                     </UButton>
                   </div>
                 </div>
-              </div>
-
-              <div
-                v-if="!isAdmin"
-                class="rounded-[28px] border border-sky-200/80 bg-white/85 px-5 py-4 text-sm text-sky-700 shadow-[0_12px_24px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
-              >
-                普通用户仅可调整个人同步与 AI 标签项。其余设置由管理员统一维护，并对所有用户生效。
               </div>
 
               <section
@@ -129,14 +117,14 @@ const sections = computed<SettingsSection[]>(() => {
     {
       id: 'ai',
       label: 'AI 功能',
-      description: '自定义标签、日报筛选与摘要开关',
+      description: '自定义标签与日报筛选',
       icon: 'i-lucide:sparkles',
       component: SettingAiSummary,
     },
     {
       id: 'misc',
       label: '其他选项',
-      description: isAdmin.value ? '全局行为与个人同步范围' : '个人同步时间范围',
+      description: '同步时间范围与系统行为',
       icon: 'i-lucide:sliders-horizontal',
       component: SettingMisc,
     },
