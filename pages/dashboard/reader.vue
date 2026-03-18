@@ -5419,132 +5419,131 @@ onUnmounted(() => {
               : { x: mobileArticlesSwipeX, scale: 1, opacity: 1 }
           "
         >
+          <div class="mobile-articles-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('articles', $event)" />
+
+          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+            <div class="px-4 pb-3 pt-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex flex-1 items-start gap-3">
+                  <UButton
+                    v-if="articlePaneMode !== 'reports' && selectedAccount"
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:chevron-left"
+                    class="icon-btn mt-0.5"
+                    @click="backFromMobileView"
+                  />
+                  <UButton
+                    v-else-if="articlePaneMode !== 'reports'"
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:menu"
+                    class="icon-btn mt-0.5"
+                    @click="showMobileAccounts"
+                  />
+                  <div v-else class="size-7 shrink-0" />
+                  <div class="min-w-0 flex-1">
+                    <div v-if="selectedAccountInfo" class="flex items-center gap-2">
+                      <h1 class="truncate text-base font-semibold">{{ mobileArticlesHeaderState.title }}</h1>
+                      <UButton
+                        size="2xs"
+                        color="gray"
+                        variant="ghost"
+                        icon="i-lucide:pencil"
+                        :disabled="!selectedAccountInfo"
+                        class="icon-btn shrink-0"
+                        @click="editSelectedAccountCategory"
+                      />
+                      <UButton
+                        size="2xs"
+                        color="gray"
+                        variant="ghost"
+                        icon="i-lucide:minus"
+                        :disabled="!selectedAccount"
+                        :loading="isDeleting"
+                        class="icon-btn shrink-0"
+                        @click="deleteCurrentAccount"
+                      />
+                    </div>
+                    <h1 v-else class="truncate text-base font-semibold">
+                      {{ mobileArticlesHeaderState.title }}
+                    </h1>
+                    <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                      {{ mobileArticlesHeaderState.meta }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:chevron-left"
+                      class="icon-btn"
+                      @click="closeAiDailyReports()"
+                    />
+                  </UTooltip>
+                  <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:sparkles"
+                      label="AI日报"
+                      class="toolbar-text-btn"
+                      @click="openAiDailyReports()"
+                    />
+                  </UTooltip>
+                  <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      label="只看收藏"
+                      class="toolbar-text-btn mobile-favorite-toggle"
+                      :class="favoriteOnly ? 'is-active' : ''"
+                      @click="favoriteOnly = !favoriteOnly"
+                    />
+                  </UTooltip>
+                  <UTooltip :text="syncHeaderTooltip">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                      label="同步"
+                      :disabled="!canSyncFromHeader"
+                      :loading="isSyncing"
+                      class="toolbar-text-btn"
+                      @click="onHeaderSyncClick"
+                    />
+                  </UTooltip>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="loading" class="px-3 py-3">
             <LoadingCards />
           </div>
           <motion.div
             v-else
             ref="mobileArticlesListRef"
-            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto"
+            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-3 pt-3"
             :class="[
               mobileView === 'article' ? 'pointer-events-none' : '',
+              mobileView === 'articles' && shouldShowArticleFooterAction
+                ? 'pb-[calc(env(safe-area-inset-bottom)+6rem)]'
+                : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]',
             ]"
-            @pointerdown="beginMobileDrag('articles', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
-            <div class="mobile-sticky-header sticky top-0 z-10 px-3 pb-2 pt-2">
-              <div class="app-shell-glass overflow-hidden border border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
-                <div class="px-3 py-3">
-                  <div class="flex items-start gap-3">
-                    <div class="min-w-0 flex flex-1 items-start gap-3">
-                      <UButton
-                        v-if="articlePaneMode !== 'reports' && selectedAccount"
-                        size="2xs"
-                        color="gray"
-                        variant="ghost"
-                        icon="i-lucide:chevron-left"
-                        class="icon-btn mt-0.5"
-                        @click="backFromMobileView"
-                      />
-                      <UButton
-                        v-else-if="articlePaneMode !== 'reports'"
-                        size="2xs"
-                        color="gray"
-                        variant="ghost"
-                        icon="i-lucide:menu"
-                        class="icon-btn mt-0.5"
-                        @click="showMobileAccounts"
-                      />
-                      <div v-else class="size-8 shrink-0" />
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-start justify-between gap-2">
-                          <div class="min-w-0 flex-1">
-                            <h1 class="truncate text-[17px] font-semibold leading-6">
-                              {{ mobileArticlesHeaderState.title }}
-                            </h1>
-                            <p class="mt-1 truncate text-xs leading-4 text-slate-500 dark:text-slate-400">
-                              {{ mobileArticlesHeaderState.meta }}
-                            </p>
-                          </div>
-                          <div v-if="selectedAccountInfo" class="flex shrink-0 items-center gap-1.5">
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              icon="i-lucide:pencil"
-                              :disabled="!selectedAccountInfo"
-                              class="icon-btn"
-                              @click="editSelectedAccountCategory"
-                            />
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              icon="i-lucide:minus"
-                              :disabled="!selectedAccount"
-                              :loading="isDeleting"
-                              class="icon-btn"
-                              @click="deleteCurrentAccount"
-                            />
-                          </div>
-                        </div>
-                        <div class="mt-3 flex flex-wrap gap-2">
-                          <UTooltip v-if="articlePaneMode === 'reports'" text="返回文章列表">
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              icon="i-lucide:chevron-left"
-                              label="返回列表"
-                              class="toolbar-text-btn"
-                              @click="closeAiDailyReports()"
-                            />
-                          </UTooltip>
-                          <UTooltip v-else-if="showDailyReportEntryButton" text="打开 AI 日报">
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              icon="i-lucide:sparkles"
-                              label="AI日报"
-                              class="toolbar-text-btn"
-                              @click="openAiDailyReports()"
-                            />
-                          </UTooltip>
-                          <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              :icon="favoriteOnly ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                              label="只看收藏"
-                              class="toolbar-text-btn mobile-favorite-toggle"
-                              :class="favoriteOnly ? 'is-active' : ''"
-                              @click="favoriteOnly = !favoriteOnly"
-                            />
-                          </UTooltip>
-                          <UTooltip :text="syncHeaderTooltip">
-                            <UButton
-                              size="2xs"
-                              color="gray"
-                              variant="ghost"
-                              icon="i-heroicons:arrow-path-rounded-square-20-solid"
-                              label="同步"
-                              :disabled="!canSyncFromHeader"
-                              :loading="isSyncing"
-                              class="toolbar-text-btn"
-                              @click="onHeaderSyncClick"
-                            />
-                          </UTooltip>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <ul v-if="articlePaneMode === 'reports' && displayedDailyReports.length > 0" class="space-y-3 px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)]">
+            <ul v-if="articlePaneMode === 'reports' && displayedDailyReports.length > 0" class="space-y-3">
               <motion.li
                 v-for="(report, index) in displayedDailyReports"
                 :key="report.reportDate"
@@ -5581,12 +5580,7 @@ onUnmounted(() => {
             </ul>
             <ul
               v-else-if="displayedArticles.length > 0"
-              class="space-y-3 px-3"
-              :class="
-                shouldShowArticleFooterAction
-                  ? 'pb-6'
-                  : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]'
-              "
+              class="space-y-3"
             >
               <motion.li
                 v-for="(article, index) in displayedArticles"
@@ -5677,11 +5671,6 @@ onUnmounted(() => {
             <div
               v-else
               class="px-3 py-8"
-              :class="
-                shouldShowArticleFooterAction
-                  ? 'pb-6'
-                  : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]'
-              "
             >
               <EmptyStatePanel
                 :icon="articleListEmptyState.icon"
@@ -5690,26 +5679,6 @@ onUnmounted(() => {
               />
             </div>
           </motion.div>
-
-          <div
-            v-if="shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
-            class="shrink-0 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2"
-          >
-            <div class="mobile-bottom-dock mx-auto w-full max-w-[720px] rounded-[28px] px-3 pt-3">
-              <UButton
-                size="sm"
-                color="gray"
-                variant="soft"
-                block
-                :loading="articleFooterActionLoading"
-                :disabled="articleFooterActionLoading"
-                class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
-                @click="handleArticleFooterAction"
-              >
-                {{ articleFooterActionLabel }}
-              </UButton>
-            </div>
-          </div>
         </motion.div>
 
         <motion.div
@@ -5740,6 +5709,67 @@ onUnmounted(() => {
         >
           <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
 
+          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+            <div class="px-4 pb-3 pt-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex flex-1 items-start gap-3">
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:chevron-left"
+                    class="icon-btn mt-0.5"
+                    @click="backFromMobileView"
+                  />
+                  <div class="min-w-0 flex-1">
+                    <h1 class="line-clamp-2 text-base font-semibold leading-5">
+                      {{ mobileCurrentHeaderState.title }}
+                    </h1>
+                    <p class="mt-1 truncate text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                      {{ mobileCurrentHeaderState.meta }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <UTooltip v-if="selectedDailyReport && canRegenerateSelectedDailyReport" text="重新生成当日日报">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:refresh-cw"
+                      class="icon-btn"
+                      :loading="dailyReportRegenerating"
+                      @click="regenerateSelectedDailyReport"
+                    />
+                  </UTooltip>
+                  <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      class="icon-btn article-star-btn"
+                      :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
+                      @click="toggleArticleFavorite(selectedArticle)"
+                    />
+                  </UTooltip>
+                  <UTooltip text="查看原文">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:external-link"
+                      class="icon-btn"
+                      :disabled="!selectedArticle"
+                      @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
+                    />
+                  </UTooltip>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="selectedArticle && contentLoading">
             <EmptyStatePanel
               icon="i-lucide-loader-circle"
@@ -5750,74 +5780,10 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticleContentRef"
-            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto"
-            @pointerdown="beginMobileDrag('article', $event)"
+            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             @scroll.passive="onMobileReaderScroll"
           >
-            <div class="mobile-sticky-header sticky top-0 z-10 px-4 pb-2 pt-2">
-              <div class="app-shell-glass overflow-hidden border border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
-                <div class="px-3 py-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0 flex flex-1 items-start gap-3">
-                      <UButton
-                        size="2xs"
-                        color="gray"
-                        variant="ghost"
-                        icon="i-lucide:chevron-left"
-                        class="icon-btn mt-0.5"
-                        @click="backFromMobileView"
-                      />
-                      <div class="min-w-0 flex-1">
-                        <h1 class="line-clamp-2 text-[17px] font-semibold leading-6">
-                          {{ mobileCurrentHeaderState.title }}
-                        </h1>
-                        <p class="mt-1 truncate text-xs leading-4 text-slate-500 dark:text-slate-400">
-                          {{ mobileCurrentHeaderState.meta }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <UTooltip v-if="selectedDailyReport && canRegenerateSelectedDailyReport" text="重新生成当日日报">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          icon="i-lucide:refresh-cw"
-                          class="icon-btn"
-                          :loading="dailyReportRegenerating"
-                          @click="regenerateSelectedDailyReport"
-                        />
-                      </UTooltip>
-                      <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                          class="icon-btn article-star-btn"
-                          :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
-                          @click="toggleArticleFavorite(selectedArticle)"
-                        />
-                      </UTooltip>
-                      <UTooltip text="查看原文">
-                        <UButton
-                          size="2xs"
-                          color="gray"
-                          variant="ghost"
-                          icon="i-lucide:external-link"
-                          class="icon-btn"
-                          :disabled="!selectedArticle"
-                          @click="selectedArticle && openOriginalArticle(selectedArticle.link)"
-                        />
-                      </UTooltip>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mx-auto w-full max-w-[920px] px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)]">
+            <div class="mx-auto w-full max-w-[920px]">
               <section
                 v-if="selectedArticle"
                 class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
@@ -6237,6 +6203,26 @@ onUnmounted(() => {
           </motion.aside>
         </motion.div>
       </AnimatePresence>
+
+      <div
+        v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
+        class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
+      >
+        <div class="mobile-footer-dock mx-auto max-w-[720px] px-2.5 pb-1.5 pt-4 pointer-events-auto">
+          <UButton
+            size="sm"
+            color="gray"
+            variant="soft"
+            block
+            :loading="articleFooterActionLoading"
+            :disabled="articleFooterActionLoading"
+            class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            @click="handleArticleFooterAction"
+          >
+            {{ articleFooterActionLabel }}
+          </UButton>
+        </div>
+      </div>
 
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
@@ -7606,21 +7592,13 @@ onUnmounted(() => {
   transform: translateZ(0);
 }
 
-.mobile-sticky-header {
-  background-image: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(248, 250, 252, 0.96) 72%, rgba(248, 250, 252, 0) 100%);
-}
-
-:global(.dark) .mobile-sticky-header {
-  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0.98) 0%, rgba(2, 6, 23, 0.96) 72%, rgba(2, 6, 23, 0) 100%);
-}
-
-.mobile-bottom-dock {
-  background-image: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.94) 36%, rgba(248, 250, 252, 0.99) 100%);
+.mobile-footer-dock {
+  background-image: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.88) 42%, rgba(248, 250, 252, 0.96) 100%);
   backdrop-filter: blur(12px);
 }
 
-:global(.dark) .mobile-bottom-dock {
-  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.94) 36%, rgba(2, 6, 23, 0.99) 100%);
+:global(.dark) .mobile-footer-dock {
+  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.88) 42%, rgba(2, 6, 23, 0.96) 100%);
 }
 
 .reader-page-shell {
@@ -7681,6 +7659,7 @@ onUnmounted(() => {
   background-image: linear-gradient(180deg, rgba(2, 6, 23, 0.985) 0%, rgba(2, 6, 23, 1) 12%, rgba(2, 6, 23, 1) 100%);
 }
 
+.mobile-articles-edge-sensor,
 .mobile-article-edge-sensor {
   width: 32px;
   touch-action: none;
