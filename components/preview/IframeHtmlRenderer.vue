@@ -18,7 +18,7 @@
 import DOMPurify from 'dompurify';
 import type { NitroFetchRequest } from 'nitropack';
 import usePreferences from '~/composables/usePreferences';
-import { validatePrivateProxyList } from '~/config/proxy';
+import usePreferencesCapabilities from '~/composables/usePreferencesCapabilities';
 import type { Preferences } from '~/types/preferences';
 
 interface Props {
@@ -38,6 +38,7 @@ const emit = defineEmits<{
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const preferences = usePreferences() as unknown as Ref<Preferences>;
+const preferenceCapabilities = usePreferencesCapabilities();
 const fetcher = $fetch as <T>(request: NitroFetchRequest, options?: Record<string, any>) => Promise<T>;
 const preparedHtml = ref('');
 let resizeObserver: ResizeObserver | null = null;
@@ -516,19 +517,6 @@ function buildSrcdoc(html: string): string {
   return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttrs}>${sanitized}</body></html>`;
 }
 
-function getActivePrivateProxy() {
-  const { proxies } = validatePrivateProxyList(preferences.value.privateProxyList || []);
-  const proxy = proxies[0];
-  if (!proxy) {
-    return null;
-  }
-
-  return {
-    proxy,
-    authorization: preferences.value.privateProxyAuthorization || '',
-  };
-}
-
 function shouldProxyVideoUrl(url: string): boolean {
   if (!url || typeof window === 'undefined') {
     return false;
@@ -547,8 +535,7 @@ function shouldProxyVideoUrl(url: string): boolean {
 }
 
 function buildPrivateProxyUrl(url: string): string {
-  const activeProxy = getActivePrivateProxy();
-  if (!activeProxy || !shouldProxyVideoUrl(url)) {
+  if (!preferenceCapabilities.value.privateProxyConfigured || !shouldProxyVideoUrl(url)) {
     return url;
   }
 
@@ -557,7 +544,11 @@ function buildPrivateProxyUrl(url: string): string {
     Origin: 'https://mp.weixin.qq.com',
   };
 
-  return `${activeProxy.proxy}?url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers))}&authorization=${encodeURIComponent(activeProxy.authorization)}`;
+  const query = new URLSearchParams({
+    url,
+    headers: JSON.stringify(headers),
+  });
+  return `/api/web/proxy/fetch?${query.toString()}`;
 }
 
 async function refreshMpVideos(doc: Document): Promise<void> {
@@ -1014,8 +1005,7 @@ watch(
   [
     () => props.html,
     () => props.theme,
-    () => preferences.value.privateProxyAuthorization,
-    () => preferences.value.privateProxyList,
+    () => preferenceCapabilities.value.privateProxyConfigured,
   ],
   () => {
     void refreshPreparedHtml();

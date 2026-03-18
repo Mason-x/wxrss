@@ -41,7 +41,9 @@
                   <div class="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 pb-4 pt-5 dark:border-slate-800/80">
                     <div class="min-w-0">
                       <p class="text-base font-semibold">系统菜单</p>
-                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">页面切换和全局工具统一放在顶部，不再占用底部空间。</p>
+                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        页面切换和全局工具统一放在顶部，不再占用底部空间。
+                      </p>
                     </div>
                     <UButton
                       size="2xs"
@@ -123,6 +125,7 @@ interface MobileNavItem {
 }
 
 const route = useRoute();
+const loginAccount = useLoginAccount();
 const mobileMenuOpen = ref(false);
 const readerMode = computed(() => route.path.startsWith('/dashboard/reader'));
 const embeddedMode = computed(() => {
@@ -134,18 +137,24 @@ const embeddedMode = computed(() => {
 });
 const standaloneMode = computed(() => readerMode.value || embeddedMode.value);
 
-const mobileNavItems: MobileNavItem[] = [
-  { name: '阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
-  { name: '账号', icon: 'i-lucide:users', href: '/dashboard/account' },
-  { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
-  { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
-  { name: '私有代理', icon: 'i-lucide:network', href: '/dashboard/proxy' },
-  { name: 'API', icon: 'i-lucide:file-code-2', href: '/dashboard/api' },
-  { name: '设置', icon: 'i-lucide:settings-2', href: '/dashboard/settings' },
-];
+const mobileNavItems = computed<MobileNavItem[]>(() => {
+  const isAdmin = loginAccount.value?.role === 'admin';
+  const items: MobileNavItem[] = [
+    { name: '阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
+    { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
+    { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
+    { name: '设置', icon: 'i-lucide:settings-2', href: '/dashboard/settings' },
+  ];
+
+  if (isAdmin) {
+    items.push({ name: '用户管理', icon: 'i-lucide:shield-check', href: '/dashboard/users' });
+  }
+
+  return items;
+});
 
 const mobileCurrentTitle = computed(() => {
-  const item = mobileNavItems.find(item => route.path === item.href);
+  const item = mobileNavItems.value.find(entry => route.path === entry.href);
   if (item) {
     return item.name;
   }

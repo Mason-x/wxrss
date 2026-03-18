@@ -706,6 +706,8 @@ const toast = useToast();
 const route = useRoute();
 const { navigateToLogin } = useMpAuth();
 const preferences = usePreferences() as unknown as Ref<Preferences>;
+const preferenceAccess = usePreferencesAccess();
+const preferenceCapabilities = usePreferencesCapabilities();
 
 const isOpen = ref(false);
 const mode = ref<'mp' | 'rss'>('mp');
@@ -846,7 +848,7 @@ let previousBodyPosition = '';
 let previousBodyTop = '';
 let previousBodyWidth = '';
 
-const hasNewrankCookie = computed(() => Boolean(String(preferences.value.newrankCookie || '').trim()));
+const hasNewrankCookie = computed(() => preferenceCapabilities.value.newrankConfigured);
 const showMpRecommendations = computed(() => mode.value === 'mp' && !accountQuery.value.trim());
 const selectedNewrankCategory = computed(
   () =>
@@ -1590,11 +1592,15 @@ watch(accountQuery, value => {
 });
 
 watch(
-  () => preferences.value.newrankCookie,
+  () => preferenceCapabilities.value.newrankConfigured,
   () => {
     newrankLoadedOnce = false;
     newrankState.value = hasNewrankCookie.value ? 'empty' : 'missing_cookie';
-    newrankMessage.value = hasNewrankCookie.value ? '' : '请先在设置里填写新榜 Cookie，才能加载公众号月榜推荐。';
+    newrankMessage.value = hasNewrankCookie.value
+      ? ''
+      : preferenceAccess.value.role === 'admin'
+        ? '请先在设置里填写新榜 Cookie，才能加载公众号月榜推荐。'
+        : '新榜月榜推荐由管理员统一配置。';
     newrankLatestMonthLabel.value = '';
     newrankItems.value = [];
     if (!selectedNewrankCategoryId.value && newrankCategories.value[0]?.id) {

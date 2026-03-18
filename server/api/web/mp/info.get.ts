@@ -1,5 +1,6 @@
+import { getAuthKeyBindingByAuthKey } from '~/server/repositories/auth-key-binding';
 import { getTokenFromStore } from '~/server/utils/CookieStore';
-import { proxyMpRequest } from '~/server/utils/proxy-request';
+import { getAuthKeyFromRequest, proxyMpRequest } from '~/server/utils/proxy-request';
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -57,6 +58,7 @@ function buildIdentityKey(info: { user_name?: string; biz_uin?: string; alias?: 
 }
 
 export default defineEventHandler(async event => {
+  const authKey = getAuthKeyFromRequest(event);
   const token = await getTokenFromStore(event);
 
   const html: string = await proxyMpRequest({
@@ -80,20 +82,22 @@ export default defineEventHandler(async event => {
 
   const profileNickName = normalizeProfileValue(nick_name);
   const profileHeadImg = normalizeProfileValue(head_img);
-  const identity_key =
+  const extractedIdentityKey =
     buildIdentityKey({ user_name, biz_uin, alias }) ||
     (profileNickName && profileHeadImg
       ? `profile:${profileNickName}|${profileHeadImg}`
       : profileNickName
         ? `profile:${profileNickName}`
         : '');
+  const binding = await getAuthKeyBindingByAuthKey(authKey);
+  const identity_key = String(binding?.identityKey || extractedIdentityKey).trim();
 
   return {
     nick_name,
     head_img,
-    user_name,
-    biz_uin,
-    alias,
+    user_name: user_name || binding?.userName || '',
+    biz_uin: biz_uin || binding?.bizUin || '',
+    alias: alias || binding?.alias || '',
     identity_key,
   };
 });

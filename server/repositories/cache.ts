@@ -1,4 +1,5 @@
 import { getSqliteDb } from '~/server/db/sqlite';
+import { resolveAccountOwnerScope } from '~/server/repositories/account-owner';
 
 interface HtmlCachePayload {
   fakeid: string;
@@ -80,13 +81,20 @@ function parseJson<T>(raw: string, fallback: T): T {
   }
 }
 
+async function resolveCacheOwner(authKey: string) {
+  return resolveAccountOwnerScope(authKey);
+}
+
 export async function upsertHtmlCache(authKey: string, payload: HtmlCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_html(auth_key, url, fakeid, title, comment_id, mime_type, content_blob, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_html(owner_key, identity_key, auth_key, url, fakeid, title, comment_id, mime_type, content_blob, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       title = excluded.title,
       comment_id = excluded.comment_id,
@@ -94,7 +102,9 @@ export async function upsertHtmlCache(authKey: string, payload: HtmlCachePayload
       content_blob = excluded.content_blob,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.title || '',
@@ -107,6 +117,7 @@ export async function upsertHtmlCache(authKey: string, payload: HtmlCachePayload
 }
 
 export async function getHtmlCache(authKey: string, url: string): Promise<HtmlCacheEntity | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -119,9 +130,9 @@ export async function getHtmlCache(authKey: string, url: string): Promise<HtmlCa
     `
     SELECT fakeid, url, title, comment_id, mime_type, content_blob
     FROM cache_html
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -136,31 +147,37 @@ export async function getHtmlCache(authKey: string, url: string): Promise<HtmlCa
 }
 
 export async function deleteHtmlCache(authKey: string, url: string): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     DELETE FROM cache_html
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   return true;
 }
 
 export async function upsertCommentCache(authKey: string, payload: JsonCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_comment(auth_key, url, fakeid, title, data_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_comment(owner_key, identity_key, auth_key, url, fakeid, title, data_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       title = excluded.title,
       data_json = excluded.data_json,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.title || '',
@@ -171,6 +188,7 @@ export async function upsertCommentCache(authKey: string, payload: JsonCachePayl
 }
 
 export async function getCommentCache(authKey: string, url: string): Promise<any | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -181,9 +199,9 @@ export async function getCommentCache(authKey: string, url: string): Promise<any
     `
     SELECT fakeid, url, title, data_json
     FROM cache_comment
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -196,18 +214,23 @@ export async function getCommentCache(authKey: string, url: string): Promise<any
 }
 
 export async function upsertResourceCache(authKey: string, payload: ResourceCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_resource(auth_key, url, fakeid, mime_type, content_blob, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_resource(owner_key, identity_key, auth_key, url, fakeid, mime_type, content_blob, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       mime_type = excluded.mime_type,
       content_blob = excluded.content_blob,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.mimeType || 'application/octet-stream',
@@ -218,6 +241,7 @@ export async function upsertResourceCache(authKey: string, payload: ResourceCach
 }
 
 export async function getResourceCache(authKey: string, url: string): Promise<ResourceCacheEntity | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -228,9 +252,9 @@ export async function getResourceCache(authKey: string, url: string): Promise<Re
     `
     SELECT fakeid, url, mime_type, content_blob
     FROM cache_resource
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -243,18 +267,23 @@ export async function getResourceCache(authKey: string, url: string): Promise<Re
 }
 
 export async function upsertMetadataCache(authKey: string, payload: JsonCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_metadata(auth_key, url, fakeid, title, data_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_metadata(owner_key, identity_key, auth_key, url, fakeid, title, data_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       title = excluded.title,
       data_json = excluded.data_json,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.title || '',
@@ -265,6 +294,7 @@ export async function upsertMetadataCache(authKey: string, payload: JsonCachePay
 }
 
 export async function getMetadataCache(authKey: string, url: string): Promise<any | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -275,9 +305,9 @@ export async function getMetadataCache(authKey: string, url: string): Promise<an
     `
     SELECT fakeid, url, title, data_json
     FROM cache_metadata
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -291,17 +321,22 @@ export async function getMetadataCache(authKey: string, url: string): Promise<an
 }
 
 export async function upsertResourceMapCache(authKey: string, payload: ResourceMapCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_resource_map(auth_key, url, fakeid, resources_json, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_resource_map(owner_key, identity_key, auth_key, url, fakeid, resources_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       resources_json = excluded.resources_json,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     JSON.stringify(Array.isArray(payload.resources) ? payload.resources : []),
@@ -311,6 +346,7 @@ export async function upsertResourceMapCache(authKey: string, payload: ResourceM
 }
 
 export async function getResourceMapCache(authKey: string, url: string): Promise<any | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -320,9 +356,9 @@ export async function getResourceMapCache(authKey: string, url: string): Promise
     `
     SELECT fakeid, url, resources_json
     FROM cache_resource_map
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -334,18 +370,23 @@ export async function getResourceMapCache(authKey: string, url: string): Promise
 }
 
 export async function upsertAssetCache(authKey: string, payload: ResourceCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_asset(auth_key, url, fakeid, mime_type, content_blob, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_asset(owner_key, identity_key, auth_key, url, fakeid, mime_type, content_blob, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       mime_type = excluded.mime_type,
       content_blob = excluded.content_blob,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.mimeType || 'application/octet-stream',
@@ -356,6 +397,7 @@ export async function upsertAssetCache(authKey: string, payload: ResourceCachePa
 }
 
 export async function getAssetCache(authKey: string, url: string): Promise<ResourceCacheEntity | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -366,9 +408,9 @@ export async function getAssetCache(authKey: string, url: string): Promise<Resou
     `
     SELECT fakeid, url, mime_type, content_blob
     FROM cache_asset
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -381,18 +423,23 @@ export async function getAssetCache(authKey: string, url: string): Promise<Resou
 }
 
 export async function upsertCommentReplyCache(authKey: string, payload: CommentReplyCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_comment_reply(auth_key, url, content_id, fakeid, title, data_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url, content_id) DO UPDATE SET
+    INSERT INTO cache_comment_reply(owner_key, identity_key, auth_key, url, content_id, fakeid, title, data_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url, content_id) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       title = excluded.title,
       data_json = excluded.data_json,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.contentID,
     payload.fakeid || '',
@@ -404,6 +451,7 @@ export async function upsertCommentReplyCache(authKey: string, payload: CommentR
 }
 
 export async function getCommentReplyCache(authKey: string, url: string, contentID: string): Promise<any | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -415,9 +463,9 @@ export async function getCommentReplyCache(authKey: string, url: string, content
     `
     SELECT fakeid, url, title, content_id, data_json
     FROM cache_comment_reply
-    WHERE auth_key = ? AND url = ? AND content_id = ?
+    WHERE owner_key = ? AND url = ? AND content_id = ?
     `,
-    authKey,
+    owner.ownerKey,
     url,
     contentID
   );
@@ -432,12 +480,15 @@ export async function getCommentReplyCache(authKey: string, url: string, content
 }
 
 export async function upsertDebugCache(authKey: string, payload: DebugCachePayload): Promise<boolean> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO cache_debug(auth_key, url, fakeid, title, type, mime_type, content_blob, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, url) DO UPDATE SET
+    INSERT INTO cache_debug(owner_key, identity_key, auth_key, url, fakeid, title, type, mime_type, content_blob, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, url) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       fakeid = excluded.fakeid,
       title = excluded.title,
       type = excluded.type,
@@ -445,7 +496,9 @@ export async function upsertDebugCache(authKey: string, payload: DebugCachePaylo
       content_blob = excluded.content_blob,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     payload.url,
     payload.fakeid || '',
     payload.title || '',
@@ -458,6 +511,7 @@ export async function upsertDebugCache(authKey: string, payload: DebugCachePaylo
 }
 
 export async function getDebugCache(authKey: string, url: string): Promise<DebugCacheEntity | null> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     fakeid: string;
@@ -470,9 +524,9 @@ export async function getDebugCache(authKey: string, url: string): Promise<Debug
     `
     SELECT fakeid, url, title, type, mime_type, content_blob
     FROM cache_debug
-    WHERE auth_key = ? AND url = ?
+    WHERE owner_key = ? AND url = ?
     `,
-    authKey,
+    owner.ownerKey,
     url
   );
   if (!row) return null;
@@ -487,6 +541,7 @@ export async function getDebugCache(authKey: string, url: string): Promise<Debug
 }
 
 export async function listDebugCache(authKey: string, limit = 1000): Promise<DebugCacheEntity[]> {
+  const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();
   const rows = await db.all<{
     fakeid: string;
@@ -499,11 +554,11 @@ export async function listDebugCache(authKey: string, limit = 1000): Promise<Deb
     `
     SELECT fakeid, url, title, type, mime_type, content_blob
     FROM cache_debug
-    WHERE auth_key = ?
+    WHERE owner_key = ?
     ORDER BY updated_at DESC
     LIMIT ?
     `,
-    authKey,
+    owner.ownerKey,
     Math.max(1, Math.min(5000, Math.floor(Number(limit) || 1000)))
   );
 

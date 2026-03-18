@@ -32,6 +32,14 @@ export interface UpsertAuthKeyBindingInput {
   headImg?: string;
 }
 
+export interface AuthKeyBindingMatchInput {
+  userName?: string;
+  bizUin?: string;
+  alias?: string;
+  nickname?: string;
+  headImg?: string;
+}
+
 function mapBindingRow(row: BindingRow): AuthKeyBindingRecord {
   return {
     identityKey: row.identity_key,
@@ -60,6 +68,16 @@ function getIdentityKeyPriority(identityKey: string): number {
     return 3;
   }
   return 4;
+}
+
+function normalizeMatchText(value: unknown): string {
+  return String(value || '').trim();
+}
+
+function normalizeProfileMatchValue(value: unknown): string {
+  return normalizeMatchText(value)
+    .replace(/^https?:\/\//i, '')
+    .replace(/\?.*$/, '');
 }
 
 function compareBindingRows(a: BindingRow, b: BindingRow): number {
@@ -113,6 +131,74 @@ export async function getAuthKeyBindingByAuthKey(authKey: string): Promise<AuthK
 
   const row = (rows || []).sort(compareBindingRows)[0] || null;
   return row ? mapBindingRow(row) : null;
+}
+
+function getBindingMatchScore(row: BindingRow, input: AuthKeyBindingMatchInput): number | null {
+  const userName = normalizeMatchText(input.userName);
+  const bizUin = normalizeMatchText(input.bizUin);
+  const alias = normalizeMatchText(input.alias);
+  const nickname = normalizeMatchText(input.nickname);
+  const headImg = normalizeProfileMatchValue(input.headImg);
+
+  if (userName && normalizeMatchText(row.user_name) === userName) {
+    return 0;
+  }
+  if (bizUin && normalizeMatchText(row.biz_uin) === bizUin) {
+    return 1;
+  }
+  if (alias && normalizeMatchText(row.alias) === alias) {
+    return 2;
+  }
+
+  const rowNickname = normalizeMatchText(row.nickname);
+  const rowHeadImg = normalizeProfileMatchValue(row.head_img);
+  if (nickname && headImg && rowNickname === nickname && rowHeadImg === headImg) {
+    return 3;
+  }
+
+  return null;
+}
+
+export async function findAuthKeyBindingByAccountInfo(
+  input: AuthKeyBindingMatchInput
+): Promise<AuthKeyBindingRecord | null> {
+  const hasMatchInput = [input.userName, input.bizUin, input.alias, input.nickname, input.headImg]
+    .map(value => String(value || '').trim())
+    .some(Boolean);
+  if (!hasMatchInput) {
+    return null;
+  }
+
+  const db = await getSqliteDb();
+  const rows = await db.all<BindingRow>(
+    `
+    SELECT *
+    FROM mp_account_identity
+    ORDER BY updated_at DESC
+    `
+  );
+
+  const matched = (rows || [])
+    .map(row => ({
+      row,
+      score: getBindingMatchScore(row, input),
+    }))
+    .filter((entry): entry is { row: BindingRow; score: number } => entry.score !== null)
+    .sort((left, right) => {
+      const scoreDiff = left.score - right.score;
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const priorityDiff = getIdentityKeyPriority(left.row.identity_key) - getIdentityKeyPriority(right.row.identity_key);
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+
+      return (Number(right.row.updated_at) || 0) - (Number(left.row.updated_at) || 0);
+    })[0];
+
+  return matched ? mapBindingRow(matched.row) : null;
 }
 
 export async function upsertAuthKeyBinding(input: UpsertAuthKeyBindingInput): Promise<void> {

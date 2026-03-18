@@ -203,6 +203,218 @@ async function compactLegacyArticleJsonIfNeeded(db: SqliteDb): Promise<void> {
   );
 }
 
+interface OwnerScopedTableMigration {
+  tableName: string;
+  partitionColumns: string[];
+  orderBy: string;
+  indexSql: string[];
+}
+
+const OWNER_SCOPED_TABLES: OwnerScopedTableMigration[] = [
+  {
+    tableName: 'scheduler_state',
+    partitionColumns: ['owner_key'],
+    orderBy: 'updated_at DESC, created_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_scheduler_state_owner_key ON scheduler_state(owner_key)',
+      'CREATE INDEX IF NOT EXISTS idx_scheduler_state_owner_updated_at ON scheduler_state(owner_key, updated_at DESC)',
+    ],
+  },
+  {
+    tableName: 'scheduler_articles',
+    partitionColumns: ['owner_key', 'fakeid'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_scheduler_articles_owner_fakeid ON scheduler_articles(owner_key, fakeid)',
+      'CREATE INDEX IF NOT EXISTS idx_scheduler_articles_owner_updated_at ON scheduler_articles(owner_key, updated_at DESC)',
+    ],
+  },
+  {
+    tableName: 'reader_accounts',
+    partitionColumns: ['owner_key', 'fakeid'],
+    orderBy: 'update_time DESC, last_update_time DESC, create_time DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_reader_accounts_owner_fakeid ON reader_accounts(owner_key, fakeid)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_accounts_owner_category ON reader_accounts(owner_key, category)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_accounts_owner_focused ON reader_accounts(owner_key, focused)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_accounts_owner_nickname ON reader_accounts(owner_key, nickname)',
+      "CREATE INDEX IF NOT EXISTS idx_reader_accounts_owner_source_type ON reader_accounts(owner_key, source_type)",
+    ],
+  },
+  {
+    tableName: 'reader_articles',
+    partitionColumns: ['owner_key', 'article_key'],
+    orderBy: 'update_time DESC, create_time DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_reader_articles_owner_article_key ON reader_articles(owner_key, article_key)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_articles_owner_fakeid_time ON reader_articles(owner_key, fakeid, create_time DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_articles_owner_link ON reader_articles(owner_key, link)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_articles_owner_time ON reader_articles(owner_key, update_time DESC, create_time DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_articles_owner_favorite_time ON reader_articles(owner_key, favorite, update_time DESC, create_time DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_articles_owner_ai_tagged_time ON reader_articles(owner_key, ai_tagged_at, update_time DESC, create_time DESC)',
+    ],
+  },
+  {
+    tableName: 'reader_ai_reports',
+    partitionColumns: ['owner_key', 'report_date'],
+    orderBy: 'updated_at DESC, created_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_reader_ai_reports_owner_report_date ON reader_ai_reports(owner_key, report_date)',
+      'CREATE INDEX IF NOT EXISTS idx_reader_ai_reports_owner_updated ON reader_ai_reports(owner_key, updated_at DESC)',
+    ],
+  },
+  {
+    tableName: 'cache_html',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_html_owner_url ON cache_html(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_html_owner_fakeid ON cache_html(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_comment',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_comment_owner_url ON cache_comment(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_comment_owner_fakeid ON cache_comment(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_resource',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_resource_owner_url ON cache_resource(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_resource_owner_fakeid ON cache_resource(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_metadata',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_metadata_owner_url ON cache_metadata(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_metadata_owner_fakeid ON cache_metadata(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_resource_map',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_resource_map_owner_url ON cache_resource_map(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_resource_map_owner_fakeid ON cache_resource_map(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_asset',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_asset_owner_url ON cache_asset(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_asset_owner_fakeid ON cache_asset(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_comment_reply',
+    partitionColumns: ['owner_key', 'url', 'content_id'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_comment_reply_owner_url_content ON cache_comment_reply(owner_key, url, content_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_comment_reply_owner_fakeid ON cache_comment_reply(owner_key, fakeid)',
+    ],
+  },
+  {
+    tableName: 'cache_debug',
+    partitionColumns: ['owner_key', 'url'],
+    orderBy: 'updated_at DESC, rowid DESC',
+    indexSql: [
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_cache_debug_owner_url ON cache_debug(owner_key, url)',
+      'CREATE INDEX IF NOT EXISTS idx_cache_debug_owner_fakeid ON cache_debug(owner_key, fakeid)',
+    ],
+  },
+];
+
+async function ensureOwnerScopeColumns(db: SqliteDb, tableName: string): Promise<void> {
+  try {
+    await db.exec(`
+      ALTER TABLE ${tableName} ADD COLUMN owner_key TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE ${tableName} ADD COLUMN identity_key TEXT NOT NULL DEFAULT '';
+    `);
+  } catch {
+    // Ignore when the column already exists.
+  }
+}
+
+async function backfillOwnerScopeColumns(db: SqliteDb, tableName: string): Promise<void> {
+  await db.exec(`
+    UPDATE ${tableName}
+    SET identity_key = COALESCE(
+      NULLIF(identity_key, ''),
+      (
+        SELECT identity_key
+        FROM mp_account_identity
+        WHERE auth_key = ${tableName}.auth_key
+        LIMIT 1
+      ),
+      ''
+    )
+    WHERE identity_key = '';
+  `);
+
+  await db.exec(`
+    UPDATE ${tableName}
+    SET owner_key = CASE
+      WHEN identity_key <> '' THEN 'identity:' || identity_key
+      ELSE 'auth:' || auth_key
+    END
+    WHERE owner_key = ''
+      OR (identity_key <> '' AND owner_key <> ('identity:' || identity_key));
+  `);
+}
+
+async function dedupeOwnerScopedRows(
+  db: SqliteDb,
+  tableName: string,
+  partitionColumns: string[],
+  orderBy: string
+): Promise<void> {
+  const partitionSql = partitionColumns.join(', ');
+  await db.exec(`
+    DELETE FROM ${tableName}
+    WHERE rowid IN (
+      SELECT rowid
+      FROM (
+        SELECT rowid,
+          ROW_NUMBER() OVER (
+            PARTITION BY ${partitionSql}
+            ORDER BY ${orderBy}
+          ) AS row_num
+        FROM ${tableName}
+      )
+      WHERE row_num > 1
+    );
+  `);
+}
+
+async function ensureOwnerScopedTables(db: SqliteDb): Promise<void> {
+  for (const table of OWNER_SCOPED_TABLES) {
+    await ensureOwnerScopeColumns(db, table.tableName);
+    await backfillOwnerScopeColumns(db, table.tableName);
+    await dedupeOwnerScopedRows(db, table.tableName, table.partitionColumns, table.orderBy);
+    await db.exec(table.indexSql.join(';\n') + ';');
+  }
+}
+
 async function initSqlite(): Promise<SqliteDb> {
   const filename = resolveDbPath();
   await mkdir(path.dirname(filename), { recursive: true });
@@ -236,6 +448,16 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_account_identity_auth_key ON mp_account_identity(auth_key);
 
+    CREATE TABLE IF NOT EXISTS mp_user_access (
+      identity_key TEXT PRIMARY KEY,
+      disabled INTEGER NOT NULL DEFAULT 0,
+      disabled_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      updated_by_identity_key TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mp_user_access_disabled ON mp_user_access(disabled, updated_at DESC);
+
     CREATE TABLE IF NOT EXISTS mp_preferences (
       owner_key TEXT PRIMARY KEY,
       identity_key TEXT NOT NULL DEFAULT '',
@@ -246,6 +468,15 @@ async function initSqlite(): Promise<SqliteDb> {
 
     CREATE INDEX IF NOT EXISTS idx_mp_preferences_auth_key ON mp_preferences(auth_key);
     CREATE INDEX IF NOT EXISTS idx_mp_preferences_updated_at ON mp_preferences(updated_at);
+
+    CREATE TABLE IF NOT EXISTS system_preferences (
+      key TEXT PRIMARY KEY,
+      data_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      updated_by_identity_key TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_system_preferences_updated_at ON system_preferences(updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS mp_account_state (
       owner_key TEXT NOT NULL,
@@ -565,6 +796,7 @@ async function initSqlite(): Promise<SqliteDb> {
     CREATE INDEX IF NOT EXISTS idx_reader_articles_auth_ai_tagged_time ON reader_articles(auth_key, ai_tagged_at, update_time DESC, create_time DESC);
   `);
 
+  await ensureOwnerScopedTables(db);
   await compactLegacyArticleJsonIfNeeded(db);
 
   return db;

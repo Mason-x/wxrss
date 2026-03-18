@@ -434,9 +434,8 @@ export class Downloader extends BaseDownloader {
         throw new Error('目标公众号的 Credential 未设置');
       }
 
-      const Authorization = (preferences.value as Preferences).privateProxyAuthorization || '';
       const url = `https://mp.weixin.qq.com/mp/appmsg_comment?action=getcomment&__biz=${targetCredential.biz}&comment_id=${commentID}&uin=${targetCredential.uin}&key=${targetCredential.key}&pass_ticket=${targetCredential.pass_ticket}&buffer=${buffer}&offset=1&limit=100&f=json`;
-      const proxyUrl = `${proxy}?url=${encodeURIComponent(url)}&authorization=${Authorization}`;
+      const proxyUrl = this.buildServerProxyUrl(url, {}, proxy);
       const response = (await Promise.race([
         fetch(proxyUrl, {
           signal: abortController.signal,
@@ -473,9 +472,8 @@ export class Downloader extends BaseDownloader {
         throw new Error('目标公众号的 Credential 未设置');
       }
 
-      const Authorization = (preferences.value as Preferences).privateProxyAuthorization || '';
       const url = `https://mp.weixin.qq.com/mp/appmsg_comment?action=getcommentreply&__biz=${targetCredential.biz}&comment_id=${commentID}&uin=${targetCredential.uin}&key=${targetCredential.key}&pass_ticket=${targetCredential.pass_ticket}&content_id=${contentID}&max_reply_id=${maxReplyID}&limit=100&f=json`;
-      const proxyUrl = `${proxy}?url=${encodeURIComponent(url)}&authorization=${Authorization}`;
+      const proxyUrl = this.buildServerProxyUrl(url, {}, proxy);
       const response = (await Promise.race([
         fetch(proxyUrl, {
           signal: abortController.signal,

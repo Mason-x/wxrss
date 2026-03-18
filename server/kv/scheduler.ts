@@ -1,6 +1,7 @@
 import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
 import { getSqliteDb } from '~/server/db/sqlite';
 import { logMemory } from '~/server/utils/memory-debug';
+import { resolveAccountOwnerScope } from '~/server/repositories/account-owner';
 
 type SyncDateRange = '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
 
@@ -27,6 +28,8 @@ export interface SchedulerAccount {
 
 export interface SchedulerState {
   authKey: string;
+  ownerKey?: string;
+  identityKey?: string;
   config: SchedulerConfig;
   accounts: SchedulerAccount[];
   createdAt: number;
@@ -59,12 +62,12 @@ function getStorage() {
   return useStorage('kv');
 }
 
-function stateKey(authKey: string) {
-  return `scheduler:state:${authKey}`;
+function stateKey(ownerKey: string) {
+  return `scheduler:state:${ownerKey}`;
 }
 
-function articlesKey(authKey: string, fakeid: string) {
-  return `scheduler:articles:${authKey}:${fakeid}`;
+function articlesKey(ownerKey: string, fakeid: string) {
+  return `scheduler:articles:${ownerKey}:${fakeid}`;
 }
 
 function normalizeDailySyncTime(value?: string): string {
@@ -160,9 +163,14 @@ function normalizeSchedulerAccount(account: Partial<SchedulerAccount>): Schedule
   };
 }
 
-function normalizeState(authKey: string, state: Partial<SchedulerState>): SchedulerState {
+function normalizeState(
+  authKey: string,
+  state: Partial<SchedulerState> & { ownerKey?: string; identityKey?: string }
+): SchedulerState {
   return {
     authKey,
+    ownerKey: String(state.ownerKey || '').trim(),
+    identityKey: String(state.identityKey || '').trim(),
     config: normalizeSchedulerConfig(state.config),
     accounts: Array.isArray(state.accounts)
       ? state.accounts
@@ -179,8 +187,12 @@ function normalizeState(authKey: string, state: Partial<SchedulerState>): Schedu
 }
 
 export async function getSchedulerState(authKey: string): Promise<SchedulerState | null> {
+  const owner = await resolveAccountOwnerScope(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
+    owner_key: string;
+    identity_key: string;
+    auth_key: string;
     config_json: string;
     accounts_json: string;
     created_at: number;
@@ -191,15 +203,30 @@ export async function getSchedulerState(authKey: string): Promise<SchedulerState
     last_error?: string;
   }>(
     `
-    SELECT config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
+    SELECT owner_key, identity_key, auth_key, config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
     FROM scheduler_state
-    WHERE auth_key = ?
+    WHERE owner_key = ?
     `,
-    authKey
+    owner.ownerKey
   );
 
   if (row) {
-    return normalizeState(authKey, {
+    if (row.auth_key !== owner.authKey || row.identity_key !== owner.identityKey) {
+      await db.run(
+        `
+        UPDATE scheduler_state
+        SET auth_key = ?, identity_key = ?
+        WHERE owner_key = ?
+        `,
+        owner.authKey,
+        owner.identityKey,
+        owner.ownerKey
+      );
+    }
+
+    return normalizeState(owner.authKey, {
+      ownerKey: owner.ownerKey,
+      identityKey: owner.identityKey,
       config: parseJson<SchedulerConfig>(row.config_json, DEFAULT_CONFIG),
       accounts: parseJson<SchedulerAccount[]>(row.accounts_json, []),
       createdAt: Number(row.created_at) || Date.now(),
@@ -212,12 +239,17 @@ export async function getSchedulerState(authKey: string): Promise<SchedulerState
   }
 
   const kv = getStorage();
-  const legacy = await kv.get<SchedulerState>(stateKey(authKey));
+  const current = await kv.get<SchedulerState>(stateKey(owner.ownerKey));
+  const legacy = current || (await kv.get<SchedulerState>(stateKey(owner.authKey)));
   if (!legacy) {
     return null;
   }
 
-  const normalized = normalizeState(authKey, legacy);
+  const normalized = normalizeState(owner.authKey, {
+    ...legacy,
+    ownerKey: owner.ownerKey,
+    identityKey: owner.identityKey,
+  });
   await upsertSchedulerState(authKey, {
     config: normalized.config,
     accounts: normalized.accounts,
@@ -243,6 +275,7 @@ export async function upsertSchedulerState(
     lastError?: string;
   }
 ): Promise<SchedulerState> {
+  const owner = await resolveAccountOwnerScope(authKey);
   const prev = await getSchedulerState(authKey);
 
   const nextConfig = normalizeSchedulerConfig({
@@ -257,7 +290,9 @@ export async function upsertSchedulerState(
     : prev?.accounts || [];
 
   const state: SchedulerState = {
-    authKey,
+    authKey: owner.authKey,
+    ownerKey: owner.ownerKey,
+    identityKey: owner.identityKey,
     config: nextConfig,
     accounts: nextAccounts,
     createdAt: prev?.createdAt || Date.now(),
@@ -272,10 +307,12 @@ export async function upsertSchedulerState(
   await db.run(
     `
     INSERT INTO scheduler_state (
-      auth_key, config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
+      owner_key, identity_key, auth_key, config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key) DO UPDATE SET
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       config_json = excluded.config_json,
       accounts_json = excluded.accounts_json,
       updated_at = excluded.updated_at,
@@ -284,6 +321,8 @@ export async function upsertSchedulerState(
       last_status = excluded.last_status,
       last_error = excluded.last_error
     `,
+    state.ownerKey,
+    state.identityKey,
     state.authKey,
     JSON.stringify(state.config),
     JSON.stringify(state.accounts),
@@ -296,14 +335,16 @@ export async function upsertSchedulerState(
   );
 
   const kv = getStorage();
-  await kv.set(stateKey(authKey), state);
-  await addSchedulerAuthKeyToIndex(authKey);
+  await kv.set(stateKey(owner.ownerKey), state);
+  await addSchedulerAuthKeyToIndex(owner.authKey);
   return state;
 }
 
 export async function listSchedulerStates(): Promise<SchedulerState[]> {
   const db = await getSqliteDb();
   const rows = await db.all<{
+    owner_key: string;
+    identity_key: string;
     auth_key: string;
     config_json: string;
     accounts_json: string;
@@ -315,7 +356,7 @@ export async function listSchedulerStates(): Promise<SchedulerState[]> {
     last_error?: string;
   }>(
     `
-    SELECT auth_key, config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
+    SELECT owner_key, identity_key, auth_key, config_json, accounts_json, created_at, updated_at, last_run_date, last_run_at, last_status, last_error
     FROM scheduler_state
     ORDER BY updated_at DESC
     `
@@ -324,6 +365,8 @@ export async function listSchedulerStates(): Promise<SchedulerState[]> {
   if (rows.length > 0) {
     return rows.map(row =>
       normalizeState(row.auth_key, {
+        ownerKey: row.owner_key,
+        identityKey: row.identity_key,
         config: parseJson<SchedulerConfig>(row.config_json, DEFAULT_CONFIG),
         accounts: parseJson<SchedulerAccount[]>(row.accounts_json, []),
         createdAt: Number(row.created_at) || Date.now(),
@@ -343,22 +386,39 @@ export async function listSchedulerStates(): Promise<SchedulerState[]> {
 
 export async function getSchedulerArticles(authKey: string, fakeid: string): Promise<SchedulerArticleCache | null> {
   const debugMemory = process.env.NUXT_DEBUG_MEMORY === 'true';
+  const owner = await resolveAccountOwnerScope(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
+    auth_key: string;
+    owner_key: string;
+    identity_key: string;
     articles_json: string;
     total_count: number;
     updated_at: number;
   }>(
     `
-    SELECT articles_json, total_count, updated_at
+    SELECT auth_key, owner_key, identity_key, articles_json, total_count, updated_at
     FROM scheduler_articles
-    WHERE auth_key = ? AND fakeid = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid
   );
 
   if (row) {
+    if (row.auth_key !== owner.authKey || row.identity_key !== owner.identityKey) {
+      await db.run(
+        `
+        UPDATE scheduler_articles
+        SET auth_key = ?, identity_key = ?
+        WHERE owner_key = ? AND fakeid = ?
+        `,
+        owner.authKey,
+        owner.identityKey,
+        owner.ownerKey,
+        fakeid
+      );
+    }
     if (debugMemory) {
       logMemory('scheduler-kv:parse-start', {
         fakeid,
@@ -382,7 +442,9 @@ export async function getSchedulerArticles(authKey: string, fakeid: string): Pro
   }
 
   const kv = getStorage();
-  const data = await kv.get<SchedulerArticleCache>(articlesKey(authKey, fakeid));
+  const data =
+    (await kv.get<SchedulerArticleCache>(articlesKey(owner.ownerKey, fakeid))) ||
+    (await kv.get<SchedulerArticleCache>(articlesKey(owner.authKey, fakeid)));
   if (!data) {
     return null;
   }
@@ -393,7 +455,7 @@ export async function getSchedulerArticles(authKey: string, fakeid: string): Pro
     totalCount: Number.isFinite(data.totalCount) ? Number(data.totalCount) : 0,
     updatedAt: Number.isFinite(data.updatedAt) ? Number(data.updatedAt) : Date.now(),
   };
-  await setSchedulerArticles(authKey, fakeid, {
+  await setSchedulerArticles(owner.authKey, fakeid, {
     articles: normalized.articles,
     totalCount: normalized.totalCount,
   });
@@ -409,6 +471,7 @@ export async function setSchedulerArticles(
   }
 ): Promise<SchedulerArticleCache> {
   const debugMemory = process.env.NUXT_DEBUG_MEMORY === 'true';
+  const owner = await resolveAccountOwnerScope(authKey);
   const value: SchedulerArticleCache = {
     fakeid,
     articles: Array.isArray(payload.articles) ? payload.articles : [],
@@ -426,14 +489,18 @@ export async function setSchedulerArticles(
   const db = await getSqliteDb();
   await db.run(
     `
-    INSERT INTO scheduler_articles(auth_key, fakeid, articles_json, total_count, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, fakeid) DO UPDATE SET
+    INSERT INTO scheduler_articles(owner_key, identity_key, auth_key, fakeid, articles_json, total_count, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, fakeid) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       articles_json = excluded.articles_json,
       total_count = excluded.total_count,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     fakeid,
     serialized,
     value.totalCount,
@@ -441,7 +508,7 @@ export async function setSchedulerArticles(
   );
 
   const kv = getStorage();
-  await kv.set(articlesKey(authKey, fakeid), value);
+  await kv.set(articlesKey(owner.ownerKey, fakeid), value);
   return value;
 }
 

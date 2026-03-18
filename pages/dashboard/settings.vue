@@ -33,6 +33,13 @@
             @scroll.passive="syncActiveSectionFromScroll"
           >
             <div class="mx-auto max-w-5xl space-y-4 md:space-y-6">
+              <div
+                v-if="!isAdmin"
+                class="rounded-[28px] border border-sky-200/80 bg-white/85 px-5 py-4 text-sm text-sky-700 shadow-[0_12px_24px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+              >
+                普通用户仅可调整个人同步与 AI 标签项。其余设置由管理员统一维护，并对所有用户生效。
+              </div>
+
               <section
                 v-for="section in sections"
                 :id="section.id"
@@ -75,43 +82,53 @@ interface SettingsSection {
   component: Component;
 }
 
-const sections: SettingsSection[] = [
-  {
-    id: 'scheduler',
-    label: '每日自动同步',
-    description: '任务与执行时间',
-    icon: 'i-lucide:calendar-clock',
-    component: SettingScheduler,
-  },
-  {
-    id: 'ai',
-    label: 'AI 功能',
-    description: '摘要、标签与日报',
-    icon: 'i-lucide:sparkles',
-    component: SettingAiSummary,
-  },
-  {
-    id: 'proxy',
-    label: '代理节点',
-    description: '抓取与下载代理',
-    icon: 'i-lucide:network',
-    component: SettingProxy,
-  },
-  {
-    id: 'export',
-    label: '导出选项',
-    description: '目录与内容规则',
-    icon: 'i-lucide:files',
-    component: SettingExport,
-  },
-  {
-    id: 'misc',
-    label: '其他选项',
-    description: '缓存与同步节奏',
-    icon: 'i-lucide:sliders-horizontal',
-    component: SettingMisc,
-  },
-];
+const preferenceAccess = usePreferencesAccess();
+const isAdmin = computed(() => preferenceAccess.value.role === 'admin');
+
+const sections = computed<SettingsSection[]>(() => {
+  const items: SettingsSection[] = [
+    {
+      id: 'scheduler',
+      label: '每日自动同步',
+      description: '个人同步开关与执行时间',
+      icon: 'i-lucide:calendar-clock',
+      component: SettingScheduler,
+    },
+    {
+      id: 'ai',
+      label: 'AI 功能',
+      description: '自定义标签、日报筛选与摘要开关',
+      icon: 'i-lucide:sparkles',
+      component: SettingAiSummary,
+    },
+    {
+      id: 'misc',
+      label: '其他选项',
+      description: isAdmin.value ? '全局行为与个人同步范围' : '个人同步时间范围',
+      icon: 'i-lucide:sliders-horizontal',
+      component: SettingMisc,
+    },
+  ];
+
+  if (isAdmin.value) {
+    items.splice(2, 0, {
+      id: 'proxy',
+      label: '私有代理',
+      description: '抓取与下载代理节点',
+      icon: 'i-lucide:network',
+      component: SettingProxy,
+    });
+    items.splice(3, 0, {
+      id: 'export',
+      label: '导出选项',
+      description: '目录规则与内容导出范围',
+      icon: 'i-lucide:files',
+      component: SettingExport,
+    });
+  }
+
+  return items;
+});
 
 const activeSection = ref<SettingsSectionId>('scheduler');
 const scrollContainerRef = ref<HTMLElement | null>(null);
@@ -155,10 +172,11 @@ function syncActiveSectionFromScroll() {
     return;
   }
 
+  const availableSections = sections.value;
   const threshold = container.scrollTop + getScrollOffset() + 12;
-  let nextActive = sections[0].id;
+  let nextActive = availableSections[0]?.id || 'scheduler';
 
-  for (const section of sections) {
+  for (const section of availableSections) {
     const target = sectionRefs[section.id];
     if (target && target.offsetTop <= threshold) {
       nextActive = section.id;
@@ -167,6 +185,16 @@ function syncActiveSectionFromScroll() {
 
   activeSection.value = nextActive;
 }
+
+watch(
+  sections,
+  value => {
+    if (!value.some(section => section.id === activeSection.value)) {
+      activeSection.value = value[0]?.id || 'scheduler';
+    }
+  },
+  { immediate: true }
+);
 
 onMounted(async () => {
   await nextTick();

@@ -5,6 +5,10 @@ export interface AiTagDefinition {
   color: string;
 }
 
+export type PreferenceKey = keyof Preferences;
+
+export type PreferenceRole = 'admin' | 'user';
+
 export interface Preferences {
   hideDeleted: boolean;
   themeMode: 'system' | 'light' | 'dark';
@@ -36,6 +40,20 @@ export interface Preferences {
 
   syncDateRange: '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
   syncDatePoint: number;
+}
+
+export interface PreferencesAccess {
+  role: PreferenceRole;
+  editableKeys: PreferenceKey[];
+  userManagedKeys: PreferenceKey[];
+  adminManagedKeys: PreferenceKey[];
+}
+
+export interface PreferencesCapabilities {
+  aiConfigured: boolean;
+  newrankConfigured: boolean;
+  privateProxyConfigured: boolean;
+  privateProxyCount: number;
 }
 
 interface ExportConfig {

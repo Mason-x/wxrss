@@ -33,6 +33,7 @@ function normalizeLoginAccount(account: LoginAccount | null | undefined, authKey
     expires,
     auth_key: normalizedAuthKey,
     identity_key: String(account?.identity_key || '').trim(),
+    role: account?.role === 'admin' ? 'admin' : 'user',
   };
 }
 

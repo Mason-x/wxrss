@@ -257,6 +257,7 @@ const route = useRoute();
 const { navigateToLogin } = useMpAuth();
 const loginAccount = useLoginAccount();
 const preferences = usePreferences();
+const preferenceCapabilities = usePreferencesCapabilities();
 const { saveNow: savePreferencesNow, saving: savingPreferences } = useSavePreferences();
 const {
   preference: themeModePreference,
@@ -356,6 +357,7 @@ const categoryDeleting = ref<string | null>(null);
 const systemMenuOpen = ref(false);
 const desktopAvatarMenuOpen = ref(false);
 const mobileAvatarMenuOpen = ref(false);
+const isAdminLogin = computed(() => loginAccount.value?.role === 'admin');
 
 const SYNC_BLOCKED_ARTICLE_HTML =
   '<div style="padding: 24px; color: #64748b;">当前正在同步文章列表，为避免打断同步，已暂停在线正文抓取。同步完成后再试，或先在“文章列表”的抓取菜单中下载文章内容后阅读。</div>';
@@ -1678,12 +1680,7 @@ const selectedContentKind = computed<'default' | 'rss' | 'report'>(() => {
 });
 
 const aiSummaryConfigured = computed(() => {
-  const currentPreferences = preferences.value as unknown as Preferences;
-  return Boolean(
-    String(currentPreferences.aiSummaryApiKey || '').trim() &&
-      String(currentPreferences.aiSummaryModel || '').trim() &&
-      String(currentPreferences.aiSummaryBaseUrl || '').trim()
-  );
+  return preferenceCapabilities.value.aiConfigured;
 });
 
 const aiAutoSummaryOnSyncEnabled = computed(() => {
@@ -4518,6 +4515,16 @@ function openSettingsFromMobileAvatarMenu() {
   openSystemMenu();
 }
 
+function openDashboardFromAvatarMenu() {
+  desktopAvatarMenuOpen.value = false;
+  void navigateTo('/dashboard');
+}
+
+function openDashboardFromMobileAvatarMenu() {
+  mobileAvatarMenuOpen.value = false;
+  void navigateTo('/dashboard');
+}
+
 async function toggleAiAutoSummaryOnSync() {
   const currentPreferences = preferences.value as unknown as Preferences;
   const previous = currentPreferences.aiAutoSummaryOnSyncEnabled !== false;
@@ -5923,6 +5930,15 @@ onUnmounted(() => {
                     </div>
                     <Transition name="desktop-avatar-menu-fade">
                       <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
+                        <button
+                          v-if="isAdminLogin"
+                          type="button"
+                          class="desktop-avatar-menu-item"
+                          @click="openDashboardFromMobileAvatarMenu"
+                        >
+                          <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
+                          <span>管理</span>
+                        </button>
                         <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
                           <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                           <span>设置</span>
@@ -6200,6 +6216,15 @@ onUnmounted(() => {
                     <p class="mt-1 text-xs text-slate-500">剩余时间 {{ cookieRemainText }}</p>
                   </div>
                   <div class="py-2">
+                    <button
+                      v-if="isAdminLogin"
+                      type="button"
+                      class="desktop-avatar-menu-item"
+                      @click="openDashboardFromAvatarMenu"
+                    >
+                      <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
+                      <span>管理</span>
+                    </button>
                     <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromAvatarMenu">
                       <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
                       <span>设置</span>

@@ -1,6 +1,6 @@
 import { clonePreferences, normalizePreferences } from '#shared/utils/preferences';
 import { request } from '#shared/utils/request';
-import type { Preferences } from '~/types/preferences';
+import type { Preferences, PreferencesAccess, PreferencesCapabilities } from '~/types/preferences';
 import type { LoginAccount } from '~/types/types';
 
 interface PreferencesResponse {
@@ -8,6 +8,8 @@ interface PreferencesResponse {
   exists?: boolean;
   source?: 'stored' | 'default';
   updatedAt?: number;
+  access?: PreferencesAccess;
+  capabilities?: PreferencesCapabilities;
 }
 
 function getLoginOwnerKey(account: LoginAccount | null | undefined): string {
@@ -26,25 +28,39 @@ export default () => {
   const saveTimer = useState<number | null>('preferences-sync-save-timer', () => null);
   const listenersBound = useState<boolean>('preferences-sync-listeners-bound', () => false);
   const hasUnsavedChanges = useState<boolean>('preferences-sync-dirty', () => false);
+  const access = useState<PreferencesAccess>('preferences-access', () => ({
+    role: 'user',
+    editableKeys: [],
+    userManagedKeys: [],
+    adminManagedKeys: [],
+  }));
+  const capabilities = useState<PreferencesCapabilities>('preferences-capabilities', () => ({
+    aiConfigured: false,
+    newrankConfigured: false,
+    privateProxyConfigured: false,
+    privateProxyCount: 0,
+  }));
 
   if (!initialized.value) {
     preferences.value = normalizePreferences(preferences.value);
 
     if (import.meta.client) {
-      async function persistRemote(next: Preferences): Promise<void> {
-        if (!activeOwnerKey.value) {
-          return;
-        }
-
-        const normalized = normalizePreferences(next);
-        await request<PreferencesResponse>('/api/web/preferences', {
-          method: 'POST',
-          body: normalized,
-        });
-        lastPersisted.value = JSON.stringify(normalized);
+      function applyResponseMetadata(response?: PreferencesResponse) {
+        access.value = response?.access || {
+          role: 'user',
+          editableKeys: [],
+          userManagedKeys: [],
+          adminManagedKeys: [],
+        };
+        capabilities.value = response?.capabilities || {
+          aiConfigured: false,
+          newrankConfigured: false,
+          privateProxyConfigured: false,
+          privateProxyCount: 0,
+        };
       }
 
-      async function loadRemotePreferences(currentSequence: number, options?: { seedDefaults?: boolean }) {
+      async function loadRemotePreferences(currentSequence: number) {
         const ownerKey = activeOwnerKey.value;
         if (!ownerKey) {
           return;
@@ -56,21 +72,10 @@ export default () => {
         }
 
         const remotePreferences = normalizePreferences(response?.data);
-        if (response?.exists) {
-          preferences.value = remotePreferences;
-          lastPersisted.value = JSON.stringify(remotePreferences);
-          hasUnsavedChanges.value = false;
-          return;
-        }
-
-        const seedPreferences = clonePreferences();
-        preferences.value = seedPreferences;
-        lastPersisted.value = '';
+        preferences.value = remotePreferences;
+        applyResponseMetadata(response);
+        lastPersisted.value = JSON.stringify(remotePreferences);
         hasUnsavedChanges.value = false;
-
-        if (options?.seedDefaults !== false) {
-          await persistRemote(seedPreferences);
-        }
       }
 
       async function refreshRemotePreferencesOnFocus() {
@@ -82,7 +87,7 @@ export default () => {
         hydrating.value = true;
 
         try {
-          await loadRemotePreferences(refreshSequence, { seedDefaults: false });
+          await loadRemotePreferences(refreshSequence);
         } catch {
           // keep current in-memory settings when remote refresh fails
         } finally {
@@ -107,6 +112,7 @@ export default () => {
           if (!ownerKey) {
             const defaultPreferences = clonePreferences();
             preferences.value = defaultPreferences;
+            applyResponseMetadata();
             lastPersisted.value = JSON.stringify(defaultPreferences);
             hydrating.value = false;
             hasUnsavedChanges.value = false;
@@ -116,13 +122,14 @@ export default () => {
           hydrating.value = true;
 
           try {
-            await loadRemotePreferences(currentSequence, { seedDefaults: true });
+            await loadRemotePreferences(currentSequence);
           } catch {
             if (currentSequence !== loadSequence.value) {
               return;
             }
             const fallbackPreferences = clonePreferences(preferences.value);
             preferences.value = fallbackPreferences;
+            applyResponseMetadata();
             lastPersisted.value = JSON.stringify(fallbackPreferences);
             hasUnsavedChanges.value = false;
           } finally {

@@ -3,25 +3,37 @@ import mime from 'mime';
 import { formatTimeStamp, sleep } from '#shared/utils/helpers';
 import { request } from '#shared/utils/request';
 import { getComment } from '~/apis';
+import usePreferencesCapabilities from '~/composables/usePreferencesCapabilities';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE } from '~/config/proxy';
 import { getAssetCache, updateAssetCache } from '~/store/v2/assets';
 import type { DownloadableArticle } from '~/types/types';
 import type { AudioResource, VideoPageInfo } from '~/types/video';
-import * as pool from '~/utils/pool';
 import { extractCommentId } from './comment';
 
 /**
  * 使用代理下载资源
  * @param url 资源地址
- * @param proxy 代理地址
  * @param withCredential
  * @param timeout 超时时间(单位: 秒)，默认 30
  */
-async function downloadAssetWithProxy<T extends Blob | string>(
-  url: string,
-  proxy: string | undefined,
-  withCredential = false,
-  timeout = 30
-) {
+function getPrivateProxySlots() {
+  const preferenceCapabilities = usePreferencesCapabilities();
+  const privateProxyCount = Number(preferenceCapabilities.value.privateProxyCount || 0);
+  if (privateProxyCount <= 0) {
+    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
+  }
+
+  return Array.from({ length: privateProxyCount }, (_, index) => `slot:${index}`);
+}
+
+function buildServerProxyUrl(url: string, headers: Record<string, string>, slot: string) {
+  const normalizedUrl = String(url || '').replace(/^http:\/\//, 'https://');
+  return `/api/web/proxy/fetch?url=${encodeURIComponent(normalizedUrl)}&headers=${encodeURIComponent(
+    JSON.stringify(headers)
+  )}&slot=${encodeURIComponent(slot)}`;
+}
+
+async function downloadAssetWithProxy<T extends Blob | string>(url: string, withCredential = false, timeout = 30) {
   const headers: Record<string, string> = {};
   if (withCredential) {
     try {
@@ -29,15 +41,31 @@ async function downloadAssetWithProxy<T extends Blob | string>(
       headers.cookie = `pass_ticket=${credentials.pass_ticket};wap_sid2=${credentials.wap_sid2}`;
     } catch (e) {}
   }
-  let targetURL = proxy
-    ? `${proxy}?url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers))}`
-    : url;
-  targetURL = targetURL.replace(/^http:\/\//, 'https://');
 
-  return await request<T>(targetURL, {
-    timeout: timeout * 1000,
-    referrerPolicy: 'unsafe-url',
-  });
+  const slots = getPrivateProxySlots();
+  let lastError: unknown = null;
+
+  for (const slot of slots) {
+    try {
+      return await request<T>(buildServerProxyUrl(url, headers, slot), {
+        timeout: timeout * 1000,
+        referrerPolicy: 'unsafe-url',
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || '下载失败'));
+}
+
+async function runDownloadTasks<T>(items: Iterable<T>, task: (item: T) => Promise<number>, pauseMs = 0) {
+  for (const item of items) {
+    await task(item);
+    if (pauseMs > 0) {
+      await sleep(pauseMs);
+    }
+  }
 }
 
 /**
@@ -49,8 +77,8 @@ async function downloadArticleHTML(articleURL: string, title?: string) {
   let html = '';
   const parser = new DOMParser();
 
-  const htmlDownloadFn = async (url: string, proxy: string) => {
-    const fullHTML = await downloadAssetWithProxy<string>(url, proxy, true);
+  const htmlDownloadFn = async (url: string) => {
+    const fullHTML = await downloadAssetWithProxy<string>(url, true);
 
     // 验证是否下载完整
     const document = parser.parseFromString(fullHTML, 'text/html');
@@ -70,7 +98,7 @@ async function downloadArticleHTML(articleURL: string, title?: string) {
     return new Blob([html]).size;
   };
 
-  await pool.downloads([articleURL], htmlDownloadFn);
+  await runDownloadTasks([articleURL], htmlDownloadFn);
 
   if (!html) {
     throw new Error('下载html失败，请稍后重试');
@@ -88,8 +116,8 @@ export async function downloadArticleHTMLs(articles: DownloadableArticle[], call
   const parser = new DOMParser();
   const results: DownloadableArticle[] = [];
 
-  const htmlDownloadFn = async (article: DownloadableArticle, proxy: string) => {
-    const fullHTML = await downloadAssetWithProxy<string>(article.url, proxy, true);
+  const htmlDownloadFn = async (article: DownloadableArticle) => {
+    const fullHTML = await downloadAssetWithProxy<string>(article.url, true);
 
     // 验证是否下载完整
     const document = parser.parseFromString(fullHTML, 'text/html');
@@ -108,12 +136,11 @@ export async function downloadArticleHTMLs(articles: DownloadableArticle[], call
     article.html = fullHTML;
     results.push(article);
     callback(results.length);
-    await sleep(2000);
 
     return new Blob([fullHTML]).size;
   };
 
-  await pool.downloads(articles, htmlDownloadFn);
+  await runDownloadTasks(articles, htmlDownloadFn, 2000);
 
   return results;
 }
@@ -513,8 +540,8 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
 
         // 下载资源
         const videoURLMap = new Map<string, string>();
-        const resourceDownloadFn = async (url: string, proxy: string) => {
-          const videoData = await downloadAssetWithProxy<Blob>(url, proxy, false, 10);
+        const resourceDownloadFn = async (url: string) => {
+          const videoData = await downloadAssetWithProxy<Blob>(url, false, 10);
           const uuid = new Date().getTime() + Math.random().toString();
           const ext = mime.getExtension(videoData.type);
           zip.file(`assets/${uuid}.${ext}`, videoData);
@@ -528,7 +555,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
           urls.push(poster);
         }
         urls.push(videoUrl);
-        await pool.downloads<string>(urls, resourceDownloadFn);
+        await runDownloadTasks(urls, resourceDownloadFn);
 
         const div = document.createElement('div');
         div.style.cssText = 'height: 381px;background: #000;border-radius: 4px; overflow: hidden;margin-bottom: 12px;';
@@ -541,8 +568,8 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
   // 下载内嵌音频
   const mpAudioEls = $jsArticleContent.querySelectorAll<HTMLElement>('mp-common-mpaudio');
   if (mpAudioEls.length > 0) {
-    const audioResourceDownloadFn = async (asset: AudioResource, proxy: string) => {
-      const audioData = await downloadAssetWithProxy<Blob>(asset.url, proxy, false, 10);
+    const audioResourceDownloadFn = async (asset: AudioResource) => {
+      const audioData = await downloadAssetWithProxy<Blob>(asset.url, false, 10);
       const uuid = asset.uuid;
       const ext = mime.getExtension(audioData.type);
       zip.file(`assets/${uuid}.${ext}`, audioData);
@@ -585,7 +612,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
       });
     });
 
-    await pool.downloads<AudioResource>(assets, audioResourceDownloadFn);
+    await runDownloadTasks(assets, audioResourceDownloadFn);
   }
 
   // 下载内嵌视频
@@ -604,8 +631,8 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
 
     // 下载资源
     const videoURLMap = new Map<string, string>();
-    const resourceDownloadFn = async (url: string, proxy: string) => {
-      const videoData = await downloadAssetWithProxy<Blob>(url, proxy, false, 10);
+    const resourceDownloadFn = async (url: string) => {
+      const videoData = await downloadAssetWithProxy<Blob>(url, false, 10);
       const uuid = new Date().getTime() + Math.random().toString();
       const ext = mime.getExtension(videoData.type);
       zip.file(`assets/${uuid}.${ext}`, videoData);
@@ -623,7 +650,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
         urls.push(videoPageInfo.mp_video_trans_info[0].url);
       }
     });
-    await pool.downloads<string>(urls, resourceDownloadFn);
+    await runDownloadTasks(urls, resourceDownloadFn);
 
     const videoIframes = $jsArticleContent.querySelectorAll('iframe.video_iframe');
     videoIframes.forEach(videoIframe => {
@@ -650,13 +677,13 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
   }
 
   // 下载所有的图片
-  const imgDownloadFn = async (img: HTMLImageElement, proxy: string) => {
+  const imgDownloadFn = async (img: HTMLImageElement) => {
     const url = img.getAttribute('src') || img.getAttribute('data-src');
     if (!url) {
       return 0;
     }
 
-    const imgData = await downloadAssetWithProxy<Blob>(url, proxy, false, 10);
+    const imgData = await downloadAssetWithProxy<Blob>(url, false, 10);
     const uuid = new Date().getTime() + Math.random().toString();
     const ext = mime.getExtension(imgData.type);
     zip.file(`assets/${uuid}.${ext}`, imgData);
@@ -668,7 +695,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
   };
   const imgs = $jsArticleContent.querySelectorAll<HTMLImageElement>('img');
   if (imgs.length > 0) {
-    await pool.downloads<HTMLImageElement>([...imgs], imgDownloadFn);
+    await runDownloadTasks([...imgs], imgDownloadFn);
   }
 
   // 下载背景图片 背景图片无法用选择器选中并修改，因此用正则进行匹配替换
@@ -686,8 +713,8 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
   );
   if (bgImageURLs.size > 0) {
     // 下载背景图片
-    const bgImgDownloadFn = async (url: string, proxy: string) => {
-      const imgData = await downloadAssetWithProxy<Blob>(url, proxy, false, 10);
+    const bgImgDownloadFn = async (url: string) => {
+      const imgData = await downloadAssetWithProxy<Blob>(url, false, 10);
       const uuid = new Date().getTime() + Math.random().toString();
       const ext = mime.getExtension(imgData.type);
 
@@ -697,7 +724,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
     };
     const url2pathMap = new Map<string, string>();
 
-    await pool.downloads<string>([...bgImageURLs], bgImgDownloadFn);
+    await runDownloadTasks([...bgImageURLs], bgImgDownloadFn);
 
     // 替换背景图片路径
     pageContentHTML = pageContentHTML.replaceAll(
@@ -738,7 +765,7 @@ export async function packHTMLAssets(fakeid: string, html: string, title: string
   let localLinks: string = '';
   const links = document.querySelectorAll<HTMLLinkElement>('head link[rel="stylesheet"]');
   if (links.length > 0) {
-    await pool.downloads<HTMLLinkElement>([...links], linkDownloadFn, false);
+    await runDownloadTasks([...links], linkDownloadFn);
   }
 
   // 处理自定义组件

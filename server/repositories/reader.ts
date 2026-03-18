@@ -1,4 +1,5 @@
 import { getSqliteDb } from '~/server/db/sqlite';
+import { resolveAccountOwnerScope } from '~/server/repositories/account-owner';
 import { parseStructuredArticleSummary } from '~/server/utils/ai-summary';
 
 export interface ReaderAccount {
@@ -314,20 +315,25 @@ function resolveCategoryForUpsert(payloadCategory: unknown, currentCategory: unk
   return payloadCategory;
 }
 
+async function resolveReaderOwner(authKey: string) {
+  return resolveAccountOwnerScope(authKey);
+}
+
 async function applyAccountDelta(
   authKey: string,
   payload: Partial<ReaderAccount> & { fakeid: string; total_count?: number; completed?: boolean },
   messageDelta: number,
   articleDelta: number
 ): Promise<ReaderAccount> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const current = await db.get<any>(
     `
     SELECT *
     FROM reader_accounts
-    WHERE auth_key = ? AND fakeid = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
-    authKey,
+    owner.ownerKey,
     payload.fakeid
   );
 
@@ -358,11 +364,31 @@ async function applyAccountDelta(
     await db.run(
       `
       INSERT INTO reader_accounts(
-        auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
+        owner_key, identity_key, auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(owner_key, fakeid) DO UPDATE SET
+        identity_key = excluded.identity_key,
+        auth_key = excluded.auth_key,
+        completed = excluded.completed,
+        count = excluded.count,
+        articles = excluded.articles,
+        source_type = excluded.source_type,
+        source_url = excluded.source_url,
+        site_url = excluded.site_url,
+        description = excluded.description,
+        category = excluded.category,
+        focused = excluded.focused,
+        nickname = excluded.nickname,
+        round_head_img = excluded.round_head_img,
+        total_count = excluded.total_count,
+        create_time = excluded.create_time,
+        update_time = excluded.update_time,
+        last_update_time = excluded.last_update_time
       `,
-      authKey,
+      owner.ownerKey,
+      owner.identityKey,
+      owner.authKey,
       created.fakeid,
       created.completed ? 1 : 0,
       created.count,
@@ -407,9 +433,11 @@ async function applyAccountDelta(
   await db.run(
     `
     UPDATE reader_accounts
-    SET completed = ?, count = ?, articles = ?, source_type = ?, source_url = ?, site_url = ?, description = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET identity_key = ?, auth_key = ?, completed = ?, count = ?, articles = ?, source_type = ?, source_url = ?, site_url = ?, description = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
+    owner.identityKey,
+    owner.authKey,
     updated.completed ? 1 : 0,
     updated.count,
     updated.articles,
@@ -424,7 +452,7 @@ async function applyAccountDelta(
     updated.total_count,
     updated.update_time,
     updated.last_update_time || 0,
-    authKey,
+    owner.ownerKey,
     updated.fakeid
   );
   return updated;
@@ -438,64 +466,74 @@ export async function upsertAccountDelta(
 }
 
 export async function updateAccountCategory(authKey: string, fakeid: string, category: string): Promise<boolean> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const now = nowSeconds();
   await db.run(
     `
     UPDATE reader_accounts
-    SET category = ?, update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET category = ?, update_time = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
     category || '',
     now,
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     fakeid
   );
   return true;
 }
 
 export async function updateAccountFocused(authKey: string, fakeid: string, focused: boolean): Promise<boolean> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const now = nowSeconds();
   await db.run(
     `
     UPDATE reader_accounts
-    SET focused = ?, update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET focused = ?, update_time = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
     focused ? 1 : 0,
     now,
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     fakeid
   );
   return true;
 }
 
 export async function updateLastUpdateTime(authKey: string, fakeid: string): Promise<boolean> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     UPDATE reader_accounts
-    SET last_update_time = ?, update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET last_update_time = ?, update_time = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
     nowSeconds(),
     nowSeconds(),
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     fakeid
   );
   return true;
 }
 
 export async function getAccountByFakeid(authKey: string, fakeid: string): Promise<ReaderAccount | null> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
     SELECT *
     FROM reader_accounts
-    WHERE auth_key = ? AND fakeid = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid
   );
   return row ? mapAccountRow(row) : null;
@@ -505,13 +543,14 @@ export async function listAccounts(
   authKey: string,
   options: { offset?: number; limit?: number; keyword?: string } = {}
 ): Promise<{ list: ReaderAccount[]; total: number; offset: number; limit: number }> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const offset = normalizeOffset(options.offset);
   const limit = normalizeLimit(options.limit, 200, 2000);
   const keyword = (options.keyword || '').trim();
 
-  const where: string[] = ['auth_key = ?'];
-  const params: any[] = [authKey];
+  const where: string[] = ['owner_key = ?'];
+  const params: any[] = [owner.ownerKey];
 
   if (keyword) {
     where.push('(nickname LIKE ? OR source_url LIKE ? OR site_url LIKE ?)');
@@ -557,6 +596,7 @@ export async function listAccounts(
 }
 
 export async function importAccounts(authKey: string, accounts: ReaderAccount[]): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const now = nowSeconds();
   await db.exec('BEGIN IMMEDIATE');
@@ -567,10 +607,12 @@ export async function importAccounts(authKey: string, accounts: ReaderAccount[])
       await db.run(
         `
         INSERT INTO reader_accounts(
-          auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
+          owner_key, identity_key, auth_key, fakeid, completed, count, articles, source_type, source_url, site_url, description, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(auth_key, fakeid) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(owner_key, fakeid) DO UPDATE SET
+          identity_key = excluded.identity_key,
+          auth_key = excluded.auth_key,
           completed = excluded.completed,
           count = excluded.count,
           articles = excluded.articles,
@@ -586,7 +628,9 @@ export async function importAccounts(authKey: string, accounts: ReaderAccount[])
           update_time = excluded.update_time,
           last_update_time = excluded.last_update_time
         `,
-        authKey,
+        owner.ownerKey,
+        owner.identityKey,
+        owner.authKey,
         fakeid,
         0,
         0,
@@ -613,6 +657,7 @@ export async function importAccounts(authKey: string, accounts: ReaderAccount[])
 }
 
 export async function deleteAccounts(authKey: string, fakeids: string[]): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const ids = Array.from(new Set((fakeids || []).filter(Boolean)));
   if (ids.length === 0) {
     return;
@@ -626,95 +671,95 @@ export async function deleteAccounts(authKey: string, fakeids: string[]): Promis
     await db.run(
       `
       DELETE FROM reader_accounts
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM reader_articles
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM scheduler_articles
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_html
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_comment
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_resource
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_metadata
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_resource_map
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_asset
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_comment_reply
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
     await db.run(
       `
       DELETE FROM cache_debug
-      WHERE auth_key = ? AND fakeid IN (${placeholders})
+      WHERE owner_key = ? AND fakeid IN (${placeholders})
       `,
-      authKey,
+      owner.ownerKey,
       ...ids
     );
 
     const scheduler = await db.get<{ accounts_json: string }>(
-      `SELECT accounts_json FROM scheduler_state WHERE auth_key = ?`,
-      authKey
+      `SELECT accounts_json FROM scheduler_state WHERE owner_key = ?`,
+      owner.ownerKey
     );
     if (scheduler) {
       let accounts = [] as any[];
@@ -728,12 +773,14 @@ export async function deleteAccounts(authKey: string, fakeids: string[]): Promis
       await db.run(
         `
         UPDATE scheduler_state
-        SET accounts_json = ?, updated_at = ?
-        WHERE auth_key = ?
+        SET accounts_json = ?, updated_at = ?, identity_key = ?, auth_key = ?
+        WHERE owner_key = ?
         `,
         JSON.stringify(filtered),
         Date.now(),
-        authKey
+        owner.identityKey,
+        owner.authKey,
+        owner.ownerKey
       );
     }
 
@@ -754,6 +801,7 @@ export async function upsertArticles(
     messageCountDelta?: number;
   }
 ): Promise<{ inserted: number; totalCount: number }> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const fakeid = payload.account.fakeid;
   const articles = Array.isArray(payload.articles) ? payload.articles.map(normalizeArticleForStorage) : [];
@@ -798,10 +846,10 @@ export async function upsertArticles(
         `
         SELECT 1 AS present
         FROM reader_articles
-        WHERE auth_key = ? AND article_key = ?
+        WHERE owner_key = ? AND article_key = ?
         LIMIT 1
         `,
-        authKey,
+        owner.ownerKey,
         key
       );
       const isNew = !existed;
@@ -815,10 +863,12 @@ export async function upsertArticles(
       await db.run(
         `
         INSERT INTO reader_articles(
-          auth_key, fakeid, article_key, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, is_deleted, status, data_json
+          owner_key, identity_key, auth_key, fakeid, article_key, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, is_deleted, status, data_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(auth_key, article_key) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(owner_key, article_key) DO UPDATE SET
+          identity_key = excluded.identity_key,
+          auth_key = excluded.auth_key,
           fakeid = excluded.fakeid,
           link = excluded.link,
           aid = excluded.aid,
@@ -831,7 +881,9 @@ export async function upsertArticles(
           update_time = excluded.update_time,
           data_json = excluded.data_json
         `,
-        authKey,
+        owner.ownerKey,
+        owner.identityKey,
+        owner.authKey,
         fakeid,
         key,
         String(article?.link || ''),
@@ -883,14 +935,15 @@ export async function upsertArticles(
 }
 
 export async function hitArticleCache(authKey: string, fakeid: string, createTime: number): Promise<boolean> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{ total: number }>(
     `
     SELECT COUNT(1) AS total
     FROM reader_articles
-    WHERE auth_key = ? AND fakeid = ? AND create_time < ?
+    WHERE owner_key = ? AND fakeid = ? AND create_time < ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid,
     Number(createTime) || 0
   );
@@ -903,16 +956,17 @@ export async function listArticleCache(
   createTime: number,
   limit = 5000
 ): Promise<ReaderArticle[]> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const rows = await db.all<any>(
     `
     SELECT *
     FROM reader_articles
-    WHERE auth_key = ? AND fakeid = ? AND create_time < ?
+    WHERE owner_key = ? AND fakeid = ? AND create_time < ?
     ORDER BY create_time DESC
     LIMIT ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid,
     Number(createTime) || 0,
     normalizeLimit(limit, 5000, 10000)
@@ -932,6 +986,7 @@ export async function getArticleCacheSummary(
   fakeid: string,
   createTime: number
 ): Promise<ArticleCacheSummary> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<{
     cached_rows: number;
@@ -946,9 +1001,9 @@ export async function getArticleCacheSummary(
       COUNT(DISTINCT CASE WHEN appmsgid > 0 THEN appmsgid END) AS appmsg_count,
       MIN(create_time) AS oldest_create_time
     FROM reader_articles
-    WHERE auth_key = ? AND fakeid = ? AND create_time < ?
+    WHERE owner_key = ? AND fakeid = ? AND create_time < ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid,
     Number(createTime) || 0
   );
@@ -966,6 +1021,7 @@ export async function getArticleCacheSummary(
 }
 
 export async function getArticleByLink(authKey: string, link: string): Promise<ReaderArticle | null> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
@@ -990,13 +1046,13 @@ export async function getArticleByLink(authKey: string, link: string): Promise<R
       ac.round_head_img AS account_round_head_img,
       ch.content_blob AS html_blob
     FROM reader_articles a
-    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
-    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
-    WHERE a.auth_key = ? AND a.link = ?
+    LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.owner_key = a.owner_key AND ch.url = a.link
+    WHERE a.owner_key = ? AND a.link = ?
     ORDER BY a.update_time DESC, a.create_time DESC
     LIMIT 1
     `,
-    authKey,
+    owner.ownerKey,
     link
   );
   if (!row) {
@@ -1014,86 +1070,102 @@ export async function getArticleByLink(authKey: string, link: string): Promise<R
 }
 
 export async function updateArticleStatus(authKey: string, link: string, status: string): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     UPDATE reader_articles
-    SET status = ?
-    WHERE auth_key = ? AND link = ?
+    SET status = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND link = ?
     `,
     status || '',
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     link
   );
 }
 
 export async function updateArticleDeleted(authKey: string, link: string, isDeleted: boolean): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     UPDATE reader_articles
-    SET is_deleted = ?
-    WHERE auth_key = ? AND link = ?
+    SET is_deleted = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND link = ?
     `,
     isDeleted ? 1 : 0,
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     link
   );
 }
 
 export async function updateArticleFavorite(authKey: string, link: string, favorite: boolean): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     UPDATE reader_articles
-    SET favorite = ?
-    WHERE auth_key = ? AND link = ?
+    SET favorite = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND link = ?
     `,
     favorite ? 1 : 0,
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     link
   );
 }
 
 export async function updateArticleAiSummary(authKey: string, link: string, summary: string): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     UPDATE reader_articles
-    SET ai_summary = ?, ai_summary_updated_at = ?
-    WHERE auth_key = ? AND link = ?
+    SET ai_summary = ?, ai_summary_updated_at = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND link = ?
     `,
     String(summary || '').trim(),
     nowSeconds(),
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     link
   );
 }
 
 export async function updateArticleAiTags(authKey: string, link: string, tags: string[]): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const normalizedTags = normalizeAiTags(tags);
   await db.run(
     `
     UPDATE reader_articles
-    SET ai_tags_json = ?, ai_tagged_at = ?
-    WHERE auth_key = ? AND link = ?
+    SET ai_tags_json = ?, ai_tagged_at = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND link = ?
     `,
     JSON.stringify(normalizedTags),
     nowSeconds(),
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     link
   );
 }
 
 export async function deleteArticleByLink(authKey: string, link: string): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   await db.run(
     `
     DELETE FROM reader_articles
-    WHERE auth_key = ? AND link = ?
+    WHERE owner_key = ? AND link = ?
     `,
-    authKey,
+    owner.ownerKey,
     link
   );
 }
@@ -1109,12 +1181,13 @@ export async function listArticlesPage(
     favorite?: boolean;
   } = {}
 ): Promise<{ list: ReaderArticle[]; total: number; offset: number; limit: number }> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const offset = normalizeOffset(options.offset);
   const limit = normalizeLimit(options.limit, 80, 500);
 
-  const where: string[] = ['a.auth_key = ?'];
-  const params: any[] = [authKey];
+  const where: string[] = ['a.owner_key = ?'];
+  const params: any[] = [owner.ownerKey];
 
   if (options.fakeid) {
     where.push('a.fakeid = ?');
@@ -1139,7 +1212,7 @@ export async function listArticlesPage(
     `
     SELECT COUNT(1) AS total
     FROM reader_articles a
-    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
+    LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
     WHERE ${whereSql}
     `,
     ...params
@@ -1168,7 +1241,7 @@ export async function listArticlesPage(
       ac.category AS account_category,
       ac.round_head_img AS account_round_head_img
     FROM reader_articles a
-    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
+    LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
     WHERE ${whereSql}
     ORDER BY a.update_time DESC, a.create_time DESC
     LIMIT ? OFFSET ?
@@ -1197,6 +1270,7 @@ export async function listAiDailyReports(
   authKey: string,
   options: { offset?: number; limit?: number } = {}
 ): Promise<{ list: ReaderAiDailyReport[]; total: number; offset: number; limit: number }> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const offset = normalizeOffset(options.offset);
   const limit = normalizeLimit(options.limit, 60, 365);
@@ -1205,20 +1279,20 @@ export async function listAiDailyReports(
     `
     SELECT COUNT(1) AS total
     FROM reader_ai_reports
-    WHERE auth_key = ?
+    WHERE owner_key = ?
     `,
-    authKey
+    owner.ownerKey
   );
 
   const rows = await db.all<any>(
     `
     SELECT report_date, title, content_html, source_count, created_at, updated_at
     FROM reader_ai_reports
-    WHERE auth_key = ?
+    WHERE owner_key = ?
     ORDER BY report_date DESC
     LIMIT ? OFFSET ?
     `,
-    authKey,
+    owner.ownerKey,
     limit,
     offset
   );
@@ -1232,15 +1306,16 @@ export async function listAiDailyReports(
 }
 
 export async function getAiDailyReport(authKey: string, reportDate: string): Promise<ReaderAiDailyReport | null> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
     SELECT report_date, title, content_html, source_count, created_at, updated_at
     FROM reader_ai_reports
-    WHERE auth_key = ? AND report_date = ?
+    WHERE owner_key = ? AND report_date = ?
     LIMIT 1
     `,
-    authKey,
+    owner.ownerKey,
     String(reportDate || '').trim()
   );
   return row ? mapAiDailyReportRow(row) : null;
@@ -1250,19 +1325,24 @@ export async function upsertAiDailyReport(
   authKey: string,
   input: { reportDate: string; title: string; contentHtml: string; sourceCount?: number }
 ): Promise<ReaderAiDailyReport> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const now = Date.now();
   await db.run(
     `
-    INSERT INTO reader_ai_reports(auth_key, report_date, title, content_html, source_count, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(auth_key, report_date) DO UPDATE SET
+    INSERT INTO reader_ai_reports(owner_key, identity_key, auth_key, report_date, title, content_html, source_count, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(owner_key, report_date) DO UPDATE SET
+      identity_key = excluded.identity_key,
+      auth_key = excluded.auth_key,
       title = excluded.title,
       content_html = excluded.content_html,
       source_count = excluded.source_count,
       updated_at = excluded.updated_at
     `,
-    authKey,
+    owner.ownerKey,
+    owner.identityKey,
+    owner.authKey,
     String(input.reportDate || '').trim(),
     String(input.title || '').trim(),
     String(input.contentHtml || '').trim(),
@@ -1278,6 +1358,7 @@ export async function listAiProcessingArticles(
   authKey: string,
   options: { startTime: number; endTime: number; limit?: number }
 ): Promise<ReaderAiProcessingArticle[]> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const startTime = Math.max(0, Math.floor(Number(options.startTime) || 0));
   const endTime = Math.max(startTime, Math.floor(Number(options.endTime) || 0));
@@ -1299,16 +1380,16 @@ export async function listAiProcessingArticles(
       ac.nickname AS account_nickname,
       ch.content_blob AS html_blob
     FROM reader_articles a
-    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
-    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
-    WHERE a.auth_key = ?
+    LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.owner_key = a.owner_key AND ch.url = a.link
+    WHERE a.owner_key = ?
       AND COALESCE(NULLIF(a.update_time, 0), a.create_time) >= ?
       AND COALESCE(NULLIF(a.update_time, 0), a.create_time) < ?
       AND a.is_deleted = 0
     ORDER BY a.update_time DESC, a.create_time DESC
     LIMIT ?
     `,
-    authKey,
+    owner.ownerKey,
     startTime,
     endTime,
     limit
@@ -1339,6 +1420,7 @@ export async function listAccountAiProcessingArticles(
   fakeid: string,
   options: { limit?: number } = {}
 ): Promise<ReaderAiProcessingArticle[]> {
+  const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const normalizedFakeid = String(fakeid || '').trim();
   const limit = normalizeLimit(options.limit, 10, 40);
@@ -1363,15 +1445,15 @@ export async function listAccountAiProcessingArticles(
       ac.nickname AS account_nickname,
       ch.content_blob AS html_blob
     FROM reader_articles a
-    LEFT JOIN reader_accounts ac ON ac.auth_key = a.auth_key AND ac.fakeid = a.fakeid
-    LEFT JOIN cache_html ch ON ch.auth_key = a.auth_key AND ch.url = a.link
-    WHERE a.auth_key = ?
+    LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html ch ON ch.owner_key = a.owner_key AND ch.url = a.link
+    WHERE a.owner_key = ?
       AND a.fakeid = ?
       AND a.is_deleted = 0
     ORDER BY COALESCE(NULLIF(a.update_time, 0), a.create_time) DESC, a.create_time DESC
     LIMIT ?
     `,
-    authKey,
+    owner.ownerKey,
     normalizedFakeid,
     limit
   );

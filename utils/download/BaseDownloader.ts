@@ -1,15 +1,14 @@
 import { sleep, timeout } from '#shared/utils/helpers';
-import usePreferences from '~/composables/usePreferences';
-import { PRIVATE_PROXY_REQUIRED_MESSAGE, validatePrivateProxyList } from '~/config/proxy';
+import usePreferencesCapabilities from '~/composables/usePreferencesCapabilities';
+import { PRIVATE_PROXY_REQUIRED_MESSAGE } from '~/config/proxy';
 import type { ParsedCredential } from '~/types/credential';
-import type { Preferences } from '~/types/preferences';
 import { bestConcurrencyCount } from '~/utils';
 import { DEFAULT_OPTIONS } from './constants';
 import { ProxyManager } from './ProxyManager';
 import type { Callback, DownloaderStatus, DownloadOptions } from './types';
 
 const credentials = useLocalStorage<ParsedCredential[]>('auto-detect-credentials:credentials', []);
-const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Preferences>;
+const preferenceCapabilities = usePreferencesCapabilities();
 
 // 下载器
 // 支持下载文章HTML、阅读量、留言列表
@@ -33,12 +32,9 @@ export class BaseDownloader {
   constructor(urls: string[], options: DownloadOptions = {}) {
     this.validateInputs(urls);
 
-    const configuredProxies = (preferences.value as Preferences).privateProxyList || [];
-    const { proxies } = validatePrivateProxyList(configuredProxies);
-    if (proxies.length !== configuredProxies.length) {
-      preferences.value.privateProxyList = proxies;
-    }
-    if (proxies.length === 0) {
+    const proxyCount = Math.max(0, Number(preferenceCapabilities.value.privateProxyCount || 0));
+    const proxies = Array.from({ length: proxyCount }, (_, index) => `slot:${index}`);
+    if (proxies.length === 0 || !preferenceCapabilities.value.privateProxyConfigured) {
       throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
     }
 
@@ -60,6 +56,24 @@ export class BaseDownloader {
     };
 
     this.proxyManager = new ProxyManager(proxies, this.options.cooldownPeriod, this.options.maxFailures);
+  }
+
+  protected getProxySlot(proxy: string): number {
+    const match = /^slot:(\d+)$/.exec(String(proxy || '').trim());
+    return match ? Number(match[1]) : 0;
+  }
+
+  protected buildServerProxyUrl(url: string, headers: Record<string, string>, proxy: string): string {
+    const query = new URLSearchParams({
+      url,
+      slot: String(this.getProxySlot(proxy)),
+    });
+
+    if (Object.keys(headers).length > 0) {
+      query.set('headers', JSON.stringify(headers));
+    }
+
+    return `/api/web/proxy/fetch?${query.toString()}`;
   }
 
   /**
@@ -151,8 +165,7 @@ export class BaseDownloader {
         }
       }
 
-      const Authorization = (preferences.value as Preferences).privateProxyAuthorization || '';
-      const proxyUrl = `${proxy}?url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(headers))}&authorization=${Authorization}`;
+      const proxyUrl = this.buildServerProxyUrl(url, headers, proxy);
       const response = (await Promise.race([
         fetch(proxyUrl, {
           signal: abortController.signal,

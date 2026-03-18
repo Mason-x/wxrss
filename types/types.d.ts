@@ -4,6 +4,7 @@ export interface LoginAccount {
   expires: string;
   auth_key?: string;
   identity_key?: string;
+  role?: 'admin' | 'user';
   err?: string;
 }
 

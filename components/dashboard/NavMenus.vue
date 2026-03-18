@@ -7,13 +7,29 @@ interface NavItem {
   tags?: string[];
 }
 
-const items = ref<NavItem[]>([{ name: '聚心阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' }]);
+const loginAccount = useLoginAccount();
+
+const items = computed<NavItem[]>(() => {
+  const isAdmin = loginAccount.value?.role === 'admin';
+  const list: NavItem[] = [
+    { name: '阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
+    { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
+    { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
+    { name: '设置', icon: 'i-lucide:settings-2', href: '/dashboard/settings' },
+  ];
+
+  if (isAdmin) {
+    list.push({ name: '用户管理', icon: 'i-lucide:shield-check', href: '/dashboard/users' });
+  }
+
+  return list;
+});
 </script>
 
 <template>
   <nav class="flex-1">
     <div class="mb-3 px-1">
-      <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Navigate</p>
+      <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Navigation</p>
     </div>
 
     <ul class="flex flex-col gap-2">

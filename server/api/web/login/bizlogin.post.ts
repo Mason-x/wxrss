@@ -2,11 +2,14 @@ import dayjs from 'dayjs';
 import { getRequestHeader, type H3Event } from 'h3';
 import { getMpCookie } from '~/server/kv/cookie';
 import {
+  findAuthKeyBindingByAccountInfo,
   getAuthKeyBindingByAuthKey,
   getAuthKeyBindingByIdentity,
   upsertAuthKeyBinding,
 } from '~/server/repositories/auth-key-binding';
+import { getUserAccessByIdentity } from '~/server/repositories/user-access';
 import { cookieStore, getCookieFromResponse, getCookiesFromRequest } from '~/server/utils/CookieStore';
+import { clearMpSession, resolvePreferenceRole } from '~/server/utils/mp-session';
 import { getAuthKeyFromRequest, proxyMpRequest } from '~/server/utils/proxy-request';
 
 interface LoginMpInfo {
@@ -142,6 +145,18 @@ async function resolveCanonicalAuthKey(options: {
   const currentAuthKey = normalizeAuthKey(options.currentAuthKey);
   const temporaryAuthKey = normalizeAuthKey(options.temporaryAuthKey);
   const identityKey = String(options.info.identity_key || '').trim();
+  const matchedBinding = await findAuthKeyBindingByAccountInfo({
+    userName: options.info.user_name,
+    bizUin: options.info.biz_uin,
+    alias: options.info.alias,
+    nickname: options.info.nick_name,
+    headImg: options.info.head_img,
+  });
+  const matchedAuthKey = normalizeAuthKey(matchedBinding?.authKey);
+
+  if (matchedAuthKey) {
+    return matchedAuthKey;
+  }
 
   if (identityKey) {
     const existingBinding = await getAuthKeyBindingByIdentity(identityKey);
@@ -278,6 +293,16 @@ export default defineEventHandler(async event => {
       extractedIdentityKey: info.identity_key || '',
     });
 
+    const access = effectiveIdentityKey ? await getUserAccessByIdentity(effectiveIdentityKey) : null;
+    if (access?.disabled) {
+      await cookieStore.deleteCookie(temporaryAuthKey).catch(() => undefined);
+      if (canonicalAuthKey && canonicalAuthKey !== temporaryAuthKey) {
+        await cookieStore.deleteCookie(canonicalAuthKey).catch(() => undefined);
+      }
+      await clearMpSession(event, canonicalAuthKey || temporaryAuthKey);
+      return createLoginError('当前公众号已被管理员禁止登录');
+    }
+
     await promoteTemporarySession(temporaryAuthKey, canonicalAuthKey);
 
     if (effectiveIdentityKey) {
@@ -303,6 +328,7 @@ export default defineEventHandler(async event => {
       expires: dayjs().add(4, 'days').toString(),
       auth_key: canonicalAuthKey,
       identity_key: effectiveIdentityKey,
+      role: resolvePreferenceRole(effectiveIdentityKey),
     });
 
     headers.set('Content-Length', new TextEncoder().encode(body).length.toString());

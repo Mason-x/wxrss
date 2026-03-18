@@ -1,6 +1,6 @@
 import { normalizePreferences } from '#shared/utils/preferences';
 import { request } from '#shared/utils/request';
-import type { Preferences } from '~/types/preferences';
+import type { Preferences, PreferencesAccess, PreferencesCapabilities } from '~/types/preferences';
 
 function getLoginOwnerKey(account: Record<string, any> | null | undefined): string {
   return String(account?.identity_key || account?.auth_key || '').trim();
@@ -9,6 +9,8 @@ function getLoginOwnerKey(account: Record<string, any> | null | undefined): stri
 export default () => {
   const preferences = usePreferences() as unknown as Ref<Preferences>;
   const loginAccount = useLoginAccount();
+  const access = usePreferencesAccess();
+  const capabilities = usePreferencesCapabilities();
   const saving = useState<boolean>('preferences-sync-saving', () => false);
   const lastPersisted = useState<string>('preferences-sync-last-persisted', () => '');
   const saveTimer = useState<number | null>('preferences-sync-save-timer', () => null);
@@ -33,12 +35,18 @@ export default () => {
 
     saving.value = true;
     try {
-      const response = await request<{ data?: Partial<Preferences> }>('/api/web/preferences', {
+      const response = await request<{
+        data?: Partial<Preferences>;
+        access?: PreferencesAccess;
+        capabilities?: PreferencesCapabilities;
+      }>('/api/web/preferences', {
         method: 'POST',
         body: normalized,
       });
       const persisted = normalizePreferences(response?.data || normalized);
       preferences.value = persisted;
+      access.value = response?.access || access.value;
+      capabilities.value = response?.capabilities || capabilities.value;
       lastPersisted.value = JSON.stringify(persisted);
       hasUnsavedChanges.value = false;
       return preferences.value;

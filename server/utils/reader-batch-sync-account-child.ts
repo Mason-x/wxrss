@@ -165,6 +165,12 @@ interface ArticleCacheSummary {
   oldestCreateTime: number;
 }
 
+interface AccountOwnerScope {
+  ownerKey: string;
+  identityKey: string;
+  authKey: string;
+}
+
 const ARTICLE_STORAGE_FIELD_ALLOWLIST = new Set<string>([
   'aid',
   'appmsgid',
@@ -317,6 +323,26 @@ async function openDb(): Promise<Database> {
   return db;
 }
 
+async function resolveAccountOwnerScope(db: Database, authKey: string): Promise<AccountOwnerScope> {
+  const normalizedAuthKey = String(authKey || '').trim();
+  const row = await db.get<{ identity_key: string }>(
+    `
+    SELECT identity_key
+    FROM mp_account_identity
+    WHERE auth_key = ?
+    LIMIT 1
+    `,
+    normalizedAuthKey
+  );
+  const identityKey = String(row?.identity_key || '').trim();
+
+  return {
+    ownerKey: identityKey ? `identity:${identityKey}` : `auth:${normalizedAuthKey}`,
+    identityKey,
+    authKey: normalizedAuthKey,
+  };
+}
+
 function hashString(value: string): string {
   let hash = 0;
   for (let i = 0; i < value.length; i++) {
@@ -443,20 +469,42 @@ function mapAccountRow(row: any): ReaderAccountRecord {
   };
 }
 
-async function getAccountByFakeid(db: Database, authKey: string, fakeid: string): Promise<ReaderAccountRecord | null> {
+async function getAccountByFakeid(
+  db: Database,
+  owner: AccountOwnerScope,
+  fakeid: string
+): Promise<ReaderAccountRecord | null> {
   const row = await db.get<any>(
     `
     SELECT *
     FROM reader_accounts
-    WHERE auth_key = ? AND fakeid = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid
   );
+  if (row && (String(row.auth_key || '') !== owner.authKey || String(row.identity_key || '') !== owner.identityKey)) {
+    await db.run(
+      `
+      UPDATE reader_accounts
+      SET identity_key = ?, auth_key = ?
+      WHERE owner_key = ? AND fakeid = ?
+      `,
+      owner.identityKey,
+      owner.authKey,
+      owner.ownerKey,
+      fakeid
+    );
+  }
   return row ? mapAccountRow(row) : null;
 }
 
-async function updateLastUpdateTime(db: Database, authKey: string, fakeid: string, timestamp: number): Promise<void> {
+async function updateLastUpdateTime(
+  db: Database,
+  owner: AccountOwnerScope,
+  fakeid: string,
+  timestamp: number
+): Promise<void> {
   const latest = Number(timestamp) || 0;
   if (latest <= 0) {
     return;
@@ -465,19 +513,21 @@ async function updateLastUpdateTime(db: Database, authKey: string, fakeid: strin
   await db.run(
     `
     UPDATE reader_accounts
-    SET last_update_time = ?, update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET last_update_time = ?, update_time = ?, identity_key = ?, auth_key = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
     latest,
     now,
-    authKey,
+    owner.identityKey,
+    owner.authKey,
+    owner.ownerKey,
     fakeid
   );
 }
 
 async function applyAccountDelta(
   db: Database,
-  authKey: string,
+  owner: AccountOwnerScope,
   payload: Partial<ReaderAccountRecord> & { fakeid: string; total_count?: number; completed?: boolean },
   messageDelta: number,
   articleDelta: number
@@ -486,9 +536,9 @@ async function applyAccountDelta(
     `
     SELECT *
     FROM reader_accounts
-    WHERE auth_key = ? AND fakeid = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
-    authKey,
+    owner.ownerKey,
     payload.fakeid
   );
 
@@ -515,11 +565,13 @@ async function applyAccountDelta(
     await db.run(
       `
       INSERT INTO reader_accounts(
-        auth_key, fakeid, completed, count, articles, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
+        owner_key, identity_key, auth_key, fakeid, completed, count, articles, category, focused, nickname, round_head_img, total_count, create_time, update_time, last_update_time
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      authKey,
+      owner.ownerKey,
+      owner.identityKey,
+      owner.authKey,
       created.fakeid,
       created.completed ? 1 : 0,
       created.count,
@@ -556,9 +608,11 @@ async function applyAccountDelta(
   await db.run(
     `
     UPDATE reader_accounts
-    SET completed = ?, count = ?, articles = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
-    WHERE auth_key = ? AND fakeid = ?
+    SET identity_key = ?, auth_key = ?, completed = ?, count = ?, articles = ?, category = ?, focused = ?, nickname = ?, round_head_img = ?, total_count = ?, update_time = ?, last_update_time = ?
+    WHERE owner_key = ? AND fakeid = ?
     `,
+    owner.identityKey,
+    owner.authKey,
     updated.completed ? 1 : 0,
     updated.count,
     updated.articles,
@@ -569,7 +623,7 @@ async function applyAccountDelta(
     updated.total_count,
     updated.update_time,
     updated.last_update_time || 0,
-    authKey,
+    owner.ownerKey,
     updated.fakeid
   );
 
@@ -578,7 +632,7 @@ async function applyAccountDelta(
 
 async function upsertArticles(
   db: Database,
-  authKey: string,
+  owner: AccountOwnerScope,
   payload: {
     account: Partial<ReaderAccountRecord> & { fakeid: string };
     articles: any[];
@@ -593,7 +647,7 @@ async function upsertArticles(
   if (!fakeid || articles.length === 0) {
     await applyAccountDelta(
       db,
-      authKey,
+      owner,
       {
         ...payload.account,
         fakeid,
@@ -627,10 +681,10 @@ async function upsertArticles(
         `
         SELECT 1 AS present
         FROM reader_articles
-        WHERE auth_key = ? AND article_key = ?
+        WHERE owner_key = ? AND article_key = ?
         LIMIT 1
         `,
-        authKey,
+        owner.ownerKey,
         key
       );
       const isNew = !existed;
@@ -644,10 +698,12 @@ async function upsertArticles(
       await db.run(
         `
         INSERT INTO reader_articles(
-          auth_key, fakeid, article_key, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, is_deleted, status, data_json
+          owner_key, identity_key, auth_key, fakeid, article_key, link, aid, appmsgid, itemidx, title, digest, author_name, create_time, update_time, is_deleted, status, data_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(auth_key, article_key) DO UPDATE SET
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(owner_key, article_key) DO UPDATE SET
+          identity_key = excluded.identity_key,
+          auth_key = excluded.auth_key,
           fakeid = excluded.fakeid,
           link = excluded.link,
           aid = excluded.aid,
@@ -660,7 +716,9 @@ async function upsertArticles(
           update_time = excluded.update_time,
           data_json = excluded.data_json
         `,
-        authKey,
+        owner.ownerKey,
+        owner.identityKey,
+        owner.authKey,
         fakeid,
         key,
         String(article?.link || ''),
@@ -693,7 +751,7 @@ async function upsertArticles(
 
   await applyAccountDelta(
     db,
-    authKey,
+    owner,
     {
       ...payload.account,
       fakeid,
@@ -713,7 +771,7 @@ async function upsertArticles(
 
 async function getArticleCacheSummary(
   db: Database,
-  authKey: string,
+  owner: AccountOwnerScope,
   fakeid: string,
   createTime: number
 ): Promise<ArticleCacheSummary> {
@@ -730,9 +788,9 @@ async function getArticleCacheSummary(
       COUNT(DISTINCT CASE WHEN appmsgid > 0 THEN appmsgid END) AS appmsg_count,
       MIN(create_time) AS oldest_create_time
     FROM reader_articles
-    WHERE auth_key = ? AND fakeid = ? AND create_time < ?
+    WHERE owner_key = ? AND fakeid = ? AND create_time < ?
     `,
-    authKey,
+    owner.ownerKey,
     fakeid,
     Number(createTime) || 0
   );
@@ -957,6 +1015,7 @@ function ensureNotCanceled(): void {
 }
 
 async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInput) {
+  const owner = await resolveAccountOwnerScope(db, payload.authKey);
   const account = payload.account;
   const fakeid = String(account.fakeid || '');
   const nickname = String(account.nickname || fakeid);
@@ -1003,7 +1062,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     const completed = Boolean(resp.completed);
     latestTotalCount = totalCount;
 
-    const upsertResult = await upsertArticles(db, payload.authKey, {
+    const upsertResult = await upsertArticles(db, owner, {
       account: {
         fakeid: account.fakeid,
         nickname: account.nickname || '',
@@ -1019,10 +1078,10 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     totalInserted += Number(upsertResult.inserted) || 0;
 
     if (begin === 0 && Number(upsertResult.inserted) > 0) {
-      await updateLastUpdateTime(db, payload.authKey, fakeid, resolveLatestArticleTime(articles));
+      await updateLastUpdateTime(db, owner, fakeid, resolveLatestArticleTime(articles));
     }
 
-    const latestAccount = await getAccountByFakeid(db, payload.authKey, fakeid);
+    const latestAccount = await getAccountByFakeid(db, owner, fakeid);
     const syncedMessages = Number(latestAccount?.count) || begin;
     const syncedArticles = Number(latestAccount?.articles) || totalInserted;
     sendMessage({
@@ -1057,7 +1116,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     let cacheBoundaryCreateTime = 0;
     const lastArticle = articles.at(-1);
     if (lastArticle && originalLastUpdateTime > 0 && Number(lastArticle.create_time) < originalLastUpdateTime) {
-      const summary = await getArticleCacheSummary(db, payload.authKey, fakeid, Number(lastArticle.create_time) || 0);
+      const summary = await getArticleCacheSummary(db, owner, fakeid, Number(lastArticle.create_time) || 0);
       if (summary.cachedRows > 0) {
         begin += Number(summary.cachedMessageCount) || 0;
         cacheBoundaryCreateTime = Number(summary.oldestCreateTime) || 0;
@@ -1078,7 +1137,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     await sleep(pickRandomDelayMs(payload));
   }
 
-  const latestAccount = await getAccountByFakeid(db, payload.authKey, fakeid);
+  const latestAccount = await getAccountByFakeid(db, owner, fakeid);
   const syncedMessages = Number(latestAccount?.count) || begin;
   const syncedArticles = Number(latestAccount?.articles) || totalInserted;
   sendMessage({
