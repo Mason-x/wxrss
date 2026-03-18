@@ -5537,9 +5537,7 @@ onUnmounted(() => {
             class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-3 pt-3"
             :class="[
               mobileView === 'article' ? 'pointer-events-none' : '',
-              mobileView === 'articles' && shouldShowArticleFooterAction
-                ? 'pb-[calc(env(safe-area-inset-bottom)+6rem)]'
-                : 'pb-[calc(env(safe-area-inset-bottom)+2rem)]',
+              'pb-[calc(env(safe-area-inset-bottom)+2rem)]',
             ]"
             @scroll.passive="onMobileReaderScroll"
           >
@@ -5679,6 +5677,24 @@ onUnmounted(() => {
               />
             </div>
           </motion.div>
+
+          <div
+            v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
+            class="app-shell-glass shrink-0 border-t border-slate-200/60 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 dark:border-slate-800/70"
+          >
+            <UButton
+              size="sm"
+              color="gray"
+              variant="soft"
+              block
+              :loading="articleFooterActionLoading"
+              :disabled="articleFooterActionLoading"
+              class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+              @click="handleArticleFooterAction"
+            >
+              {{ articleFooterActionLabel }}
+            </UButton>
+          </div>
         </motion.div>
 
         <motion.div
@@ -6203,26 +6219,6 @@ onUnmounted(() => {
           </motion.aside>
         </motion.div>
       </AnimatePresence>
-
-      <div
-        v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
-        class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
-      >
-        <div class="mobile-footer-dock mx-auto max-w-[720px] px-2.5 pb-1.5 pt-4 pointer-events-auto">
-          <UButton
-            size="sm"
-            color="gray"
-            variant="soft"
-            block
-            :loading="articleFooterActionLoading"
-            :disabled="articleFooterActionLoading"
-            class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
-            @click="handleArticleFooterAction"
-          >
-            {{ articleFooterActionLabel }}
-          </UButton>
-        </div>
-      </div>
 
       <ScrollTopFab :visible="mobileScrollTopVisible" @click="scrollMobileReaderToTop" />
     </div>
@@ -7590,15 +7586,6 @@ onUnmounted(() => {
   -webkit-overflow-scrolling: touch;
   will-change: transform, scroll-position;
   transform: translateZ(0);
-}
-
-.mobile-footer-dock {
-  background-image: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, rgba(248, 250, 252, 0.88) 42%, rgba(248, 250, 252, 0.96) 100%);
-  backdrop-filter: blur(12px);
-}
-
-:global(.dark) .mobile-footer-dock {
-  background-image: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.88) 42%, rgba(2, 6, 23, 0.96) 100%);
 }
 
 .reader-page-shell {
