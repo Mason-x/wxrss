@@ -37,7 +37,7 @@
           >
             <div class="min-w-0">
               <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">用户列表</h2>
-              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看登录账号、禁用登录或删除用户数据。</p>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看登录账号，禁用登录，或删除用户数据。</p>
             </div>
             <UButton
               color="gray"
@@ -68,21 +68,12 @@
 
             <div v-else class="space-y-3">
               <div
-                class="hidden grid-cols-[minmax(0,1.8fr)_140px_200px_320px] items-center gap-4 rounded-[20px] bg-slate-100/80 px-5 py-3 text-xs font-semibold tracking-[0.08em] text-slate-500 dark:bg-slate-900/70 dark:text-slate-400 md:grid"
-              >
-                <div>用户</div>
-                <div>用户等级</div>
-                <div>最近登录时间</div>
-                <div class="text-right">操作</div>
-              </div>
-
-              <div
                 v-for="user in users"
                 :key="user.identityKey"
-                class="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_30px_rgba(15,23,42,0.05)] transition-colors dark:border-white/10 dark:bg-slate-950/80 md:grid md:grid-cols-[minmax(0,1.8fr)_140px_200px_320px] md:items-center md:gap-4 md:px-5 md:py-4"
+                class="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_30px_rgba(15,23,42,0.05)] transition-colors dark:border-white/10 dark:bg-slate-950/80"
                 :class="user.disabled ? 'border-rose-200/80 dark:border-rose-500/30' : ''"
               >
-                <div class="flex items-start gap-3 md:items-center">
+                <div class="flex items-start gap-3">
                   <img
                     v-if="user.avatar"
                     :src="imageProxy + user.avatar"
@@ -97,73 +88,55 @@
                   </div>
 
                   <div class="min-w-0 flex-1">
-                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                       <p class="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
                         {{ getDisplayName(user) }}
                       </p>
-                      <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle">当前登录</UBadge>
-                      <UBadge v-if="user.disabled" color="rose" variant="subtle">已禁用</UBadge>
+                      <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="sm">
+                        {{ user.role === 'admin' ? '管理员' : '普通用户' }}
+                      </UBadge>
+                      <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle" size="sm">当前登录</UBadge>
+                      <UBadge v-if="user.disabled" color="rose" variant="subtle" size="sm">已禁用</UBadge>
                     </div>
+
                     <p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
                       {{ getUserSubline(user) }}
                     </p>
-                  </div>
-                </div>
 
-                <div class="mt-4 grid grid-cols-2 gap-2 md:mt-0 md:block">
-                  <div class="rounded-[18px] bg-slate-100/80 px-3 py-2 dark:bg-slate-900/70 md:rounded-none md:bg-transparent md:px-0 md:py-0">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
-                      用户等级
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      最近登录：{{ formatTimestamp(user.lastLoginAt) }}
                     </p>
-                    <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="lg" class="mt-2">
-                      {{ user.role === 'admin' ? '管理员' : '普通用户' }}
-                    </UBadge>
-                  </div>
-                  <div class="rounded-[18px] bg-slate-100/80 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300 md:hidden">
-                    <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
-                      最近登录
-                    </p>
-                    <p class="mt-2 font-medium text-slate-900 dark:text-slate-100">{{ formatTimestamp(user.lastLoginAt) }}</p>
                   </div>
                 </div>
 
-                <div class="mt-4 hidden text-sm text-slate-600 dark:text-slate-300 md:mt-0 md:block">
-                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
-                    最近登录时间
-                  </p>
-                  {{ formatTimestamp(user.lastLoginAt) }}
-                </div>
-
-                <div class="mt-4 grid grid-cols-3 gap-2 md:mt-0">
+                <div class="mt-4 grid grid-cols-3 gap-2">
                   <UButton
-                    size="sm"
+                    size="xs"
                     color="gray"
                     variant="soft"
-                    icon="i-lucide:copy"
-                    class="justify-center rounded-full"
+                    class="justify-center rounded-full text-[11px]"
                     @click="copyUserId(user)"
                   >
-                    复制 ID
+                    复制ID
                   </UButton>
                   <UButton
-                    size="sm"
+                    size="xs"
                     :color="user.disabled ? 'emerald' : 'rose'"
                     :variant="user.disabled ? 'soft' : 'solid'"
                     :loading="pendingActionIdentityKey === `status:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center rounded-full"
+                    class="justify-center rounded-full text-[11px]"
                     @click="toggleUserStatus(user)"
                   >
-                    {{ user.disabled ? '解除禁止' : '禁止登录' }}
+                    {{ user.disabled ? '解除禁用' : '禁止登录' }}
                   </UButton>
                   <UButton
-                    size="sm"
+                    size="xs"
                     color="rose"
                     variant="soft"
-                    icon="i-lucide:trash-2"
                     :loading="pendingActionIdentityKey === `delete:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center rounded-full"
+                    class="justify-center rounded-full text-[11px]"
                     @click="deleteUser(user)"
                   >
                     删除
