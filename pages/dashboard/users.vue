@@ -82,7 +82,7 @@
                 class="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_30px_rgba(15,23,42,0.05)] transition-colors dark:border-white/10 dark:bg-slate-950/80 md:grid md:grid-cols-[minmax(0,1.8fr)_140px_200px_320px] md:items-center md:gap-4 md:px-5 md:py-4"
                 :class="user.disabled ? 'border-rose-200/80 dark:border-rose-500/30' : ''"
               >
-                <div class="flex items-center gap-3">
+                <div class="flex items-start gap-3 md:items-center">
                   <img
                     v-if="user.avatar"
                     :src="imageProxy + user.avatar"
@@ -96,7 +96,7 @@
                     <UIcon name="i-lucide:user" class="size-5" />
                   </div>
 
-                  <div class="min-w-0">
+                  <div class="min-w-0 flex-1">
                     <div class="flex min-w-0 flex-wrap items-center gap-2">
                       <p class="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
                         {{ getDisplayName(user) }}
@@ -104,37 +104,44 @@
                       <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle">当前登录</UBadge>
                       <UBadge v-if="user.disabled" color="rose" variant="subtle">已禁用</UBadge>
                     </div>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      <template v-if="user.memberCount > 1">关联记录 {{ user.memberCount }}</template>
-                      <template v-else>已识别公众号账号</template>
+                    <p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                      {{ getUserSubline(user) }}
                     </p>
                   </div>
                 </div>
 
-                <div class="mt-4 md:mt-0">
-                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400 md:hidden">
-                    用户等级
-                  </p>
-                  <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="lg">
-                    {{ user.role === 'admin' ? '管理员' : '普通用户' }}
-                  </UBadge>
+                <div class="mt-4 grid grid-cols-2 gap-2 md:mt-0 md:block">
+                  <div class="rounded-[18px] bg-slate-100/80 px-3 py-2 dark:bg-slate-900/70 md:rounded-none md:bg-transparent md:px-0 md:py-0">
+                    <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
+                      用户等级
+                    </p>
+                    <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="lg" class="mt-2">
+                      {{ user.role === 'admin' ? '管理员' : '普通用户' }}
+                    </UBadge>
+                  </div>
+                  <div class="rounded-[18px] bg-slate-100/80 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300 md:hidden">
+                    <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
+                      最近登录
+                    </p>
+                    <p class="mt-2 font-medium text-slate-900 dark:text-slate-100">{{ formatTimestamp(user.lastLoginAt) }}</p>
+                  </div>
                 </div>
 
-                <div class="mt-4 text-sm text-slate-600 dark:text-slate-300 md:mt-0">
-                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400 md:hidden">
+                <div class="mt-4 hidden text-sm text-slate-600 dark:text-slate-300 md:mt-0 md:block">
+                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400">
                     最近登录时间
                   </p>
                   {{ formatTimestamp(user.lastLoginAt) }}
                 </div>
 
-                <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0">
+                <div class="mt-4 grid grid-cols-3 gap-2 md:mt-0">
                   <UButton
                     size="sm"
                     color="gray"
                     variant="soft"
                     icon="i-lucide:copy"
-                    class="justify-center"
-                    @click="copyIdentityKey(user)"
+                    class="justify-center rounded-full"
+                    @click="copyUserId(user)"
                   >
                     复制 ID
                   </UButton>
@@ -144,7 +151,7 @@
                     :variant="user.disabled ? 'soft' : 'solid'"
                     :loading="pendingActionIdentityKey === `status:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center"
+                    class="justify-center rounded-full"
                     @click="toggleUserStatus(user)"
                   >
                     {{ user.disabled ? '解除禁止' : '禁止登录' }}
@@ -156,7 +163,7 @@
                     icon="i-lucide:trash-2"
                     :loading="pendingActionIdentityKey === `delete:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center"
+                    class="justify-center rounded-full"
                     @click="deleteUser(user)"
                   >
                     删除
@@ -179,7 +186,7 @@ import { IMAGE_PROXY, websiteName } from '~/config';
 interface AdminUserItem {
   identityKey: string;
   identityKeys: string[];
-  memberCount: number;
+  publicId: string;
   nickname: string;
   avatar: string;
   userName: string;
@@ -210,6 +217,10 @@ function getDisplayName(user: AdminUserItem) {
   return user.nickname || user.alias || user.userName || '未命名公众号';
 }
 
+function getUserSubline(user: AdminUserItem) {
+  return user.publicId ? `公众号ID ${user.publicId}` : '公众号账号';
+}
+
 function formatTimestamp(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return '未记录';
@@ -231,10 +242,11 @@ async function loadUsers() {
   }
 }
 
-async function copyIdentityKey(user: AdminUserItem) {
+async function copyUserId(user: AdminUserItem) {
+  const targetId = user.publicId || user.identityKey;
   try {
-    await navigator.clipboard.writeText(user.identityKey);
-    toast.success('已复制用户 ID');
+    await navigator.clipboard.writeText(targetId);
+    toast.success(user.publicId ? '已复制公众号 ID' : '已复制用户 ID');
   } catch {
     toast.error('复制失败');
   }

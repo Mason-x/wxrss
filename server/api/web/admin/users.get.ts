@@ -9,7 +9,7 @@ export default defineEventHandler(async event => {
     data: users.map(user => ({
       identityKey: user.identityKey,
       identityKeys: user.identityKeys,
-      memberCount: user.memberCount,
+      publicId: user.publicId,
       nickname: user.nickname,
       avatar: user.headImg,
       userName: user.userName,

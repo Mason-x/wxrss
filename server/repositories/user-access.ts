@@ -28,6 +28,7 @@ export interface UserAccessRecord {
 
 export interface UserDirectoryEntry extends UserAccessRecord {
   authKey: string;
+  publicId: string;
   userName: string;
   bizUin: string;
   alias: string;
@@ -121,9 +122,33 @@ function extractProfileNickname(identityKey: string): string {
   return normalizeText(separatorIndex >= 0 ? payload.slice(0, separatorIndex) : payload);
 }
 
+function extractUserNameIdentityValue(identityKey: string): string {
+  const normalized = normalizeText(identityKey);
+  if (!normalized.startsWith('user_name:')) {
+    return '';
+  }
+  return normalizeText(normalized.slice('user_name:'.length));
+}
+
 function looksLikeStableMpId(value: string): boolean {
   const normalized = normalizeLowerText(value);
   return /^gh[_a-z0-9-]{8,}$/.test(normalized);
+}
+
+function normalizeStablePublicId(value: unknown): string {
+  const normalized = normalizeLowerText(value);
+  return looksLikeStableMpId(normalized) ? normalized : '';
+}
+
+function resolveStablePublicId(
+  row: Pick<UserDirectoryRow, 'identity_key' | 'user_name' | 'nickname'>
+): string {
+  return (
+    normalizeStablePublicId(row.user_name) ||
+    normalizeStablePublicId(extractUserNameIdentityValue(row.identity_key)) ||
+    normalizeStablePublicId(row.nickname) ||
+    normalizeStablePublicId(extractProfileNickname(row.identity_key))
+  );
 }
 
 function getBaseUserGroupingKeys(
@@ -133,7 +158,11 @@ function getBaseUserGroupingKeys(
   const userName = normalizeLowerText(row.user_name);
   const bizUin = normalizeLowerText(row.biz_uin);
   const alias = normalizeLowerText(row.alias);
+  const publicId = resolveStablePublicId(row);
 
+  if (publicId) {
+    keys.add(`public_id:${publicId}`);
+  }
   if (userName) {
     keys.add(`user_name:${userName}`);
   }
@@ -144,13 +173,6 @@ function getBaseUserGroupingKeys(
     keys.add(`alias:${alias}`);
   }
 
-  const nicknameCandidates = [row.nickname, extractProfileNickname(row.identity_key)];
-  for (const candidate of nicknameCandidates) {
-    if (looksLikeStableMpId(candidate)) {
-      keys.add(`legacy_public_id:${normalizeLowerText(candidate)}`);
-    }
-  }
-
   return Array.from(keys);
 }
 
@@ -159,13 +181,24 @@ function hasStableGroupingIdentity(row: Pick<UserDirectoryRow, 'user_name' | 'bi
 }
 
 function getUserGroupingKeys(
-  row: Pick<UserDirectoryRow, 'identity_key' | 'user_name' | 'biz_uin' | 'alias' | 'nickname' | 'head_img'>,
+  row: Pick<UserDirectoryRow, 'identity_key' | 'auth_key' | 'user_name' | 'biz_uin' | 'alias' | 'nickname' | 'head_img'>,
   options?: {
     bridgeableHeadImgs?: Set<string>;
+    publicIdsByAuthKey?: Map<string, Set<string>>;
   }
 ): string[] {
   const keys = new Set(getBaseUserGroupingKeys(row));
   const normalizedHeadImg = normalizeHeadImg(row.head_img);
+  const normalizedAuthKey = normalizeText(row.auth_key);
+
+  if (normalizedAuthKey) {
+    const publicIds = options?.publicIdsByAuthKey?.get(normalizedAuthKey);
+    if (publicIds) {
+      for (const publicId of publicIds) {
+        keys.add(`public_id:${publicId}`);
+      }
+    }
+  }
 
   if (normalizedHeadImg && options?.bridgeableHeadImgs?.has(normalizedHeadImg)) {
     keys.add(`head_img_bridge:${normalizedHeadImg}`);
@@ -263,8 +296,17 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
   const rowByIdentityKey = new Map<string, UserDirectoryRow>();
   const identityKeysByMatchKey = new Map<string, Set<string>>();
   const stableHeadImgCounts = new Map<string, number>();
+  const publicIdsByAuthKey = new Map<string, Set<string>>();
 
   for (const row of sortedRows) {
+    const publicId = resolveStablePublicId(row);
+    const authKey = normalizeText(row.auth_key);
+    if (publicId && authKey) {
+      const current = publicIdsByAuthKey.get(authKey) || new Set<string>();
+      current.add(publicId);
+      publicIdsByAuthKey.set(authKey, current);
+    }
+
     if (!hasStableGroupingIdentity(row)) {
       continue;
     }
@@ -287,7 +329,7 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
     const identityKey = normalizeText(row.identity_key);
     rowByIdentityKey.set(identityKey, row);
 
-    for (const matchKey of getUserGroupingKeys(row, { bridgeableHeadImgs })) {
+    for (const matchKey of getUserGroupingKeys(row, { bridgeableHeadImgs, publicIdsByAuthKey })) {
       const current = identityKeysByMatchKey.get(matchKey) || new Set<string>();
       current.add(identityKey);
       identityKeysByMatchKey.set(matchKey, current);
@@ -321,7 +363,7 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
       visited.add(currentIdentityKey);
       componentRows.push(currentRow);
 
-      for (const matchKey of getUserGroupingKeys(currentRow, { bridgeableHeadImgs })) {
+      for (const matchKey of getUserGroupingKeys(currentRow, { bridgeableHeadImgs, publicIdsByAuthKey })) {
         componentMatchKeys.add(matchKey);
         const relatedIdentityKeys = identityKeysByMatchKey.get(matchKey);
         if (!relatedIdentityKeys) {
@@ -354,6 +396,9 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
       entry: {
         identityKey: normalizeText(primaryRow.identity_key),
         authKey: normalizeText(primaryRow.auth_key),
+        publicId:
+          sortedComponentRows.map(item => resolveStablePublicId(item)).find(Boolean) ||
+          resolveStablePublicId(primaryRow),
         userName: normalizeText(primaryRow.user_name),
         bizUin: normalizeText(primaryRow.biz_uin),
         alias: normalizeText(primaryRow.alias),
