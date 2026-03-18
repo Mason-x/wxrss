@@ -5,12 +5,12 @@
     </template>
     <template v-else>
       <div class="app-shell-bg h-screen">
-        <div class="flex h-full flex-col px-3 pb-3 pt-3 text-slate-900 dark:text-slate-100 md:hidden">
+        <div class="flex h-full flex-col px-3 text-slate-900 dark:text-slate-100 md:hidden" :style="mobileShellStyle">
           <header
-            class="app-shell-glass flex h-[56px] flex-shrink-0 items-center justify-between rounded-[24px] px-4"
+            class="app-shell-glass flex min-h-[60px] flex-shrink-0 items-center justify-between rounded-[26px] px-4"
           >
             <div class="min-w-0">
-              <p class="truncate text-base font-semibold">{{ mobileCurrentTitle }}</p>
+              <p class="truncate text-lg font-semibold leading-6">{{ mobileCurrentTitle }}</p>
               <div id="title" class="hidden"></div>
             </div>
             <UButton
@@ -36,13 +36,16 @@
               <Transition name="mobile-menu-drop">
                 <section
                   v-if="mobileMenuOpen"
-                  class="app-shell-panel mobile-top-menu fixed inset-x-3 top-[72px] max-h-[calc(100vh-88px)] overflow-hidden rounded-[30px]"
+                  class="app-shell-panel mobile-top-menu fixed inset-x-3 overflow-hidden rounded-[30px]"
+                  :style="mobileMenuStyle"
                 >
-                  <div class="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 pb-4 pt-5 dark:border-slate-800/80">
+                  <div
+                    class="flex items-start justify-between gap-4 border-b border-slate-200/70 px-5 pb-4 pt-5 dark:border-slate-800/80"
+                  >
                     <div class="min-w-0">
-                      <p class="text-base font-semibold">系统菜单</p>
-                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        页面切换和全局工具统一放在顶部，不再占用底部空间。
+                      <p class="text-lg font-semibold">系统菜单</p>
+                      <p class="mt-1 max-w-[18rem] text-xs leading-5 text-slate-500 dark:text-slate-400">
+                        页面切换和全局工具都收在顶部菜单里，减少底部遮挡和无效留白。
                       </p>
                     </div>
                     <UButton
@@ -55,7 +58,7 @@
                     />
                   </div>
 
-                  <div class="app-shell-scrollbar max-h-[calc(100vh-180px)] overflow-y-auto px-5 py-4">
+                  <div class="app-shell-scrollbar overflow-y-auto px-5 py-4" :style="mobileMenuBodyStyle">
                     <div class="space-y-5">
                       <section class="space-y-3">
                         <div class="flex items-center justify-between">
@@ -82,8 +85,11 @@
                       </section>
 
                       <section class="space-y-3 border-t border-slate-200/70 pt-5 dark:border-slate-800/80">
-                        <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">全局工具</h3>
-                        <div class="app-shell-muted rounded-[24px] px-4 py-4">
+                        <div class="flex items-center justify-between">
+                          <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">全局工具</h3>
+                          <span class="text-xs text-slate-400">凭据与文档</span>
+                        </div>
+                        <div class="app-shell-muted rounded-[22px] px-3 py-3">
                           <GlobalActions mobile />
                         </div>
                       </section>
@@ -99,7 +105,9 @@
           <SideBar />
 
           <div class="app-shell-panel flex h-full flex-1 flex-col overflow-hidden rounded-[32px]">
-            <div class="app-shell-glass flex h-[64px] flex-shrink-0 items-center justify-between border-b border-slate-200/60 px-6 dark:border-slate-800/70">
+            <div
+              class="app-shell-glass flex h-[64px] flex-shrink-0 items-center justify-between border-b border-slate-200/60 px-6 dark:border-slate-800/70"
+            >
               <div id="title"></div>
               <GlobalActions />
             </div>
@@ -128,6 +136,17 @@ const route = useRoute();
 const loginAccount = useLoginAccount();
 const mobileMenuOpen = ref(false);
 const readerMode = computed(() => route.path.startsWith('/dashboard/reader'));
+const mobileShellStyle = computed(() => ({
+  paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+  paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+}));
+const mobileMenuStyle = computed(() => ({
+  top: 'calc(env(safe-area-inset-top) + 5rem)',
+  maxHeight: 'calc(100vh - env(safe-area-inset-top) - 5.75rem)',
+}));
+const mobileMenuBodyStyle = computed(() => ({
+  maxHeight: 'calc(100vh - env(safe-area-inset-top) - 11rem)',
+}));
 const embeddedMode = computed(() => {
   const value = route.query.embed;
   if (Array.isArray(value)) {
@@ -176,13 +195,13 @@ function isMobileNavActive(href: string) {
 
 <style scoped>
 .mobile-shell-btn {
-  @apply !inline-flex size-8 !gap-0 !p-0 items-center justify-center rounded-full border border-slate-200
+  @apply !inline-flex size-10 !gap-0 !p-0 items-center justify-center rounded-full border border-slate-200
     bg-white/80 text-slate-600 transition-all duration-200 hover:-translate-y-px hover:bg-white hover:text-slate-900
     dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white;
 }
 
 .mobile-menu-link {
-  @apply flex items-center justify-between gap-3 rounded-[22px] border border-white/80 bg-white/70 px-4 py-3 text-sm text-slate-700 transition-all duration-200
+  @apply flex items-center justify-between gap-3 rounded-[22px] border border-white/80 bg-white/70 px-4 py-3.5 text-sm text-slate-700 transition-all duration-200
     hover:-translate-y-px hover:bg-white hover:shadow-[0_16px_30px_rgba(15,23,42,0.08)]
     dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-900;
 }

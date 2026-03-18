@@ -126,7 +126,9 @@ function looksLikeStableMpId(value: string): boolean {
   return /^gh[_a-z0-9-]{8,}$/.test(normalized);
 }
 
-function getUserGroupingKeys(row: Pick<UserDirectoryRow, 'identity_key' | 'user_name' | 'biz_uin' | 'alias' | 'nickname'>): string[] {
+function getBaseUserGroupingKeys(
+  row: Pick<UserDirectoryRow, 'identity_key' | 'user_name' | 'biz_uin' | 'alias' | 'nickname'>
+): string[] {
   const keys = new Set<string>();
   const userName = normalizeLowerText(row.user_name);
   const bizUin = normalizeLowerText(row.biz_uin);
@@ -147,6 +149,26 @@ function getUserGroupingKeys(row: Pick<UserDirectoryRow, 'identity_key' | 'user_
     if (looksLikeStableMpId(candidate)) {
       keys.add(`legacy_public_id:${normalizeLowerText(candidate)}`);
     }
+  }
+
+  return Array.from(keys);
+}
+
+function hasStableGroupingIdentity(row: Pick<UserDirectoryRow, 'user_name' | 'biz_uin' | 'alias' | 'nickname' | 'identity_key'>): boolean {
+  return getBaseUserGroupingKeys(row).length > 0;
+}
+
+function getUserGroupingKeys(
+  row: Pick<UserDirectoryRow, 'identity_key' | 'user_name' | 'biz_uin' | 'alias' | 'nickname' | 'head_img'>,
+  options?: {
+    bridgeableHeadImgs?: Set<string>;
+  }
+): string[] {
+  const keys = new Set(getBaseUserGroupingKeys(row));
+  const normalizedHeadImg = normalizeHeadImg(row.head_img);
+
+  if (normalizedHeadImg && options?.bridgeableHeadImgs?.has(normalizedHeadImg)) {
+    keys.add(`head_img_bridge:${normalizedHeadImg}`);
   }
 
   if (keys.size === 0) {
@@ -240,12 +262,32 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
   const sortedRows = [...rows].sort(compareDirectoryRows);
   const rowByIdentityKey = new Map<string, UserDirectoryRow>();
   const identityKeysByMatchKey = new Map<string, Set<string>>();
+  const stableHeadImgCounts = new Map<string, number>();
+
+  for (const row of sortedRows) {
+    if (!hasStableGroupingIdentity(row)) {
+      continue;
+    }
+
+    const normalizedHeadImg = normalizeHeadImg(row.head_img);
+    if (!normalizedHeadImg) {
+      continue;
+    }
+
+    stableHeadImgCounts.set(normalizedHeadImg, (stableHeadImgCounts.get(normalizedHeadImg) || 0) + 1);
+  }
+
+  const bridgeableHeadImgs = new Set(
+    Array.from(stableHeadImgCounts.entries())
+      .filter(([, count]) => Number(count) > 0)
+      .map(([headImg]) => headImg)
+  );
 
   for (const row of sortedRows) {
     const identityKey = normalizeText(row.identity_key);
     rowByIdentityKey.set(identityKey, row);
 
-    for (const matchKey of getUserGroupingKeys(row)) {
+    for (const matchKey of getUserGroupingKeys(row, { bridgeableHeadImgs })) {
       const current = identityKeysByMatchKey.get(matchKey) || new Set<string>();
       current.add(identityKey);
       identityKeysByMatchKey.set(matchKey, current);
@@ -279,7 +321,7 @@ function buildUserDirectoryGroups(rows: UserDirectoryRow[]): UserDirectoryGroup[
       visited.add(currentIdentityKey);
       componentRows.push(currentRow);
 
-      for (const matchKey of getUserGroupingKeys(currentRow)) {
+      for (const matchKey of getUserGroupingKeys(currentRow, { bridgeableHeadImgs })) {
         componentMatchKeys.add(matchKey);
         const relatedIdentityKeys = identityKeysByMatchKey.get(matchKey);
         if (!relatedIdentityKeys) {

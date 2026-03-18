@@ -6,9 +6,22 @@ interface UpdateUserStatusBody {
   disabled?: boolean;
 }
 
+function decodeIdentityParam(value: unknown): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  try {
+    return decodeURIComponent(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
 export default defineEventHandler(async event => {
   const session = await requireAdminMpSession(event);
-  const identityKey = String(event.context.params?.identityKey || '').trim();
+  const identityKey = decodeIdentityParam(event.context.params?.identityKey);
   if (!identityKey) {
     throw createError({
       statusCode: 400,
