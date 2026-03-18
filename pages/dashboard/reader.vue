@@ -5676,25 +5676,24 @@ onUnmounted(() => {
                 :description="articleListEmptyState.description"
               />
             </div>
-          </motion.div>
-
-          <div
-            v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
-            class="app-shell-glass shrink-0 border-t border-slate-200/60 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 dark:border-slate-800/70"
-          >
-            <UButton
-              size="sm"
-              color="gray"
-              variant="soft"
-              block
-              :loading="articleFooterActionLoading"
-              :disabled="articleFooterActionLoading"
-              class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
-              @click="handleArticleFooterAction"
+            <div
+              v-if="mobileView === 'articles' && shouldShowArticleFooterAction && !mobileAccountsPanelOpen"
+              class="pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2"
             >
-              {{ articleFooterActionLabel }}
-            </UButton>
-          </div>
+              <UButton
+                size="sm"
+                color="gray"
+                variant="soft"
+                block
+                :loading="articleFooterActionLoading"
+                :disabled="articleFooterActionLoading"
+                class="h-11 rounded-full shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+                @click="handleArticleFooterAction"
+              >
+                {{ articleFooterActionLabel }}
+              </UButton>
+            </div>
+          </motion.div>
         </motion.div>
 
         <motion.div
