@@ -38,7 +38,6 @@ import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { IMAGE_PROXY } from '~/config';
-import SettingsPage from '~/pages/dashboard/settings.vue';
 import { deleteAccountData } from '~/store/v2';
 import {
   articleDeleted,
@@ -354,7 +353,6 @@ const categoryEditorNewValue = ref('');
 const categoryEditorSaving = ref(false);
 const categoryEditorAdding = ref(false);
 const categoryDeleting = ref<string | null>(null);
-const systemMenuOpen = ref(false);
 const desktopAvatarMenuOpen = ref(false);
 const mobileAvatarMenuOpen = ref(false);
 const isAdminLogin = computed(() => loginAccount.value?.role === 'admin');
@@ -4473,7 +4471,7 @@ function editSelectedAccountCategory() {
 function openSystemMenu() {
   desktopAvatarMenuOpen.value = false;
   mobileAvatarMenuOpen.value = false;
-  systemMenuOpen.value = true;
+  void navigateTo('/dashboard/settings');
 }
 
 function openLogin() {
@@ -7237,55 +7235,6 @@ onUnmounted(() => {
       </UCard>
     </UModal>
 
-    <Transition name="mobile-menu-fade">
-      <div
-        v-if="systemMenuOpen && !isDesktopViewport"
-        class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[14px] md:hidden"
-        @click.self="systemMenuOpen = false"
-      >
-        <Transition name="mobile-menu-drop">
-          <section
-            v-if="systemMenuOpen && !isDesktopViewport"
-            class="settings-mobile-sheet app-shell-panel fixed inset-x-3 top-[68px] max-h-[calc(100vh-84px)] overflow-hidden rounded-[30px] border border-slate-200/70 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
-          >
-            <div class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70">
-              <div class="min-w-0">
-                <p class="text-base font-semibold">设置</p>
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">同步、代理、导出与其他选项。</p>
-              </div>
-              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
-            </div>
-
-            <div class="h-[calc(100vh-176px)] max-h-[calc(100vh-176px)] overflow-hidden px-3 py-3">
-              <div id="title" class="hidden" />
-              <KeepAlive>
-                <SettingsPage class="h-full min-h-0 bg-transparent" />
-              </KeepAlive>
-            </div>
-          </section>
-        </Transition>
-      </div>
-    </Transition>
-
-    <UModal v-if="isDesktopViewport" v-model="systemMenuOpen" :ui="{ width: 'sm:max-w-[1180px]' }">
-      <UCard class="settings-dialog-shell overflow-hidden rounded-[32px]" :ui="{ ring: '', body: { padding: 'p-0 sm:p-0' } }">
-        <template #header>
-          <div class="flex items-center justify-between">
-            <h3 class="text-base font-semibold">设置</h3>
-            <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" class="icon-btn" @click="systemMenuOpen = false" />
-          </div>
-        </template>
-
-        <div class="h-[72vh] min-h-[520px]">
-          <section class="h-full bg-transparent">
-            <div id="title" class="hidden" />
-            <KeepAlive>
-              <SettingsPage class="h-full" />
-            </KeepAlive>
-          </section>
-        </div>
-      </UCard>
-    </UModal>
   </div>
 </template>
 
@@ -7416,17 +7365,6 @@ onUnmounted(() => {
   transform: translateY(-6px) scale(0.98);
 }
 
-.settings-dialog-shell {
-  @apply border border-slate-200/80 dark:border-slate-800/80;
-  background: var(--app-surface-strong);
-  box-shadow: var(--app-shadow-strong);
-}
-
-.settings-dialog-content {
-  @apply h-full overflow-hidden rounded-[28px] border border-slate-200/80 dark:border-slate-800/80;
-  background: rgba(248, 248, 246, 0.94);
-}
-
 .cookie-inline-text {
   @apply inline-flex h-8 items-center text-[11px] text-slate-500 whitespace-nowrap;
 }
@@ -7441,19 +7379,6 @@ onUnmounted(() => {
 
 .article-star-btn {
   @apply size-6 shrink-0;
-}
-
-:global(html.dark) .settings-dialog-shell {
-  background: var(--app-surface-strong);
-}
-
-:global(html.dark) .settings-dialog-content {
-  background: rgba(2, 6, 23, 0.94);
-}
-
-.settings-mobile-sheet {
-  background: var(--app-surface-strong);
-  box-shadow: var(--app-shadow-strong);
 }
 
 .article-star-btn.is-active {

@@ -36,6 +36,7 @@ interface ManagedPreferencesState {
   exists: boolean;
   preferences: Partial<Preferences>;
   updatedAt: number;
+  updatedByIdentityKey: string;
 }
 
 export interface StoredPreferencesResult {
@@ -286,35 +287,79 @@ async function readManagedPreferencesState(): Promise<ManagedPreferencesState | 
     exists: true,
     preferences: normalizeAdminManagedPreferences(record.data),
     updatedAt: record.updatedAt,
+    updatedByIdentityKey: record.updatedByIdentityKey,
+  };
+}
+
+function hasNonDefaultManagedPreferences(preferences: Partial<Preferences>): boolean {
+  return (
+    JSON.stringify(normalizeAdminManagedPreferences(preferences)) !==
+    JSON.stringify(normalizeAdminManagedPreferences(DEFAULT_PREFERENCES))
+  );
+}
+
+async function resolveManagedPreferencesSeed(adminIdentityKey?: string): Promise<Partial<Preferences>> {
+  let seed = normalizeAdminManagedPreferences(DEFAULT_PREFERENCES);
+  const normalizedAdminIdentityKey = String(adminIdentityKey || '').trim();
+  if (!normalizedAdminIdentityKey) {
+    return seed;
+  }
+
+  const binding = await getAuthKeyBindingByIdentity(normalizedAdminIdentityKey);
+  const adminAuthKey = String(binding?.authKey || '').trim();
+  if (!adminAuthKey) {
+    return seed;
+  }
+
+  const owner = await resolveAccountOwnerScope(adminAuthKey);
+  const row = await loadPreferencesRow(owner);
+  if (row) {
+    return {
+      ...seed,
+      ...parseStoredManagedPreferences(row.data_json),
+    };
+  }
+
+  return {
+    ...seed,
+    ...pickAdminManagedPreferences(await buildSchedulerFallback(adminAuthKey)),
   };
 }
 
 async function ensureManagedPreferencesState(): Promise<ManagedPreferencesState> {
   const existing = await readManagedPreferencesState();
+  const adminIdentityKey = getAdminIdentityKey();
+
   if (existing) {
-    return existing;
+    const shouldRecoverLegacySeed =
+      !existing.updatedByIdentityKey && !hasNonDefaultManagedPreferences(existing.preferences);
+
+    if (!shouldRecoverLegacySeed || !adminIdentityKey) {
+      return existing;
+    }
+
+    const recoveredSeed = await resolveManagedPreferencesSeed(adminIdentityKey);
+    if (!hasNonDefaultManagedPreferences(recoveredSeed)) {
+      return existing;
+    }
+
+    const stored = await upsertSystemPreference({
+      key: MANAGED_PREFERENCES_KEY,
+      data: recoveredSeed,
+      updatedByIdentityKey: adminIdentityKey,
+    });
+
+    return {
+      exists: true,
+      preferences: normalizeAdminManagedPreferences(stored.data),
+      updatedAt: stored.updatedAt,
+      updatedByIdentityKey: stored.updatedByIdentityKey,
+    };
   }
 
-  let seed = normalizeAdminManagedPreferences(DEFAULT_PREFERENCES);
-  const adminIdentityKey = getAdminIdentityKey();
-  if (adminIdentityKey) {
-    const binding = await getAuthKeyBindingByIdentity(adminIdentityKey);
-    const adminAuthKey = String(binding?.authKey || '').trim();
-    if (adminAuthKey) {
-      const owner = await resolveAccountOwnerScope(adminAuthKey);
-      const row = await loadPreferencesRow(owner);
-      if (row) {
-        seed = {
-          ...seed,
-          ...parseStoredManagedPreferences(row.data_json),
-        };
-      } else {
-        seed = {
-          ...seed,
-          ...pickAdminManagedPreferences(await buildSchedulerFallback(adminAuthKey)),
-        };
-      }
-    }
+  let seed = await resolveManagedPreferencesSeed(adminIdentityKey);
+  if (!hasNonDefaultManagedPreferences(seed)) {
+    seed = normalizeAdminManagedPreferences(DEFAULT_PREFERENCES);
   }
 
   const stored = await upsertSystemPreference({
@@ -327,6 +372,7 @@ async function ensureManagedPreferencesState(): Promise<ManagedPreferencesState>
     exists: false,
     preferences: normalizeAdminManagedPreferences(stored.data),
     updatedAt: stored.updatedAt,
+    updatedByIdentityKey: stored.updatedByIdentityKey,
   };
 }
 
