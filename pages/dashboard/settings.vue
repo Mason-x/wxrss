@@ -34,6 +34,34 @@
           >
             <div class="mx-auto max-w-5xl space-y-4 md:space-y-6">
               <div
+                v-if="currentIdentityKey"
+                class="rounded-[28px] border border-slate-200/80 bg-white/90 px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] dark:border-slate-800/80 dark:bg-slate-950/70"
+              >
+                <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p class="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        {{ loginAccount?.nickname || '当前登录账号' }}
+                      </p>
+                      <UBadge :color="isAdmin ? 'emerald' : 'gray'" variant="subtle">
+                        {{ isAdmin ? '管理员' : '普通用户' }}
+                      </UBadge>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">当前登录账号的 Identity Key</p>
+                    <p class="mt-2 break-all rounded-2xl bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+                      {{ currentIdentityKey }}
+                    </p>
+                  </div>
+
+                  <div class="flex items-center gap-2 md:shrink-0">
+                    <UButton size="sm" color="gray" variant="soft" icon="i-lucide:copy" @click="copyIdentityKey">
+                      复制 Identity
+                    </UButton>
+                  </div>
+                </div>
+              </div>
+
+              <div
                 v-if="!isAdmin"
                 class="rounded-[28px] border border-sky-200/80 bg-white/85 px-5 py-4 text-sm text-sky-700 shadow-[0_12px_24px_rgba(14,165,233,0.08)] dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
               >
@@ -67,6 +95,7 @@ import SettingMisc from '~/components/setting/Misc.vue';
 import SettingProxy from '~/components/setting/Proxy.vue';
 import SettingScheduler from '~/components/setting/Scheduler.vue';
 import { websiteName } from '~/config';
+import toastFactory from '~/composables/toast';
 
 useHead({
   title: `设置 | ${websiteName}`,
@@ -83,7 +112,10 @@ interface SettingsSection {
 }
 
 const preferenceAccess = usePreferencesAccess();
+const loginAccount = useLoginAccount();
+const toast = toastFactory();
 const isAdmin = computed(() => preferenceAccess.value.role === 'admin');
+const currentIdentityKey = computed(() => String(loginAccount.value?.identity_key || '').trim());
 
 const sections = computed<SettingsSection[]>(() => {
   const items: SettingsSection[] = [
@@ -142,6 +174,19 @@ const sectionRefs = reactive<Record<SettingsSectionId, HTMLElement | null>>({
 
 function setSectionRef(id: SettingsSectionId, el: Element | ComponentPublicInstance | null) {
   sectionRefs[id] = el instanceof HTMLElement ? el : null;
+}
+
+async function copyIdentityKey() {
+  if (!currentIdentityKey.value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(currentIdentityKey.value);
+    toast.success('已复制 Identity Key');
+  } catch {
+    toast.error('复制 Identity Key 失败');
+  }
 }
 
 function getScrollOffset() {
