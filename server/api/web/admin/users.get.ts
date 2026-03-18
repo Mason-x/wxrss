@@ -8,6 +8,8 @@ export default defineEventHandler(async event => {
   return {
     data: users.map(user => ({
       identityKey: user.identityKey,
+      identityKeys: user.identityKeys,
+      memberCount: user.memberCount,
       nickname: user.nickname,
       avatar: user.headImg,
       userName: user.userName,
@@ -16,8 +18,8 @@ export default defineEventHandler(async event => {
       lastLoginAt: user.lastLoginAt,
       disabled: user.disabled,
       disabledAt: user.disabledAt,
-      role: resolvePreferenceRole(user.identityKey),
-      isCurrentUser: user.identityKey === session.identityKey,
+      role: user.identityKeys.some(identityKey => resolvePreferenceRole(identityKey) === 'admin') ? 'admin' : 'user',
+      isCurrentUser: user.identityKeys.includes(session.identityKey),
     })),
   };
 });

@@ -73,6 +73,8 @@
                       <div class="mt-2 grid gap-2 text-xs text-slate-500 dark:text-slate-400 md:grid-cols-2">
                         <p class="truncate"><span class="font-medium">Identity:</span> {{ user.identityKey }}</p>
                         <p><span class="font-medium">最近登录:</span> {{ formatTimestamp(user.lastLoginAt) }}</p>
+                        <p v-if="user.memberCount > 1"><span class="font-medium">关联记录:</span> {{ user.memberCount }}</p>
+                        <p v-if="user.bizUin"><span class="font-medium">BizUin:</span> {{ user.bizUin }}</p>
                         <p v-if="user.alias"><span class="font-medium">Alias:</span> {{ user.alias }}</p>
                         <p v-if="user.userName"><span class="font-medium">UserName:</span> {{ user.userName }}</p>
                       </div>
@@ -88,11 +90,22 @@
                     size="sm"
                     :color="user.disabled ? 'emerald' : 'rose'"
                     :variant="user.disabled ? 'soft' : 'solid'"
-                    :loading="pendingIdentityKey === user.identityKey"
+                    :loading="pendingActionIdentityKey === `status:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
                     @click="toggleUserStatus(user)"
                   >
                     {{ user.disabled ? '解禁登录' : '禁止登录' }}
+                  </UButton>
+                  <UButton
+                    size="sm"
+                    color="rose"
+                    variant="soft"
+                    icon="i-lucide:trash-2"
+                    :loading="pendingActionIdentityKey === `delete:${user.identityKey}`"
+                    :disabled="user.role === 'admin'"
+                    @click="deleteUser(user)"
+                  >
+                    删除用户
                   </UButton>
                 </div>
               </div>
@@ -111,6 +124,8 @@ import { IMAGE_PROXY, websiteName } from '~/config';
 
 interface AdminUserItem {
   identityKey: string;
+  identityKeys: string[];
+  memberCount: number;
   nickname: string;
   avatar: string;
   userName: string;
@@ -131,7 +146,7 @@ const toast = toastFactory();
 const imageProxy = IMAGE_PROXY;
 const users = ref<AdminUserItem[]>([]);
 const loading = ref(false);
-const pendingIdentityKey = ref('');
+const pendingActionIdentityKey = ref('');
 const errorText = ref('');
 
 const disabledCount = computed(() => users.value.filter(user => user.disabled).length);
@@ -172,7 +187,7 @@ async function toggleUserStatus(user: AdminUserItem) {
     return;
   }
 
-  pendingIdentityKey.value = user.identityKey;
+  pendingActionIdentityKey.value = `status:${user.identityKey}`;
   try {
     await request(`/api/web/admin/users/${encodeURIComponent(user.identityKey)}/status`, {
       method: 'POST',
@@ -185,7 +200,34 @@ async function toggleUserStatus(user: AdminUserItem) {
   } catch (error: any) {
     toast.error(String(error?.data?.statusMessage || error?.statusMessage || error?.message || '更新失败'));
   } finally {
-    pendingIdentityKey.value = '';
+    pendingActionIdentityKey.value = '';
+  }
+}
+
+async function deleteUser(user: AdminUserItem) {
+  if (user.role === 'admin') {
+    return;
+  }
+
+  const displayName = user.nickname || user.alias || user.userName || user.identityKey;
+  const confirmed = window.confirm(
+    `确认删除用户“${displayName}”吗？这会清空该用户关联的登录身份、设置、订阅、文章和缓存数据，且无法恢复。`
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  pendingActionIdentityKey.value = `delete:${user.identityKey}`;
+  try {
+    await request(`/api/web/admin/users/${encodeURIComponent(user.identityKey)}/delete`, {
+      method: 'POST',
+    });
+    toast.success('已删除用户');
+    await loadUsers();
+  } catch (error: any) {
+    toast.error(String(error?.data?.statusMessage || error?.statusMessage || error?.message || '删除失败'));
+  } finally {
+    pendingActionIdentityKey.value = '';
   }
 }
 

@@ -1,5 +1,4 @@
-import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
-import { upsertUserAccessByIdentity } from '~/server/repositories/user-access';
+import { getUserDirectoryGroupByIdentity, upsertUserAccessByIdentity } from '~/server/repositories/user-access';
 import { cookieStore } from '~/server/utils/CookieStore';
 import { getAdminIdentityKey, requireAdminMpSession, resolvePreferenceRole } from '~/server/utils/mp-session';
 
@@ -17,8 +16,8 @@ export default defineEventHandler(async event => {
     });
   }
 
-  const binding = await getAuthKeyBindingByIdentity(identityKey);
-  if (!binding) {
+  const group = await getUserDirectoryGroupByIdentity(identityKey);
+  if (!group) {
     throw createError({
       statusCode: 404,
       statusMessage: 'User not found',
@@ -28,7 +27,8 @@ export default defineEventHandler(async event => {
   const body = await readBody<UpdateUserStatusBody>(event);
   const disabled = body?.disabled === true;
   const adminIdentityKey = getAdminIdentityKey();
-  if (disabled && adminIdentityKey && identityKey === adminIdentityKey) {
+  const groupIdentityKeys = group.entry.identityKeys;
+  if (disabled && adminIdentityKey && groupIdentityKeys.includes(adminIdentityKey)) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Cannot disable admin user',
@@ -42,15 +42,15 @@ export default defineEventHandler(async event => {
   });
 
   if (disabled) {
-    await cookieStore.deleteCookie(binding.authKey).catch(() => undefined);
+    await Promise.all(group.entry.authKeys.map(authKey => cookieStore.deleteCookie(authKey).catch(() => undefined)));
   }
 
   return {
     data: {
-      identityKey,
+      identityKey: group.entry.identityKey,
       disabled: access.disabled,
       disabledAt: access.disabledAt,
-      role: resolvePreferenceRole(identityKey),
+      role: groupIdentityKeys.some(item => resolvePreferenceRole(item) === 'admin') ? 'admin' : 'user',
     },
   };
 });

@@ -105,6 +105,79 @@ function extractLoginMpInfo(html: string): LoginMpInfo {
   };
 }
 
+function mergeLoginMpInfo(base: LoginMpInfo, extra: LoginMpInfo): LoginMpInfo {
+  const nick_name = String(base.nick_name || extra.nick_name || '').trim();
+  const head_img = String(base.head_img || extra.head_img || '').trim();
+  const user_name = String(base.user_name || extra.user_name || '').trim();
+  const biz_uin = String(base.biz_uin || extra.biz_uin || '').trim();
+  const alias = String(base.alias || extra.alias || '').trim();
+  const identity_key =
+    buildIdentityKey({ user_name, biz_uin, alias }) ||
+    String(base.identity_key || extra.identity_key || '').trim();
+
+  return {
+    nick_name,
+    head_img,
+    user_name,
+    biz_uin,
+    alias,
+    identity_key,
+  };
+}
+
+async function enrichLoginMpInfo(options: {
+  event: H3Event;
+  token: string;
+  cookie: string;
+  info: LoginMpInfo;
+}): Promise<LoginMpInfo> {
+  if (options.info.user_name || options.info.biz_uin || options.info.alias) {
+    return options.info;
+  }
+
+  const attempts = [
+    {
+      endpoint: 'https://mp.weixin.qq.com/cgi-bin/settingpage',
+      query: {
+        t: 'setting/index',
+        action: 'index',
+        token: options.token,
+        lang: 'zh_CN',
+      },
+    },
+    {
+      endpoint: 'https://mp.weixin.qq.com/cgi-bin/settingpage',
+      query: {
+        t: 'setting/index',
+        token: options.token,
+        lang: 'zh_CN',
+      },
+    },
+  ] as const;
+
+  let current = options.info;
+  for (const attempt of attempts) {
+    try {
+      const html = await proxyMpRequest({
+        event: options.event,
+        method: 'GET',
+        endpoint: attempt.endpoint,
+        query: attempt.query,
+        cookie: options.cookie,
+        allowDirect: true,
+      }).then(resp => resp.text());
+      current = mergeLoginMpInfo(current, extractLoginMpInfo(html));
+      if (current.user_name || current.biz_uin || current.alias) {
+        break;
+      }
+    } catch {
+      // Ignore fallback page failures and keep the fields extracted from home/index.
+    }
+  }
+
+  return current;
+}
+
 function normalizeAuthKey(value: unknown): string {
   const normalized = String(value || '').trim();
   if (!normalized || normalized === 'EXPIRED' || normalized === 'undefined' || normalized === 'null') {
@@ -278,7 +351,13 @@ export default defineEventHandler(async event => {
       allowDirect: true,
     }).then(resp => resp.text());
 
-    const info = extractLoginMpInfo(homeHtml);
+    const extractedInfo = extractLoginMpInfo(homeHtml);
+    const info = await enrichLoginMpInfo({
+      event,
+      token: temporaryToken,
+      cookie: temporaryCookie,
+      info: extractedInfo,
+    });
     if (!info.nick_name) {
       return createLoginError('获取公众号资料失败，请刷新二维码后重试');
     }
