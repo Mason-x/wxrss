@@ -32,19 +32,14 @@
         <section
           class="overflow-hidden rounded-[28px] border border-white/70 bg-white/85 shadow-[0_24px_40px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-950/70"
         >
-          <div
-            class="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800/80 md:flex-row md:items-center md:justify-between md:px-6"
-          >
-            <div class="min-w-0">
-              <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">用户列表</h2>
-              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看登录账号，禁用登录，或删除用户数据。</p>
-            </div>
+          <div class="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800/80 md:px-6">
+            <h2 class="min-w-0 text-xl font-semibold text-slate-900 dark:text-slate-100">用户列表</h2>
             <UButton
               color="gray"
               variant="soft"
               icon="i-lucide:refresh-cw"
               :loading="loading"
-              class="w-full justify-center md:w-auto"
+              class="shrink-0 justify-center rounded-full px-4"
               @click="loadUsers"
             >
               刷新
@@ -92,11 +87,13 @@
                       <p class="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
                         {{ getDisplayName(user) }}
                       </p>
-                      <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="sm">
-                        {{ user.role === 'admin' ? '管理员' : '普通用户' }}
-                      </UBadge>
-                      <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle" size="sm">当前登录</UBadge>
-                      <UBadge v-if="user.disabled" color="rose" variant="subtle" size="sm">已禁用</UBadge>
+                      <div class="flex shrink-0 items-center gap-1.5">
+                        <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="sm">
+                          {{ user.role === 'admin' ? '管理员' : '普通用户' }}
+                        </UBadge>
+                        <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle" size="sm">当前登录</UBadge>
+                        <UBadge v-if="user.disabled" color="rose" variant="subtle" size="sm">已禁用</UBadge>
+                      </div>
                     </div>
 
                     <p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
@@ -114,7 +111,7 @@
                     size="xs"
                     color="gray"
                     variant="soft"
-                    class="justify-center rounded-full text-[11px]"
+                    class="min-w-0 justify-center rounded-full px-2.5 text-[11px]"
                     @click="copyUserId(user)"
                   >
                     复制ID
@@ -125,7 +122,7 @@
                     :variant="user.disabled ? 'soft' : 'solid'"
                     :loading="pendingActionIdentityKey === `status:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center rounded-full text-[11px]"
+                    class="min-w-0 justify-center rounded-full px-2.5 text-[11px]"
                     @click="toggleUserStatus(user)"
                   >
                     {{ user.disabled ? '解除禁用' : '禁止登录' }}
@@ -136,7 +133,7 @@
                     variant="soft"
                     :loading="pendingActionIdentityKey === `delete:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center rounded-full text-[11px]"
+                    class="min-w-0 justify-center rounded-full px-2.5 text-[11px]"
                     @click="deleteUser(user)"
                   >
                     删除
@@ -198,6 +195,7 @@ function formatTimestamp(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return '未记录';
   }
+
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
@@ -217,6 +215,7 @@ async function loadUsers() {
 
 async function copyUserId(user: AdminUserItem) {
   const targetId = user.publicId || user.identityKey;
+
   try {
     await navigator.clipboard.writeText(targetId);
     toast.success(user.publicId ? '已复制公众号 ID' : '已复制用户 ID');
@@ -231,6 +230,7 @@ async function toggleUserStatus(user: AdminUserItem) {
   }
 
   pendingActionIdentityKey.value = `status:${user.identityKey}`;
+
   try {
     await request(`/api/web/admin/users/${encodeURIComponent(user.identityKey)}/status`, {
       method: 'POST',
@@ -254,13 +254,15 @@ async function deleteUser(user: AdminUserItem) {
 
   const displayName = getDisplayName(user);
   const confirmed = window.confirm(
-    `确认删除用户“${displayName}”吗？这会清空该用户关联的登录身份、设置、订阅、文章和缓存数据，且无法恢复。`
+    `确认删除用户“${displayName}”吗？这会清空该用户关联的登录身份、设置、订阅、文章和缓存数据，且无法恢复。`,
   );
+
   if (!confirmed) {
     return;
   }
 
   pendingActionIdentityKey.value = `delete:${user.identityKey}`;
+
   try {
     await request(`/api/web/admin/users/${encodeURIComponent(user.identityKey)}/delete`, {
       method: 'POST',
