@@ -38,6 +38,8 @@ import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { IMAGE_PROXY } from '~/config';
+import SettingsPage from '~/pages/dashboard/settings.vue';
+import UsersPage from '~/pages/dashboard/users.vue';
 import { deleteAccountData } from '~/store/v2';
 import {
   articleDeleted,
@@ -355,7 +357,17 @@ const categoryEditorAdding = ref(false);
 const categoryDeleting = ref<string | null>(null);
 const desktopAvatarMenuOpen = ref(false);
 const mobileAvatarMenuOpen = ref(false);
+const mobileSettingsDialogOpen = ref(false);
+const mobileUsersDialogOpen = ref(false);
 const isAdminLogin = computed(() => loginAccount.value?.role === 'admin');
+const mobileFloatingDialogStyle = computed(() => ({
+  top: 'calc(env(safe-area-inset-top) + 4.25rem)',
+  maxHeight: 'calc(100vh - env(safe-area-inset-top) - 5rem)',
+}));
+const mobileFloatingDialogBodyStyle = computed(() => ({
+  height: 'calc(100vh - env(safe-area-inset-top) - 11rem)',
+  maxHeight: 'calc(100vh - env(safe-area-inset-top) - 11rem)',
+}));
 
 const SYNC_BLOCKED_ARTICLE_HTML =
   '<div style="padding: 24px; color: #64748b;">当前正在同步文章列表，为避免打断同步，已暂停在线正文抓取。同步完成后再试，或先在“文章列表”的抓取菜单中下载文章内容后阅读。</div>';
@@ -4471,6 +4483,13 @@ function editSelectedAccountCategory() {
 function openSystemMenu() {
   desktopAvatarMenuOpen.value = false;
   mobileAvatarMenuOpen.value = false;
+
+  if (!isDesktopViewport.value) {
+    mobileUsersDialogOpen.value = false;
+    mobileSettingsDialogOpen.value = true;
+    return;
+  }
+
   void navigateTo('/dashboard/settings');
 }
 
@@ -4520,6 +4539,13 @@ function openDashboardFromAvatarMenu() {
 
 function openDashboardFromMobileAvatarMenu() {
   mobileAvatarMenuOpen.value = false;
+
+  if (!isDesktopViewport.value) {
+    mobileSettingsDialogOpen.value = false;
+    mobileUsersDialogOpen.value = true;
+    return;
+  }
+
   void navigateTo('/dashboard');
 }
 
@@ -5230,6 +5256,8 @@ watch(isDesktopViewport, desktop => {
   }
   desktopAvatarMenuOpen.value = false;
   mobileAvatarMenuOpen.value = false;
+  mobileSettingsDialogOpen.value = false;
+  mobileUsersDialogOpen.value = false;
 });
 
 watch(mobileAccountsPanelOpen, open => {
@@ -5287,9 +5315,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell-bg h-screen overflow-hidden text-slate-900 dark:text-slate-100">
-    <div v-if="!isDesktopViewport" class="relative h-full overflow-hidden">
-      <div class="relative h-full overflow-hidden">
+  <div class="reader-page-shell app-shell-bg overflow-hidden text-slate-900 dark:text-slate-100">
+    <div v-if="!isDesktopViewport" class="reader-mobile-shell relative h-full overflow-hidden">
+      <div class="reader-mobile-shell relative h-full overflow-hidden">
         <motion.div
           v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
           class="absolute inset-0 z-0 flex h-full flex-col app-shell-bg"
@@ -5504,7 +5532,7 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticlesListRef"
-            class="mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-3 pt-3"
+            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-3 pt-3"
             :class="[
               mobileView === 'article' ? 'pointer-events-none' : '',
               mobileView === 'articles' && shouldShowArticleFooterAction
@@ -5745,7 +5773,7 @@ onUnmounted(() => {
           <motion.div
             v-else
             ref="mobileArticleContentRef"
-            class="mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+            class="reader-mobile-scroll mobile-touch-surface min-h-0 flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
             @pointerdown="beginMobileDrag('article', $event)"
             @scroll.passive="onMobileReaderScroll"
           >
@@ -5926,6 +5954,15 @@ onUnmounted(() => {
                       </p>
                       <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
                     </div>
+                    <Transition name="desktop-avatar-menu-fade">
+                      <button
+                        v-if="mobileAvatarMenuOpen"
+                        type="button"
+                        class="mobile-avatar-menu-backdrop"
+                        aria-label="关闭登录账号菜单"
+                        @click="mobileAvatarMenuOpen = false"
+                      />
+                    </Transition>
                     <Transition name="desktop-avatar-menu-fade">
                       <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
                         <button
@@ -6207,6 +6244,15 @@ onUnmounted(() => {
               </button>
               <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
 
+              <Transition name="desktop-avatar-menu-fade">
+                <button
+                  v-if="desktopAvatarMenuOpen"
+                  type="button"
+                  class="desktop-avatar-menu-backdrop"
+                  aria-label="关闭登录账号菜单"
+                  @click="desktopAvatarMenuOpen = false"
+                />
+              </Transition>
               <Transition name="desktop-avatar-menu-fade">
                 <div v-if="desktopAvatarMenuOpen" class="desktop-avatar-menu">
                   <div class="desktop-avatar-menu-header">
@@ -7235,6 +7281,84 @@ onUnmounted(() => {
       </UCard>
     </UModal>
 
+    <Transition name="mobile-menu-fade">
+      <div
+        v-if="mobileSettingsDialogOpen && !isDesktopViewport"
+        class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[14px] md:hidden"
+        @click.self="mobileSettingsDialogOpen = false"
+      >
+        <Transition name="mobile-menu-drop">
+          <section
+            v-if="mobileSettingsDialogOpen && !isDesktopViewport"
+            class="mobile-floating-dialog app-shell-panel fixed inset-x-3 overflow-hidden rounded-[30px] border border-slate-200/70 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
+            :style="mobileFloatingDialogStyle"
+          >
+            <div
+              class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70"
+            >
+              <div class="min-w-0">
+                <p class="text-base font-semibold">设置</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">同步、代理、导出与其他选项。</p>
+              </div>
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:x"
+                class="icon-btn"
+                @click="mobileSettingsDialogOpen = false"
+              />
+            </div>
+
+            <div class="overflow-hidden px-3 py-3" :style="mobileFloatingDialogBodyStyle">
+              <div id="title" class="hidden" />
+              <KeepAlive>
+                <SettingsPage class="h-full min-h-0 bg-transparent" />
+              </KeepAlive>
+            </div>
+          </section>
+        </Transition>
+      </div>
+    </Transition>
+
+    <Transition name="mobile-menu-fade">
+      <div
+        v-if="mobileUsersDialogOpen && !isDesktopViewport"
+        class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[14px] md:hidden"
+        @click.self="mobileUsersDialogOpen = false"
+      >
+        <Transition name="mobile-menu-drop">
+          <section
+            v-if="mobileUsersDialogOpen && !isDesktopViewport"
+            class="mobile-floating-dialog app-shell-panel fixed inset-x-3 overflow-hidden rounded-[30px] border border-slate-200/70 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-slate-800/70"
+            :style="mobileFloatingDialogStyle"
+          >
+            <div
+              class="app-shell-glass flex items-start justify-between gap-4 border-b border-slate-200/60 px-4 pb-4 pt-4 dark:border-slate-800/70"
+            >
+              <div class="min-w-0">
+                <p class="text-base font-semibold">用户管理</p>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">查看用户、禁用登录和删除历史记录。</p>
+              </div>
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:x"
+                class="icon-btn"
+                @click="mobileUsersDialogOpen = false"
+              />
+            </div>
+
+            <div class="overflow-hidden px-3 py-3" :style="mobileFloatingDialogBodyStyle">
+              <div id="title" class="hidden" />
+              <UsersPage class="h-full min-h-0 bg-transparent" />
+            </div>
+          </section>
+        </Transition>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
@@ -7283,9 +7407,17 @@ onUnmounted(() => {
     bg-white shadow-[0_22px_48px_rgba(15,23,42,0.16)] dark:border-slate-800/90 dark:bg-slate-950;
 }
 
+.desktop-avatar-menu-backdrop {
+  @apply fixed inset-0 z-[110] cursor-default bg-transparent;
+}
+
 .mobile-avatar-menu {
   @apply absolute left-0 top-[calc(100%+0.55rem)] z-[180] isolate pointer-events-auto w-[188px] overflow-hidden rounded-[24px] border border-slate-200/90
     bg-white shadow-[0_18px_40px_rgba(15,23,42,0.14)] dark:border-slate-800/90 dark:bg-slate-950;
+}
+
+.mobile-avatar-menu-backdrop {
+  @apply fixed inset-0 z-[170] cursor-default bg-transparent;
 }
 
 .desktop-avatar-menu-header {
@@ -7441,12 +7573,48 @@ onUnmounted(() => {
   will-change: transform;
 }
 
+.mobile-floating-dialog {
+  background: var(--app-surface-strong);
+  box-shadow: var(--app-shadow-strong);
+}
+
 .mobile-touch-surface {
   touch-action: pan-y;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   will-change: transform, scroll-position;
   transform: translateZ(0);
+}
+
+.reader-page-shell {
+  height: 100vh;
+  max-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .reader-page-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+@media (max-width: 767px) {
+  .reader-page-shell {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    overflow: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  .reader-mobile-shell {
+    overflow: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  .reader-mobile-scroll {
+    overscroll-behavior-y: none;
+  }
 }
 
 .mobile-safe-input :deep(input),
