@@ -36,10 +36,8 @@
             class="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800/80 md:flex-row md:items-center md:justify-between md:px-6"
           >
             <div class="min-w-0">
-              <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">已登录公众号</h2>
-              <p class="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 md:block">
-                管理员由环境变量 <code class="font-mono text-xs">MP_ADMIN_IDENTITY_KEY</code> 指定。
-              </p>
+              <h2 class="text-xl font-semibold text-slate-900 dark:text-slate-100">用户列表</h2>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">查看登录账号、禁用登录或删除用户数据。</p>
             </div>
             <UButton
               color="gray"
@@ -68,69 +66,77 @@
               还没有已识别的用户。
             </div>
 
-            <div v-else class="space-y-3 md:space-y-4">
+            <div v-else class="space-y-3">
+              <div
+                class="hidden grid-cols-[minmax(0,1.8fr)_140px_200px_320px] items-center gap-4 rounded-[20px] bg-slate-100/80 px-5 py-3 text-xs font-semibold tracking-[0.08em] text-slate-500 dark:bg-slate-900/70 dark:text-slate-400 md:grid"
+              >
+                <div>用户</div>
+                <div>用户等级</div>
+                <div>最近登录时间</div>
+                <div class="text-right">操作</div>
+              </div>
+
               <div
                 v-for="user in users"
                 :key="user.identityKey"
-                class="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_30px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-950/80 md:p-5"
+                class="rounded-[24px] border border-white/70 bg-white/90 p-4 shadow-[0_18px_30px_rgba(15,23,42,0.05)] transition-colors dark:border-white/10 dark:bg-slate-950/80 md:grid md:grid-cols-[minmax(0,1.8fr)_140px_200px_320px] md:items-center md:gap-4 md:px-5 md:py-4"
+                :class="user.disabled ? 'border-rose-200/80 dark:border-rose-500/30' : ''"
               >
-                <div class="flex items-start gap-3">
+                <div class="flex items-center gap-3">
                   <img
                     v-if="user.avatar"
                     :src="imageProxy + user.avatar"
                     alt=""
-                    class="size-14 shrink-0 rounded-full ring-1 ring-white/80 dark:ring-slate-700 md:size-12"
+                    class="size-12 shrink-0 rounded-full ring-1 ring-white/80 dark:ring-slate-700"
                   />
                   <div
                     v-else
-                    class="flex size-14 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-400 ring-1 ring-white/80 dark:bg-slate-800 dark:text-slate-500 dark:ring-slate-700 md:size-12"
+                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-400 ring-1 ring-white/80 dark:bg-slate-800 dark:text-slate-500 dark:ring-slate-700"
                   >
-                    <UIcon name="i-lucide:user" class="size-6" />
+                    <UIcon name="i-lucide:user" class="size-5" />
                   </div>
 
-                  <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p
-                        class="min-w-0 flex-1 truncate text-lg font-semibold text-slate-900 dark:text-slate-100 md:flex-none md:text-base"
-                      >
-                        {{ user.nickname || user.alias || user.userName || '未命名公众号' }}
+                  <div class="min-w-0">
+                    <div class="flex min-w-0 flex-wrap items-center gap-2">
+                      <p class="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
+                        {{ getDisplayName(user) }}
                       </p>
-                      <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle">
-                        {{ user.role === 'admin' ? '管理员' : '普通用户' }}
-                      </UBadge>
-                      <UBadge v-if="user.disabled" color="rose" variant="subtle">已禁用</UBadge>
                       <UBadge v-if="user.isCurrentUser" color="sky" variant="subtle">当前登录</UBadge>
+                      <UBadge v-if="user.disabled" color="rose" variant="subtle">已禁用</UBadge>
                     </div>
-
-                    <div
-                      class="mt-3 rounded-[18px] bg-slate-100/80 px-3 py-2 text-[11px] leading-5 text-slate-500 dark:bg-slate-900/80 dark:text-slate-400"
-                    >
-                      <p class="font-medium text-slate-700 dark:text-slate-300">Identity</p>
-                      <p class="truncate font-mono">{{ user.identityKey }}</p>
-                    </div>
-
-                    <div class="mt-3 grid gap-2 text-xs text-slate-500 dark:text-slate-400 sm:grid-cols-2">
-                      <p><span class="font-medium">最近登录:</span> {{ formatTimestamp(user.lastLoginAt) }}</p>
-                      <p v-if="user.memberCount > 1"><span class="font-medium">关联记录:</span> {{ user.memberCount }}</p>
-                      <p v-if="user.bizUin"><span class="font-medium">BizUin:</span> {{ user.bizUin }}</p>
-                      <p v-if="user.alias"><span class="font-medium">Alias:</span> {{ user.alias }}</p>
-                      <p v-if="user.userName"><span class="font-medium">UserName:</span> {{ user.userName }}</p>
-                    </div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <template v-if="user.memberCount > 1">关联记录 {{ user.memberCount }}</template>
+                      <template v-else>已识别公众号账号</template>
+                    </p>
                   </div>
                 </div>
 
-                <div
-                  class="mt-4 grid grid-cols-2 gap-2 border-t border-slate-200/70 pt-4 dark:border-slate-800/80 md:flex md:flex-wrap md:justify-end"
-                >
+                <div class="mt-4 md:mt-0">
+                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400 md:hidden">
+                    用户等级
+                  </p>
+                  <UBadge :color="user.role === 'admin' ? 'emerald' : 'gray'" variant="subtle" size="lg">
+                    {{ user.role === 'admin' ? '管理员' : '普通用户' }}
+                  </UBadge>
+                </div>
+
+                <div class="mt-4 text-sm text-slate-600 dark:text-slate-300 md:mt-0">
+                  <p class="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-400 md:hidden">
+                    最近登录时间
+                  </p>
+                  {{ formatTimestamp(user.lastLoginAt) }}
+                </div>
+
+                <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3 md:mt-0">
                   <UButton
                     size="sm"
                     color="gray"
                     variant="soft"
                     icon="i-lucide:copy"
-                    class="justify-center md:w-auto"
+                    class="justify-center"
                     @click="copyIdentityKey(user)"
                   >
-                    复制 Identity
+                    复制 ID
                   </UButton>
                   <UButton
                     size="sm"
@@ -138,10 +144,10 @@
                     :variant="user.disabled ? 'soft' : 'solid'"
                     :loading="pendingActionIdentityKey === `status:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="justify-center md:w-auto"
+                    class="justify-center"
                     @click="toggleUserStatus(user)"
                   >
-                    {{ user.disabled ? '解除禁用' : '禁止登录' }}
+                    {{ user.disabled ? '解除禁止' : '禁止登录' }}
                   </UButton>
                   <UButton
                     size="sm"
@@ -150,10 +156,10 @@
                     icon="i-lucide:trash-2"
                     :loading="pendingActionIdentityKey === `delete:${user.identityKey}`"
                     :disabled="user.role === 'admin'"
-                    class="col-span-2 justify-center md:col-span-1 md:w-auto"
+                    class="justify-center"
                     @click="deleteUser(user)"
                   >
-                    删除用户
+                    删除
                   </UButton>
                 </div>
               </div>
@@ -200,6 +206,10 @@ const errorText = ref('');
 const disabledCount = computed(() => users.value.filter(user => user.disabled).length);
 const adminCount = computed(() => users.value.filter(user => user.role === 'admin').length);
 
+function getDisplayName(user: AdminUserItem) {
+  return user.nickname || user.alias || user.userName || '未命名公众号';
+}
+
 function formatTimestamp(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return '未记录';
@@ -224,7 +234,7 @@ async function loadUsers() {
 async function copyIdentityKey(user: AdminUserItem) {
   try {
     await navigator.clipboard.writeText(user.identityKey);
-    toast.success('已复制 Identity Key');
+    toast.success('已复制用户 ID');
   } catch {
     toast.error('复制失败');
   }
@@ -243,7 +253,7 @@ async function toggleUserStatus(user: AdminUserItem) {
         disabled: !user.disabled,
       },
     });
-    toast.success(user.disabled ? '已允许登录' : '已禁止登录');
+    toast.success(user.disabled ? '已解除禁止登录' : '已禁止登录');
     await loadUsers();
   } catch (error: any) {
     toast.error(String(error?.data?.statusMessage || error?.statusMessage || error?.message || '更新失败'));
@@ -257,7 +267,7 @@ async function deleteUser(user: AdminUserItem) {
     return;
   }
 
-  const displayName = user.nickname || user.alias || user.userName || user.identityKey;
+  const displayName = getDisplayName(user);
   const confirmed = window.confirm(
     `确认删除用户“${displayName}”吗？这会清空该用户关联的登录身份、设置、订阅、文章和缓存数据，且无法恢复。`
   );
