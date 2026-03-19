@@ -14,12 +14,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import {
-  bootstrapAccountAi,
-  getArticleList,
-  INITIAL_SUBSCRIBE_PAGE_SIZE,
-  syncRssFeed,
-} from '~/apis';
+import { bootstrapAccountAi, getArticleList, INITIAL_SUBSCRIBE_PAGE_SIZE, syncRssFeed } from '~/apis';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';

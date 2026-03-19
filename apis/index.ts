@@ -273,10 +273,14 @@ export async function getArticleList(
   keyword = '',
   options: {
     initialPageSize?: number;
+    pageSize?: number;
   } = {}
 ): Promise<[AppMsgEx[], boolean, number, number, number]> {
   const initialPageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Number(options.initialPageSize) || 0);
-  const pageSizeHint = begin === 0 && !keyword ? initialPageSize || FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE;
+  const rawExplicitPageSize = Number(options.pageSize) || 0;
+  const explicitPageSize = rawExplicitPageSize > 0 ? Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, rawExplicitPageSize) : 0;
+  const pageSizeHint =
+    explicitPageSize || (begin === 0 && !keyword ? initialPageSize || FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE);
   const resp = await requestArticleListPage(account, begin, keyword, pageSizeHint);
 
   if (resp.base_resp.ret === 0) {

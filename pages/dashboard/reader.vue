@@ -90,6 +90,13 @@ interface PromiseInstance {
   reject: (reason?: any) => void;
 }
 
+interface LoadAccountArticleOptions {
+  initialPageSize?: number;
+  maxAdditionalMessages?: number;
+  startSyncedMessages?: number;
+  stopWhenNoNewOnThisPage?: boolean;
+}
+
 interface ArticleSummaryState {
   status: 'idle' | 'loading' | 'success' | 'error';
   summary: string;
@@ -269,6 +276,7 @@ const {
 const { getSyncTimestamp } = useSyncDeadline();
 const FOCUS_CATEGORY_ID = '__focus__';
 const FOCUS_CATEGORY_LABEL = '重点关注';
+const HISTORY_SYNC_CHUNK_MESSAGE_COUNT = 20;
 
 const loading = ref(false);
 const contentLoading = ref(false);
@@ -1105,10 +1113,10 @@ function setBatchSyncNotice(text: string, autoDismissMs = 0) {
   }, autoDismissMs);
 }
 
-async function refreshAccountSnapshot(fakeid: string, running = true) {
+async function refreshAccountSnapshot(fakeid: string, running = true): Promise<MpAccount | null> {
   const latest = await getInfoCache(fakeid);
   if (!latest) {
-    return;
+    return null;
   }
 
   const target = accounts.value.find(account => account.fakeid === fakeid);
@@ -1124,6 +1132,8 @@ async function refreshAccountSnapshot(fakeid: string, running = true) {
     totalMessages: Number(latest.total_count) || 0,
     syncedArticles: Number(latest.articles) || 0,
   });
+
+  return latest;
 }
 
 function formatBatchFailedAccountNames(
@@ -4288,7 +4298,9 @@ async function handleArticleFooterAction() {
     return;
   }
   if (canContinueSyncSelectedAccount.value) {
-    await syncCurrentAccount(Boolean(selectedAccountInfo.value && isRssAccount(selectedAccountInfo.value)));
+    await syncCurrentAccount(Boolean(selectedAccountInfo.value && isRssAccount(selectedAccountInfo.value)), {
+      historyChunk: true,
+    });
   }
 }
 
@@ -4746,8 +4758,15 @@ async function _load(
   begin: number,
   loadMore: boolean,
   promise: PromiseInstance,
-  initialPageSize = 0
+  options: LoadAccountArticleOptions = {}
 ) {
+  const initialPageSize = Math.max(0, Number(options.initialPageSize) || 0);
+  const maxAdditionalMessages = Math.max(0, Number(options.maxAdditionalMessages) || 0);
+  const startSyncedMessages = Number.isFinite(options.startSyncedMessages)
+    ? Math.max(0, Number(options.startSyncedMessages) || 0)
+    : Math.max(0, Number(account.count) || 0);
+  const stopWhenNoNewOnThisPage = options.stopWhenNoNewOnThisPage !== false;
+
   if (isCanceled.value) {
     isCanceled.value = false;
     upsertSyncProgress(account.fakeid, { running: false });
@@ -4764,12 +4783,15 @@ async function _load(
     syncedArticles: Number(account.articles) || 0,
   });
 
-  const [articles, completed, totalCount, pageMessageCount, inserted] = await getArticleList(
-    account,
-    begin,
-    '',
-    begin === 0 && initialPageSize > 0 ? { initialPageSize } : {}
-  );
+  const syncedMessagesBeforeRequest = Math.max(0, Number(account.count) || 0);
+  const remainingAdditionalMessages =
+    maxAdditionalMessages > 0
+      ? Math.max(0, maxAdditionalMessages - (syncedMessagesBeforeRequest - startSyncedMessages))
+      : 0;
+  const [articles, completed, totalCount, pageMessageCount, inserted] = await getArticleList(account, begin, '', {
+    ...(begin === 0 && initialPageSize > 0 ? { initialPageSize } : {}),
+    ...(remainingAdditionalMessages > 0 ? { pageSize: remainingAdditionalMessages } : {}),
+  });
   const fetchedArticles = Array.isArray(articles) ? [...articles] : [];
   if (inserted > 0) {
     markAccountHasNewArticles(account.fakeid);
@@ -4779,6 +4801,10 @@ async function _load(
     running: true,
     totalMessages: Number(totalCount) || Number(account.total_count) || 0,
   });
+  let latestAccountSnapshot: MpAccount | null = null;
+  if (maxAdditionalMessages > 0) {
+    latestAccountSnapshot = await refreshAccountSnapshot(account.fakeid, true);
+  }
 
   if (isCanceled.value) {
     isCanceled.value = false;
@@ -4787,8 +4813,16 @@ async function _load(
     return;
   }
 
+  const syncedMessagesAfterRequest =
+    Number(latestAccountSnapshot?.count) ||
+    Number(syncProgressByFakeid.value[account.fakeid]?.syncedMessages) ||
+    Number(account.count) ||
+    0;
   const noNewOnThisPage = Number(pageMessageCount) > 0 && inserted === 0;
-  if (completed || noNewOnThisPage) {
+  const reachedAdditionalLimit =
+    maxAdditionalMessages > 0 && syncedMessagesAfterRequest - startSyncedMessages >= maxAdditionalMessages;
+
+  if (completed || reachedAdditionalLimit || (stopWhenNoNewOnThisPage && noNewOnThisPage)) {
     upsertSyncProgress(account.fakeid, {
       running: false,
       totalMessages: Number(totalCount) || Number(account.total_count) || 0,
@@ -4837,7 +4871,11 @@ async function _load(
           promise.reject(new Error('已取消同步'));
           return;
         }
-        _load(account, begin, true, promise, 0);
+        _load(account, begin, true, promise, {
+          initialPageSize: 0,
+          maxAdditionalMessages,
+          startSyncedMessages,
+        });
       },
       pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
     );
@@ -4852,7 +4890,13 @@ async function _load(
   }
 }
 
-async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0, rssHistory = false) {
+async function loadAccountArticle(
+  account: MpAccount,
+  loadMore = true,
+  initialPageSize = 0,
+  rssHistory = false,
+  options: LoadAccountArticleOptions = {}
+) {
   if (isRssAccount(account)) {
     syncingRowId.value = account.fakeid;
     isSyncing.value = true;
@@ -4886,7 +4930,14 @@ async function loadAccountArticle(account: MpAccount, loadMore = true, initialPa
 
   return new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
-    _load(account, 0, loadMore, promise, initialPageSize).catch(e => {
+    _load(account, 0, loadMore, promise, {
+      ...options,
+      initialPageSize,
+      startSyncedMessages:
+        Number.isFinite(options.startSyncedMessages) && options.startSyncedMessages !== undefined
+          ? Number(options.startSyncedMessages)
+          : Number(account.count) || 0,
+    }).catch(e => {
       syncingRowId.value = null;
       isSyncing.value = false;
       upsertSyncProgress(account.fakeid, { running: false });
@@ -4974,34 +5025,76 @@ async function cancelRemoteBatchSync(): Promise<void> {
   });
 }
 
-async function syncCurrentAccount(forceRssHistory = false) {
+async function syncCurrentAccount(forceRssHistory = false, options: { historyChunk?: boolean } = {}) {
   if (!checkLogin()) return;
   if (!selectedAccount.value) return;
 
   const account = findAccount(selectedAccount.value);
   if (!account) return;
 
+  const historyChunk = Boolean(options.historyChunk);
+  const initialSyncedMessages = Math.max(0, Number(account.count) || 0);
+  let syncedMessagesDelta = 0;
+  let syncSucceeded = false;
+
   try {
     setBatchSyncNotice('');
     isCanceled.value = false;
     const rssHistory = Boolean(forceRssHistory && isRssAccount(account));
-    await loadAccountArticle(account, true, 0, rssHistory);
-    await runAiRefreshAfterSync();
-    toast.success(
-      '同步完成',
-      isRssAccount(account)
-        ? rssHistory
-          ? `RSS 订阅【${account.nickname || account.fakeid}】已继续同步历史内容`
-          : `RSS 订阅【${account.nickname || account.fakeid}】已同步`
-        : `公众号【${account.nickname || account.fakeid}】文章已同步`
+    await loadAccountArticle(
+      account,
+      true,
+      0,
+      rssHistory,
+      historyChunk && !rssHistory
+        ? {
+            maxAdditionalMessages: HISTORY_SYNC_CHUNK_MESSAGE_COUNT,
+            startSyncedMessages: initialSyncedMessages,
+            stopWhenNoNewOnThisPage: false,
+          }
+        : undefined
     );
+    await runAiRefreshAfterSync();
+    syncSucceeded = true;
   } catch (error) {
     toast.error('同步失败', (error as Error).message);
   } finally {
-    await refreshAccountSnapshot(account.fakeid, false);
+    const latestAccount = await refreshAccountSnapshot(account.fakeid, false);
+    syncedMessagesDelta = Math.max(0, (Number(latestAccount?.count) || 0) - initialSyncedMessages);
     await loadArticlePage(true, { preserveRowsOnReset: true });
     clearSelectionOutOfScope();
   }
+
+  if (!syncSucceeded) {
+    return;
+  }
+
+  if (isRssAccount(account)) {
+    toast.success(
+      '同步完成',
+      forceRssHistory
+        ? `RSS 订阅【${account.nickname || account.fakeid}】已继续同步历史内容`
+        : `RSS 订阅【${account.nickname || account.fakeid}】已同步`
+    );
+    return;
+  }
+
+  if (historyChunk) {
+    if (syncedMessagesDelta > 0) {
+      toast.success(
+        '同步完成',
+        `公众号【${account.nickname || account.fakeid}】已继续同步 ${Math.min(
+          syncedMessagesDelta,
+          HISTORY_SYNC_CHUNK_MESSAGE_COUNT
+        )} 条历史消息`
+      );
+    } else {
+      toast.info('没有更多可同步内容', '当前设置的时间范围内没有更多历史消息可拉取');
+    }
+    return;
+  }
+
+  toast.success('同步完成', `公众号【${account.nickname || account.fakeid}】文章已同步`);
 }
 
 async function syncAllAccountsInCurrentScope() {
