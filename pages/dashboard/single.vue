@@ -622,8 +622,8 @@ function refreshActionCells() {
       <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">单篇文章下载</h1>
     </Teleport>
 
-    <div class="flex h-full flex-col divide-y divide-gray-200">
-      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0">
+    <div class="flex h-full flex-col divide-y divide-gray-200 dark:divide-slate-800">
+      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/88 md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0 md:dark:bg-transparent">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="flex flex-1 flex-col gap-3 sm:flex-row">
             <UInput
@@ -673,9 +673,9 @@ function refreshActionCells() {
           </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span class="rounded-full bg-slate-100 px-3 py-1">{{ progressText }}</span>
-          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600">已选择 {{ selectedCount }} 篇</span>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span class="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-900 dark:text-slate-300">{{ progressText }}</span>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">已选择 {{ selectedCount }} 篇</span>
         </div>
       </header>
 
@@ -722,15 +722,15 @@ function refreshActionCells() {
                           class="rounded-full px-2.5 py-1 font-medium"
                           :class="
                             row.downloading
-                              ? 'bg-yellow-100 text-yellow-700'
+                              ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300'
                               : row.contentDownload
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-slate-100 text-slate-500'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
+                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'
                           "
                         >
                           {{ row.downloading ? '抓取中' : row.contentDownload ? '已抓取' : '未抓取' }}
                         </span>
-                        <span v-if="row.accountName" class="rounded-full bg-sky-50 px-2.5 py-1 text-sky-600">
+                        <span v-if="row.accountName" class="rounded-full bg-sky-50 px-2.5 py-1 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300">
                           {{ row.accountName }}
                         </span>
                       </div>

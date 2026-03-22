@@ -667,8 +667,8 @@ const { getActualDateRange } = useSyncDeadline();
       <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">订阅源管理</h1>
     </Teleport>
 
-    <div class="flex h-full flex-col divide-y divide-gray-200">
-      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0">
+    <div class="flex h-full flex-col divide-y divide-gray-200 dark:divide-slate-800">
+      <header class="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/92 px-3 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/88 md:static md:border-b-0 md:bg-transparent md:backdrop-blur-0 md:dark:bg-transparent">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex flex-wrap items-center gap-2">
             <UButton
@@ -732,10 +732,10 @@ const { getActualDateRange } = useSyncDeadline();
           </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span class="rounded-full bg-slate-100 px-3 py-1">账号总数 {{ globalRowData.length }}</span>
-          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600">已选择 {{ selectedCount }} 个</span>
-          <span class="rounded-full bg-amber-50 px-3 py-1 text-amber-700">同步范围 {{ getActualDateRange() }}</span>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <span class="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-900 dark:text-slate-300">账号总数 {{ globalRowData.length }}</span>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">已选择 {{ selectedCount }} 个</span>
+          <span class="rounded-full bg-amber-50 px-3 py-1 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">同步范围 {{ getActualDateRange() }}</span>
         </div>
       </header>
 
@@ -787,7 +787,7 @@ const { getActualDateRange } = useSyncDeadline();
                       />
                       <div
                         v-else
-                        class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400"
+                        class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
                       >
                         <UIcon name="i-lucide-user-round" />
                       </div>
@@ -801,15 +801,15 @@ const { getActualDateRange } = useSyncDeadline();
                             class="rounded-full px-2.5 py-1 text-[11px] font-medium"
                             :class="
                               account.completed
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-amber-100 text-amber-700'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
                             "
                           >
                             {{ account.completed ? '已完成' : '未完成' }}
                           </span>
                           <span
                             v-if="isSyncing && syncingRowId === account.fakeid"
-                            class="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700"
+                            class="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
                           >
                             同步中
                           </span>
@@ -828,7 +828,7 @@ const { getActualDateRange } = useSyncDeadline();
                         <span>同步进度</span>
                         <span>{{ getLoadPercent(account) }}%</span>
                       </div>
-                      <div class="h-2 rounded-full bg-slate-100">
+                      <div class="h-2 rounded-full bg-slate-100 dark:bg-slate-800">
                         <div
                           class="h-2 rounded-full bg-blue-500 transition-all"
                           :style="{ width: `${getLoadPercent(account)}%` }"

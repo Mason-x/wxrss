@@ -4,7 +4,7 @@
       <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">合集下载</h1>
     </Teleport>
 
-    <div class="flex flex-col h-full divide-y divide-gray-200">
+    <div class="flex h-full flex-col divide-y divide-gray-200 dark:divide-slate-800">
       <!-- 顶部筛选与操作区 -->
       <header class="flex flex-col items-start xl:flex-row xl:items-center gap-2 xl:justify-between px-3 py-2">
         <div class="flex gap-2">
@@ -69,39 +69,39 @@
       </header>
 
       <!-- 合集文章列表 -->
-      <main class="flex-1 overflow-y-scroll bg-[#ededed]" v-if="selectedAccount && selectedAlbum">
+      <main class="flex-1 overflow-y-scroll bg-[#ededed] dark:bg-slate-950" v-if="selectedAccount && selectedAlbum">
         <div v-if="albumLoading" class="flex justify-center items-center mt-5">
           <Loader :size="28" class="animate-spin text-slate-500" />
         </div>
-        <div v-else-if="albumBaseInfo" class="relative max-w-2xl mx-auto bg-white">
+        <div v-else-if="albumBaseInfo" class="relative mx-auto max-w-2xl bg-white dark:bg-slate-950">
           <!-- banner -->
           <div class="px-5 py-7 banner">
             <h2 class="text-2xl text-white font-bold"># {{ albumBaseInfo.title }}</h2>
           </div>
-          <div class="sticky top-0 px-5 py-3 bg-white border-b">
+          <div class="sticky top-0 border-b bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-950">
             <p class="flex items-center space-x-2 mb-2">
               <img class="size-5" :src="albumBaseInfo.brand_icon" alt="" />
-              <span>{{ albumBaseInfo.nickname }}</span>
+              <span class="text-slate-900 dark:text-slate-100">{{ albumBaseInfo.nickname }}</span>
             </p>
-            <p class="text-sm text-slate-10">
+            <p class="text-sm text-slate-500 dark:text-slate-400">
               <span>{{ albumBaseInfo.article_count }}篇内容</span>
               <span v-if="albumBaseInfo.description"> · {{ albumBaseInfo.description }}</span>
             </p>
           </div>
-          <div class="bg-white px-4 pb-6">
+          <div class="bg-white px-4 pb-6 dark:bg-slate-950">
             <!-- 文章列表 -->
-            <ul class="divide-y">
+            <ul class="divide-y divide-slate-200 dark:divide-slate-800">
               <li
                 class="flex justify-between items-center py-5 px-1"
                 v-for="article in albumArticles"
                 :key="article.key"
               >
                 <div class="flex-1">
-                  <h3 class="text-lg mb-2">
+                  <h3 class="mb-2 text-lg text-slate-900 dark:text-slate-100">
                     <span v-if="article.pos_num">{{ article.pos_num }}. </span>
                     <span>{{ article.title }}</span>
                   </h3>
-                  <time class="text-sm text-slate-10">{{ formatAlbumTime(+article.create_time) }}</time>
+                  <time class="text-sm text-slate-500 dark:text-slate-400">{{ formatAlbumTime(+article.create_time) }}</time>
                 </div>
                 <img class="size-16 ml-4 flex-shrink-0" :src="article.cover_img_1_1" alt="" />
               </li>

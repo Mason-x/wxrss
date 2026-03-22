@@ -1,8 +1,8 @@
 <template>
   <div>
     <USlideover v-model="isOpen" :ui="{ width: 'max-w-[720px]' }">
-      <div class="article-preview h-screen overflow-y-scroll">
-        <IframeHtmlRenderer :html="articleHtml" />
+      <div class="article-preview h-screen overflow-y-scroll bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <IframeHtmlRenderer :html="articleHtml" :theme="themeModeEffective" />
       </div>
     </USlideover>
   </div>
@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { normalizeHtml } from '#shared/utils/html';
 import IframeHtmlRenderer from '~/components/preview/IframeHtmlRenderer.vue';
+import { useAppThemeMode } from '~/composables/useAppThemeMode';
 import toastFactory from '~/composables/toast';
 import usePreferences from '~/composables/usePreferences';
 import { getHtmlCache, type HtmlAsset } from '~/store/v2/html';
@@ -19,6 +20,7 @@ import type { AppMsgEx } from '~/types/types';
 import { renderComments } from '~/utils/comment';
 
 const toast = toastFactory();
+const { effective: themeModeEffective } = useAppThemeMode();
 
 const isOpen = ref(false);
 const articleHtml = ref('');
