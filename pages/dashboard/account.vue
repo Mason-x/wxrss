@@ -66,6 +66,16 @@ interface AccountRow extends MpAccount {
   _runtimeSync?: AccountSyncRuntimeState | null;
 }
 
+interface SyncBannerState {
+  tone: 'blue' | 'green' | 'amber' | 'rose';
+  title: string;
+  detail: string;
+  progressPercent: number;
+  currentAccountName: string;
+  failedCount: number;
+  updatedAt: number;
+}
+
 interface RemoteBatchSyncAccountSnapshot {
   fakeid: string;
   nickname: string;
@@ -152,6 +162,9 @@ const isSyncing = ref(false);
 const remoteBatchSyncPollTimer = ref<number | null>(null);
 const remoteBatchSyncRunningFakeid = ref<string | null>(null);
 const remoteBatchSyncFailedFakeids = ref<string[]>([]);
+const REMOTE_BATCH_SYNC_IDLE_POLL_MS = 5000;
+const lastSyncBannerState = ref<SyncBannerState | null>(null);
+const lastRemoteBatchTerminalKey = ref('');
 
 // 当前正在同步的公众号id
 const syncingRowId = ref<string | null>(null);
@@ -295,6 +308,7 @@ async function loadSelectedAccountArticle() {
   if (!checkLogin()) return;
 
   isCanceled.value = false;
+  setLastSyncBannerState(null);
   const rows = getSelectedRows();
   const failures: Array<{ account: MpAccount; message: string }> = [];
   let successCount = 0;
@@ -306,12 +320,30 @@ async function loadSelectedAccountArticle() {
     } catch (error) {
       const message = String((error as Error)?.message || '同步失败');
       if (message === '已取消同步') {
+        setLastSyncBannerState({
+          tone: 'amber',
+          title: '同步已取消',
+          detail: `已完成 ${successCount} 个账号，剩余账号未继续执行`,
+          progressPercent: 0,
+          currentAccountName: '',
+          failedCount: failures.length,
+          updatedAt: Date.now(),
+        });
         toast.warning('已停止同步', `已完成 ${successCount} 个订阅源，剩余任务未继续执行`);
         return;
       }
 
       failures.push({ account, message });
       if (message === 'session expired') {
+        setLastSyncBannerState({
+          tone: 'rose',
+          title: '同步失败',
+          detail: '登录状态已失效，请重新登录后重试',
+          progressPercent: 0,
+          currentAccountName: '',
+          failedCount: failures.length,
+          updatedAt: Date.now(),
+        });
         toast.error('同步失败', '登录状态已失效，请重新登录后重试');
         return;
       }
@@ -319,10 +351,28 @@ async function loadSelectedAccountArticle() {
   }
 
   if (failures.length === 0) {
+    setLastSyncBannerState({
+      tone: 'green',
+      title: '同步完成',
+      detail: `本轮共完成 ${successCount} 个账号，同步全部成功`,
+      progressPercent: 100,
+      currentAccountName: '',
+      failedCount: 0,
+      updatedAt: Date.now(),
+    });
     toast.success(`已成功同步 ${rows.length} 个订阅源`);
     return;
   }
 
+  setLastSyncBannerState({
+    tone: successCount > 0 ? 'amber' : 'rose',
+    title: successCount > 0 ? '部分同步失败' : '同步失败',
+    detail: `成功 ${successCount} 个，失败 ${failures.length} 个，可按列表中的失败标识单独重试`,
+    progressPercent: 0,
+    currentAccountName: '',
+    failedCount: failures.length,
+    updatedAt: Date.now(),
+  });
   toast.warning('部分同步失败', `成功 ${successCount} 个，失败 ${failures.length} 个，可按列表中的失败标识单独重试`);
 }
 
@@ -697,6 +747,58 @@ function getAccountRuntimeSyncPercent(account: AccountRow): number {
   return Math.min(100, Math.max(0, Math.round((state.syncedMessages / state.totalMessages) * 100)));
 }
 
+function setLastSyncBannerState(next: SyncBannerState | null) {
+  lastSyncBannerState.value = next ? { ...next, updatedAt: Date.now() } : null;
+}
+
+const runtimeRunningAccount = computed(
+  () => globalRowData.value.find(account => getAccountRuntimeSyncState(account)?.status === 'running') || null
+);
+const runtimeFailedAccounts = computed(() =>
+  globalRowData.value.filter(account => getAccountRuntimeSyncState(account)?.status === 'error')
+);
+const syncBannerState = computed<SyncBannerState | null>(() => {
+  const runningAccount = runtimeRunningAccount.value;
+  if (runningAccount) {
+    const runtimeState = getAccountRuntimeSyncState(runningAccount);
+    if (!runtimeState) {
+      return null;
+    }
+    const total = runtimeState.totalMessages > 0 ? runtimeState.totalMessages : 0;
+    const failedCount = runtimeFailedAccounts.value.length;
+    return {
+      tone: 'blue',
+      title: '正在同步',
+      detail:
+        total > 0
+          ? `${runtimeState.syncedMessages}/${total} 条消息，文章 ${runtimeState.syncedArticles}`
+          : `已同步消息 ${runtimeState.syncedMessages} 条，文章 ${runtimeState.syncedArticles}`,
+      progressPercent: getAccountRuntimeSyncPercent(runningAccount),
+      currentAccountName: runningAccount.nickname || runningAccount.fakeid,
+      failedCount,
+      updatedAt: runtimeState.updatedAt,
+    };
+  }
+
+  if (lastSyncBannerState.value) {
+    return lastSyncBannerState.value;
+  }
+
+  const failedCount = runtimeFailedAccounts.value.length;
+  if (failedCount <= 0) {
+    return null;
+  }
+  return {
+    tone: 'rose',
+    title: '同步失败',
+    detail: `有 ${failedCount} 个账号失败，可在列表中按失败标识单独重试`,
+    progressPercent: 0,
+    currentAccountName: '',
+    failedCount,
+    updatedAt: Date.now(),
+  };
+});
+
 function clearRemoteAccountRuntimeSyncState(fakeid: string) {
   if (accountRuntimeSyncStates[fakeid]?.source !== 'remote') {
     return;
@@ -807,8 +909,57 @@ async function syncRemoteBatchSyncStatus() {
     applyRemoteBatchSyncSnapshot(snapshot);
 
     if (snapshot?.status === 'running') {
+      lastRemoteBatchTerminalKey.value = '';
+      setLastSyncBannerState(null);
       scheduleRemoteBatchSyncPoll(Math.max(1000, Number(snapshot.pollAfterMs) || 3000));
+      return;
     }
+
+    if (snapshot) {
+      const terminalKey = `${snapshot.jobId}:${snapshot.status}:${snapshot.updatedAt}`;
+      if (lastRemoteBatchTerminalKey.value !== terminalKey) {
+        lastRemoteBatchTerminalKey.value = terminalKey;
+        if (snapshot.status === 'success') {
+          setLastSyncBannerState({
+            tone: snapshot.failedCount > 0 ? 'amber' : 'green',
+            title: snapshot.failedCount > 0 ? '部分同步失败' : '同步完成',
+            detail:
+              snapshot.failedCount > 0
+                ? `本轮完成 ${snapshot.successCount} 个账号，失败 ${snapshot.failedCount} 个`
+                : `本轮共完成 ${snapshot.successCount} 个账号，同步全部成功`,
+            progressPercent: 100,
+            currentAccountName: '',
+            failedCount: snapshot.failedCount,
+            updatedAt: snapshot.updatedAt,
+          });
+        } else if (snapshot.status === 'canceled') {
+          setLastSyncBannerState({
+            tone: 'amber',
+            title: '同步已取消',
+            detail: `已完成 ${snapshot.completedAccounts}/${snapshot.totalAccounts} 个账号`,
+            progressPercent: 0,
+            currentAccountName: '',
+            failedCount: snapshot.failedCount,
+            updatedAt: snapshot.updatedAt,
+          });
+        } else if (snapshot.status === 'error') {
+          setLastSyncBannerState({
+            tone: 'rose',
+            title: '同步失败',
+            detail:
+              snapshot.failedCount > 0
+                ? `失败 ${snapshot.failedCount} 个账号${snapshot.message ? `：${snapshot.message}` : ''}`
+                : snapshot.message || '本轮同步失败',
+            progressPercent: 0,
+            currentAccountName: '',
+            failedCount: snapshot.failedCount || 1,
+            updatedAt: snapshot.updatedAt,
+          });
+        }
+      }
+    }
+
+    scheduleRemoteBatchSyncPoll(REMOTE_BATCH_SYNC_IDLE_POLL_MS);
   } catch (error) {
     const statusCode = Number((error as { statusCode?: number; response?: { status?: number } })?.statusCode || 0)
       || Number((error as { response?: { status?: number } })?.response?.status || 0);
@@ -833,11 +984,35 @@ async function syncSingleAccount(account: MpAccount) {
   if (!checkLogin()) return;
 
   isCanceled.value = false;
+  setLastSyncBannerState(null);
   try {
     await loadAccountArticle(account);
+    setLastSyncBannerState({
+      tone: 'green',
+      title: '同步完成',
+      detail: `账号【${account.nickname || account.fakeid}】已同步完成`,
+      progressPercent: 100,
+      currentAccountName: account.nickname || account.fakeid,
+      failedCount: 0,
+      updatedAt: Date.now(),
+    });
     toast.success('同步完成', `公众号【${account.nickname}】的文章已同步完毕`);
   } catch (e: any) {
-    toast.error('同步失败', e.message);
+    const message = String(e?.message || '未知错误');
+    setLastSyncBannerState({
+      tone: message === '已取消同步' ? 'amber' : 'rose',
+      title: message === '已取消同步' ? '同步已取消' : '同步失败',
+      detail: `账号【${account.nickname || account.fakeid}】${message === '已取消同步' ? '已取消同步' : `同步失败：${message}`}`,
+      progressPercent: 0,
+      currentAccountName: account.nickname || account.fakeid,
+      failedCount: message === '已取消同步' ? 0 : 1,
+      updatedAt: Date.now(),
+    });
+    if (message === '已取消同步') {
+      toast.warning('同步已取消', `公众号【${account.nickname || account.fakeid}】已取消同步`);
+      return;
+    }
+    toast.error('同步失败', message);
   }
 }
 
@@ -1055,6 +1230,73 @@ const { getActualDateRange } = useSyncDeadline();
           <span class="rounded-full bg-slate-100 px-3 py-1 dark:bg-slate-900 dark:text-slate-300">账号总数 {{ globalRowData.length }}</span>
           <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300">已选择 {{ selectedCount }} 个</span>
           <span class="rounded-full bg-amber-50 px-3 py-1 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">同步范围 {{ getActualDateRange() }}</span>
+        </div>
+
+        <div
+          v-if="syncBannerState"
+          class="rounded-[22px] border px-4 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.06)] backdrop-blur"
+          :class="
+            syncBannerState.tone === 'blue'
+              ? 'border-blue-200 bg-blue-50/90 text-blue-900 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-100'
+              : syncBannerState.tone === 'green'
+                ? 'border-emerald-200 bg-emerald-50/90 text-emerald-900 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100'
+                : syncBannerState.tone === 'amber'
+                  ? 'border-amber-200 bg-amber-50/90 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100'
+                  : 'border-rose-200 bg-rose-50/90 text-rose-900 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-100'
+          "
+        >
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div class="min-w-0 space-y-1.5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span
+                  class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                  :class="
+                    syncBannerState.tone === 'blue'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
+                      : syncBannerState.tone === 'green'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
+                        : syncBannerState.tone === 'amber'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200'
+                          : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200'
+                  "
+                >
+                  {{ syncBannerState.title }}
+                </span>
+                <span v-if="syncBannerState.currentAccountName" class="truncate text-sm font-semibold">
+                  {{ syncBannerState.currentAccountName }}
+                </span>
+              </div>
+              <p class="text-sm leading-6 opacity-90">
+                {{ syncBannerState.detail }}
+              </p>
+              <div class="flex flex-wrap items-center gap-2 text-[11px] opacity-75">
+                <span v-if="syncBannerState.failedCount > 0">失败 {{ syncBannerState.failedCount }} 个</span>
+                <span>更新于 {{ formatTimeStamp(Math.floor(syncBannerState.updatedAt / 1000)) }}</span>
+              </div>
+            </div>
+
+            <div v-if="syncBannerState.progressPercent > 0" class="md:w-56">
+              <div class="mb-1 flex items-center justify-between text-[11px] font-medium opacity-80">
+                <span>整体进度</span>
+                <span>{{ syncBannerState.progressPercent }}%</span>
+              </div>
+              <div class="h-2 rounded-full bg-white/60 dark:bg-white/10">
+                <div
+                  class="h-2 rounded-full transition-all"
+                  :class="
+                    syncBannerState.tone === 'blue'
+                      ? 'bg-blue-500'
+                      : syncBannerState.tone === 'green'
+                        ? 'bg-emerald-500'
+                        : syncBannerState.tone === 'amber'
+                          ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                  "
+                  :style="{ width: `${syncBannerState.progressPercent}%` }"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
