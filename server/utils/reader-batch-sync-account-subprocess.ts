@@ -108,8 +108,17 @@ function getChildMaxOldSpaceMb(): number {
   return Math.floor(configured);
 }
 
-function getTimeoutMs(): number {
+function getRequestTimeoutMs(): number {
   return Math.max(1000, Number(process.env.MP_REQUEST_TIMEOUT_MS || 30000));
+}
+
+function getAccountProcessTimeoutMs(requestTimeoutMs: number): number {
+  const fallback = Math.max(10 * 60 * 1000, requestTimeoutMs * 6);
+  const configured = Number(process.env.READER_BATCH_SYNC_ACCOUNT_TIMEOUT_MS || fallback);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return fallback;
+  }
+  return Math.max(Math.floor(configured), requestTimeoutMs + 5000);
 }
 
 function getMaxJsonBytes(): number {
@@ -120,7 +129,8 @@ export function syncReaderBatchAccountInSubprocess(
   input: ReaderBatchAccountSubprocessInput,
   onProgress?: (progress: ReaderBatchAccountProgress) => void
 ): ReaderBatchAccountSubprocessController {
-  const timeoutMs = getTimeoutMs();
+  const requestTimeoutMs = getRequestTimeoutMs();
+  const accountTimeoutMs = getAccountProcessTimeoutMs(requestTimeoutMs);
   const maxJsonBytes = getMaxJsonBytes();
   const childMaxOldSpaceMb = getChildMaxOldSpaceMb();
   const child = spawn(
@@ -138,7 +148,8 @@ export function syncReaderBatchAccountInSubprocess(
 
   logMemory('reader-batch-sync:account-subprocess-start', {
     fakeid: input.account.fakeid,
-    timeoutMs,
+    requestTimeoutMs,
+    accountTimeoutMs,
     childMaxOldSpaceMb,
   });
 
@@ -253,7 +264,7 @@ export function syncReaderBatchAccountInSubprocess(
       payload: {
         ...input,
         userAgent: USER_AGENT,
-        timeoutMs,
+        timeoutMs: requestTimeoutMs,
         maxJsonBytes,
       },
     };
@@ -264,8 +275,8 @@ export function syncReaderBatchAccountInSubprocess(
         return;
       }
       child.kill();
-      finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${timeoutMs})`));
-    }, timeoutMs + 5000);
+      finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${accountTimeoutMs})`));
+    }, accountTimeoutMs);
   });
 
   const cancel = () => {

@@ -4215,6 +4215,7 @@ async function shareArticleSummaryFromDialog() {
     articleSummarySharePreviewFilename.value = filename;
     articleSummarySharePreviewArticle.value = article;
     articleSummarySharePreviewUrl.value = URL.createObjectURL(pngBlob);
+    articleSummaryDialogOpen.value = false;
     articleSummarySharePreviewOpen.value = true;
   } catch (error) {
     toast.error('生成分享卡片失败', (error as Error).message || '请稍后重试');

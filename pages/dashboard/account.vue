@@ -18,6 +18,7 @@ import { bootstrapAccountAi, getArticleList, INITIAL_SUBSCRIBE_PAGE_SIZE, syncRs
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
 import GridLoadProgress from '~/components/grid/LoadProgress.vue';
+import GridAccountSyncStatus from '~/components/grid/AccountSyncStatus.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
@@ -48,6 +49,19 @@ useHead({
 interface PromiseInstance {
   resolve: (value: unknown) => void;
   reject: (reason?: any) => void;
+}
+
+interface AccountSyncRuntimeState {
+  status: 'running' | 'error';
+  syncedMessages: number;
+  totalMessages: number;
+  syncedArticles: number;
+  errorMessage: string;
+  updatedAt: number;
+}
+
+interface AccountRow extends MpAccount {
+  _runtimeSync?: AccountSyncRuntimeState | null;
 }
 
 const toast = toastFactory();
@@ -118,10 +132,12 @@ async function _load(
 ) {
   if (isCanceled.value) {
     isCanceled.value = false; // 这里需要将状态复位
+    clearAccountRuntimeSyncState(account.fakeid);
     promise.reject(new Error('已取消同步'));
     return;
   }
 
+  setAccountRuntimeSyncRunning(account);
   syncingRowId.value = account.fakeid;
   isSyncing.value = true;
 
@@ -133,12 +149,14 @@ async function _load(
   );
   if (isCanceled.value) {
     isCanceled.value = false;
+    clearAccountRuntimeSyncState(account.fakeid);
     promise.reject(new Error('已取消同步'));
     return;
   }
   const noNewOnThisPage = Number(pageMessageCount) > 0 && inserted === 0;
   if (completed || noNewOnThisPage) {
     await updateRow(account.fakeid);
+    clearAccountRuntimeSyncState(account.fakeid);
     syncingRowId.value = null;
     isSyncing.value = false;
     promise.resolve(account);
@@ -172,7 +190,12 @@ async function _load(
     loadMore = false;
   }
 
-  await updateRow(account.fakeid);
+  const latestAccount = await updateRow(account.fakeid);
+  if (latestAccount) {
+    setAccountRuntimeSyncRunning(latestAccount, {
+      totalMessages: Number(_totalCount) || latestAccount.total_count || account.total_count || 0,
+    });
+  }
   if (loadMore) {
     syncTimer.value = window.setTimeout(
       () => {
@@ -196,12 +219,18 @@ async function _load(
 // 同步指定公众号
 async function loadAccountArticle(account: MpAccount, loadMore = true, initialPageSize = 0) {
   if (isRssAccount(account)) {
+    setAccountRuntimeSyncRunning(account);
     syncingRowId.value = account.fakeid;
     isSyncing.value = true;
 
     try {
       const result = await syncRssFeed({ fakeid: account.fakeid });
+      await updateRow(account.fakeid);
+      clearAccountRuntimeSyncState(account.fakeid);
       return result.account;
+    } catch (error) {
+      setAccountRuntimeSyncError(account.fakeid, String((error as Error)?.message || 'RSS 同步失败'));
+      throw error;
     } finally {
       syncingRowId.value = null;
       isSyncing.value = false;
@@ -212,6 +241,9 @@ async function loadAccountArticle(account: MpAccount, loadMore = true, initialPa
     const promise: PromiseInstance = { resolve, reject };
 
     _load(account, 0, loadMore, promise, initialPageSize).catch(e => {
+      if (String(e?.message || '') !== '已取消同步') {
+        setAccountRuntimeSyncError(account.fakeid, String(e?.message || '同步失败'));
+      }
       syncingRowId.value = null;
       isSyncing.value = false;
 
@@ -228,19 +260,38 @@ async function loadSelectedAccountArticle() {
   if (!checkLogin()) return;
 
   isCanceled.value = false;
+  const rows = getSelectedRows();
+  const failures: Array<{ account: MpAccount; message: string }> = [];
+  let successCount = 0;
 
-  try {
-    const rows = getSelectedRows();
-    for (const account of rows) {
+  for (const account of rows) {
+    try {
       await loadAccountArticle(account);
+      successCount += 1;
+    } catch (error) {
+      const message = String((error as Error)?.message || '同步失败');
+      if (message === '已取消同步') {
+        toast.warning('已停止同步', `已完成 ${successCount} 个订阅源，剩余任务未继续执行`);
+        return;
+      }
+
+      failures.push({ account, message });
+      if (message === 'session expired') {
+        toast.error('同步失败', '登录状态已失效，请重新登录后重试');
+        return;
+      }
     }
-    toast.success(`已成功同步 ${rows.length} 个订阅源`);
-  } catch (e: any) {
-    toast.error('同步失败', e.message);
   }
+
+  if (failures.length === 0) {
+    toast.success(`已成功同步 ${rows.length} 个订阅源`);
+    return;
+  }
+
+  toast.warning('部分同步失败', `成功 ${successCount} 个，失败 ${failures.length} 个，可按列表中的失败标识单独重试`);
 }
 
-const globalRowData = ref<MpAccount[]>([]);
+const globalRowData = ref<AccountRow[]>([]);
 
 const columnDefs = ref<ColDef[]>([
   {
@@ -354,6 +405,15 @@ const columnDefs = ref<ColDef[]>([
     minWidth: 200,
   },
   {
+    colId: 'runtime_sync_state',
+    headerName: '本次同步状态',
+    field: '_runtimeSync',
+    sortable: false,
+    filter: false,
+    cellRenderer: GridAccountSyncStatus,
+    minWidth: 220,
+  },
+  {
     colId: 'completed',
     headerName: '是否同步完成',
     field: 'completed',
@@ -444,7 +504,7 @@ function restoreColumnState() {
 
 async function refresh() {
   try {
-    globalRowData.value = await getAllInfo();
+    globalRowData.value = (await getAllInfo()).map(buildAccountRow);
     gridApi.value?.setGridOption('rowData', globalRowData.value);
     const rowIdSet = new Set(globalRowData.value.map(row => row.fakeid));
     selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
@@ -463,16 +523,18 @@ async function refresh() {
   }
 }
 
-async function updateRow(fakeid: string) {
+async function updateRow(fakeid: string): Promise<AccountRow | null> {
   const info = await getInfoCache(fakeid);
+  const nextRow = info ? buildAccountRow(info) : null;
   const rowNode = gridApi.value?.getRowNode(fakeid);
-  if (rowNode && info) {
-    rowNode.updateData(info);
+  if (rowNode && nextRow) {
+    rowNode.updateData(nextRow);
   }
   const index = globalRowData.value.findIndex(item => item.fakeid === fakeid);
-  if (index >= 0 && info) {
-    globalRowData.value = globalRowData.value.map(item => (item.fakeid === fakeid ? info : item));
+  if (index >= 0 && nextRow) {
+    globalRowData.value = globalRowData.value.map(item => (item.fakeid === fakeid ? nextRow : item));
   }
+  return nextRow;
 }
 
 const selectedRowIds = ref<string[]>([]);
@@ -515,6 +577,88 @@ function getLoadPercent(account: MpAccount) {
   return Math.min(100, Math.max(0, Math.round((account.count / account.total_count) * 100)));
 }
 
+function buildAccountRow(account: MpAccount): AccountRow {
+  return {
+    ...account,
+    _runtimeSync: accountRuntimeSyncStates[account.fakeid] ? { ...accountRuntimeSyncStates[account.fakeid] } : null,
+  };
+}
+
+const accountRuntimeSyncStates = reactive<Record<string, AccountSyncRuntimeState | undefined>>({});
+
+function syncAccountRuntimeStateToRow(fakeid: string) {
+  const runtimeState = accountRuntimeSyncStates[fakeid];
+  const rowNode = gridApi.value?.getRowNode(fakeid);
+  if (rowNode?.data) {
+    rowNode.updateData({
+      ...rowNode.data,
+      _runtimeSync: runtimeState ? { ...runtimeState } : null,
+    });
+  }
+
+  const index = globalRowData.value.findIndex(item => item.fakeid === fakeid);
+  if (index >= 0) {
+    const current = globalRowData.value[index];
+    globalRowData.value = globalRowData.value.map(item =>
+      item.fakeid === fakeid
+        ? {
+            ...current,
+            _runtimeSync: runtimeState ? { ...runtimeState } : null,
+          }
+        : item
+    );
+  }
+}
+
+function setAccountRuntimeSyncRunning(
+  account: Pick<MpAccount, 'fakeid' | 'count' | 'total_count' | 'articles'>,
+  overrides: Partial<Pick<AccountSyncRuntimeState, 'syncedMessages' | 'totalMessages' | 'syncedArticles'>> = {}
+) {
+  accountRuntimeSyncStates[account.fakeid] = {
+    status: 'running',
+    syncedMessages: Math.max(0, Number(overrides.syncedMessages ?? account.count) || 0),
+    totalMessages: Math.max(0, Number(overrides.totalMessages ?? account.total_count) || 0),
+    syncedArticles: Math.max(0, Number(overrides.syncedArticles ?? account.articles) || 0),
+    errorMessage: '',
+    updatedAt: Date.now(),
+  };
+  syncAccountRuntimeStateToRow(account.fakeid);
+}
+
+function setAccountRuntimeSyncError(fakeid: string, message: string) {
+  const current = globalRowData.value.find(item => item.fakeid === fakeid);
+  const previous = accountRuntimeSyncStates[fakeid];
+  accountRuntimeSyncStates[fakeid] = {
+    status: 'error',
+    syncedMessages: previous?.syncedMessages ?? current?.count ?? 0,
+    totalMessages: previous?.totalMessages ?? current?.total_count ?? 0,
+    syncedArticles: previous?.syncedArticles ?? current?.articles ?? 0,
+    errorMessage: String(message || '同步失败').trim(),
+    updatedAt: Date.now(),
+  };
+  syncAccountRuntimeStateToRow(fakeid);
+}
+
+function clearAccountRuntimeSyncState(fakeid: string) {
+  if (!(fakeid in accountRuntimeSyncStates)) {
+    return;
+  }
+  delete accountRuntimeSyncStates[fakeid];
+  syncAccountRuntimeStateToRow(fakeid);
+}
+
+function getAccountRuntimeSyncState(account: AccountRow): AccountSyncRuntimeState | null {
+  return account._runtimeSync || null;
+}
+
+function getAccountRuntimeSyncPercent(account: AccountRow): number {
+  const state = getAccountRuntimeSyncState(account);
+  if (!state || state.status !== 'running' || state.totalMessages <= 0) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, Math.round((state.syncedMessages / state.totalMessages) * 100)));
+}
+
 function onMobileListScroll() {
   showScrollTop.value = (mobileListRef.value?.scrollTop || 0) > 320;
 }
@@ -549,10 +693,15 @@ async function bootstrapAiAfterAddingAccount(fakeid: string) {
 }
 
 function stopSync() {
+  const activeFakeid = syncingRowId.value;
   isCanceled.value = true;
   if (syncTimer.value) {
     window.clearTimeout(syncTimer.value);
     syncTimer.value = null;
+  }
+
+  if (activeFakeid) {
+    clearAccountRuntimeSyncState(activeFakeid);
   }
 
   syncingRowId.value = null;
@@ -808,10 +957,16 @@ const { getActualDateRange } = useSyncDeadline();
                             {{ account.completed ? '已完成' : '未完成' }}
                           </span>
                           <span
-                            v-if="isSyncing && syncingRowId === account.fakeid"
+                            v-if="getAccountRuntimeSyncState(account)?.status === 'running'"
                             class="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
                           >
                             同步中
+                          </span>
+                          <span
+                            v-else-if="getAccountRuntimeSyncState(account)?.status === 'error'"
+                            class="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                          >
+                            同步失败
                           </span>
                         </div>
 
@@ -834,6 +989,35 @@ const { getActualDateRange } = useSyncDeadline();
                           :style="{ width: `${getLoadPercent(account)}%` }"
                         />
                       </div>
+                    </div>
+
+                    <div
+                      v-if="getAccountRuntimeSyncState(account)?.status === 'running'"
+                      class="space-y-2 rounded-2xl border border-blue-100 bg-blue-50/70 px-3 py-3 dark:border-blue-500/20 dark:bg-blue-500/10"
+                    >
+                      <div class="flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300">
+                        <span>本次同步</span>
+                        <span>{{ getAccountRuntimeSyncPercent(account) }}%</span>
+                      </div>
+                      <div class="h-2 rounded-full bg-blue-100 dark:bg-blue-500/20">
+                        <div
+                          class="h-2 rounded-full bg-blue-500 transition-all"
+                          :style="{ width: `${getAccountRuntimeSyncPercent(account)}%` }"
+                        />
+                      </div>
+                      <p class="text-[11px] text-blue-700 dark:text-blue-300">
+                        {{
+                          `${getAccountRuntimeSyncState(account)?.syncedMessages || 0} / ${getAccountRuntimeSyncState(account)?.totalMessages || 0}`
+                        }}
+                        ，文章 {{ getAccountRuntimeSyncState(account)?.syncedArticles || 0 }}
+                      </p>
+                    </div>
+
+                    <div
+                      v-else-if="getAccountRuntimeSyncState(account)?.status === 'error'"
+                      class="rounded-2xl border border-rose-200 bg-rose-50/80 px-3 py-3 text-[11px] leading-5 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
+                    >
+                      {{ getAccountRuntimeSyncState(account)?.errorMessage || '同步失败，请稍后重试' }}
                     </div>
 
                     <UInput

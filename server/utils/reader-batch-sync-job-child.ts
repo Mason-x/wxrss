@@ -197,12 +197,22 @@ function ensureNotCanceled(): void {
   throw new BatchSyncCancelledError();
 }
 
+function getAccountProcessTimeoutMs(requestTimeoutMs: number): number {
+  const fallback = Math.max(10 * 60 * 1000, requestTimeoutMs * 6);
+  const configured = Number(process.env.READER_BATCH_SYNC_ACCOUNT_TIMEOUT_MS || fallback);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return fallback;
+  }
+  return Math.max(Math.floor(configured), requestTimeoutMs + 5000);
+}
+
 function syncReaderBatchAccountInSubprocess(
   input: ReaderBatchAccountSubprocessInput,
   onProgress?: (
     progress: Extract<ChildOutboundMessage, { type: 'account-start' | 'account-page' | 'account-done' }>
   ) => void
 ): ReaderBatchAccountSubprocessController {
+  const accountTimeoutMs = getAccountProcessTimeoutMs(Number(input.timeoutMs) || 30000);
   const child = spawn(
     process.execPath,
     [
@@ -340,9 +350,9 @@ function syncReaderBatchAccountInSubprocess(
           return;
         }
         child.kill();
-        finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${input.timeoutMs})`));
+        finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${accountTimeoutMs})`));
       },
-      Math.max(1000, Number(input.timeoutMs || 30000)) + 5000
+      accountTimeoutMs
     );
   });
 
