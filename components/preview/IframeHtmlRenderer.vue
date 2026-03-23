@@ -3,6 +3,7 @@
     <iframe
       ref="iframeRef"
       class="block w-full border-0 bg-transparent"
+      :style="iframeStyle"
       :srcdoc="preparedHtml"
       sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
       allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
@@ -41,6 +42,9 @@ const preferences = usePreferences() as unknown as Ref<Preferences>;
 const preferenceCapabilities = usePreferencesCapabilities();
 const fetcher = $fetch as <T>(request: NitroFetchRequest, options?: Record<string, any>) => Promise<T>;
 const preparedHtml = ref('');
+const iframeStyle = computed(() => ({
+  backgroundColor: props.theme === 'dark' ? '#020617' : '#ffffff',
+}));
 let resizeObserver: ResizeObserver | null = null;
 let prepareRequestId = 0;
 let galleryCleanupFns: Array<() => void> = [];
@@ -105,6 +109,11 @@ function buildSrcdoc(html: string): string {
         overflow-wrap: break-word;
         color: #0f172a;
       }
+      html[data-renderer-theme="light"],
+      body[data-renderer-theme="light"] {
+        background: #ffffff !important;
+        color-scheme: light;
+      }
       body > * {
         max-width: 100%;
       }
@@ -116,7 +125,13 @@ function buildSrcdoc(html: string): string {
         color: #0f172a;
       }
       body[data-renderer-theme="dark"] {
+        background: #020617 !important;
         color: #e2e8f0;
+        color-scheme: dark;
+      }
+      html[data-renderer-theme="dark"] {
+        background: #020617 !important;
+        color-scheme: dark;
       }
       body[data-renderer-theme="dark"] a {
         color: #7dd3fc;
@@ -501,20 +516,25 @@ function buildSrcdoc(html: string): string {
     </style>
   `;
 
-  const bodyThemeAttr = ` data-renderer-theme="${props.theme === 'dark' ? 'dark' : 'light'}"`;
+  const rendererTheme = props.theme === 'dark' ? 'dark' : 'light';
+  const htmlThemeAttr = ` data-renderer-theme="${rendererTheme}"`;
+  const bodyThemeAttr = ` data-renderer-theme="${rendererTheme}"`;
   const bodyKindAttr = props.contentKind !== 'default' ? ` data-renderer-kind="${props.contentKind}"` : '';
   const bodyAttrs = `${bodyThemeAttr}${bodyKindAttr}`;
 
   if (hasHead) {
-    const withHead = sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}${styleMarkup}`);
+    const withBase = sanitized.replace(/<head([^>]*)>/i, `<head$1>${baseMarkup}`);
+    const withHead = withBase.replace(/<\/head>/i, `${styleMarkup}</head>`);
     if (!hasBody) {
-      return withHead;
+      return withHead.replace(/<html([^>]*)>/i, `<html$1${htmlThemeAttr}>`);
     }
 
-    return withHead.replace(/<body([^>]*)>/i, `<body$1${bodyAttrs}>`);
+    return withHead
+      .replace(/<html([^>]*)>/i, `<html$1${htmlThemeAttr}>`)
+      .replace(/<body([^>]*)>/i, `<body$1${bodyAttrs}>`);
   }
 
-  return `<!doctype html><html><head>${baseMarkup}${styleMarkup}</head><body${bodyAttrs}>${sanitized}</body></html>`;
+  return `<!doctype html><html${htmlThemeAttr}><head>${baseMarkup}${styleMarkup}</head><body${bodyAttrs}>${sanitized}</body></html>`;
 }
 
 function shouldProxyVideoUrl(url: string): boolean {
