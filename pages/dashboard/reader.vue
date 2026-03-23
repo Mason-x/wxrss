@@ -219,6 +219,14 @@ interface BatchSyncProgress {
   totalAccounts: number;
 }
 
+interface MobileSyncStatusState {
+  tone: 'blue' | 'green' | 'amber' | 'rose';
+  title: string;
+  detail: string;
+  progressPercent: number;
+  currentAccountName: string;
+}
+
 interface RemoteBatchSyncAccountSnapshot {
   fakeid: string;
   nickname: string;
@@ -1498,6 +1506,60 @@ const headerBatchSyncProgressText = computed(() => {
 const syncStatusLineText = computed(
   () => activeAccountSyncStatus.value || headerBatchSyncProgressText.value || batchSyncNoticeText.value
 );
+const mobileSyncStatusState = computed<MobileSyncStatusState | null>(() => {
+  const activeProgress = activeAccountSyncProgress.value;
+  if (activeProgress?.running) {
+    const total = activeProgress.totalMessages > 0 ? activeProgress.totalMessages : 0;
+    const percent =
+      total > 0 ? Math.min(100, Math.max(0, Math.round((activeProgress.syncedMessages / total) * 100))) : 0;
+    return {
+      tone: 'blue',
+      title: '正在同步',
+      detail:
+        total > 0
+          ? `${activeProgress.syncedMessages}/${total} 条消息，文章 ${activeProgress.syncedArticles}`
+          : `已同步消息 ${activeProgress.syncedMessages} 条，文章 ${activeProgress.syncedArticles}`,
+      progressPercent: percent,
+      currentAccountName: selectedAccountInfo.value?.nickname || selectedAccountInfo.value?.fakeid || '',
+    };
+  }
+
+  if (!selectedAccount.value && selectedCategory.value === '__all__' && batchSyncProgress.value.running) {
+    const totalAccounts = Math.max(0, Number(batchSyncProgress.value.totalAccounts) || 0);
+    const completedAccounts = Math.max(0, Number(batchSyncProgress.value.completedAccounts) || 0);
+    const percent =
+      totalAccounts > 0 ? Math.min(100, Math.max(0, Math.round((completedAccounts / totalAccounts) * 100))) : 0;
+    const currentAccount = accounts.value.find(account => account.fakeid === syncingRowId.value);
+    const failedCount = batchSyncFailedAccounts.value.length;
+    return {
+      tone: failedCount > 0 ? 'amber' : 'blue',
+      title: '正在同步全部',
+      detail:
+        failedCount > 0
+          ? `已完成 ${completedAccounts}/${totalAccounts} 个订阅源，失败 ${failedCount} 个`
+          : `已完成 ${completedAccounts}/${totalAccounts} 个订阅源`,
+      progressPercent: percent,
+      currentAccountName: currentAccount?.nickname || currentAccount?.fakeid || '',
+    };
+  }
+
+  if (!batchSyncNoticeText.value) {
+    return null;
+  }
+
+  const notice = String(batchSyncNoticeText.value || '').trim();
+  if (!notice) {
+    return null;
+  }
+
+  return {
+    tone: notice.includes('失败') ? (notice.includes('部分') ? 'amber' : 'rose') : notice.includes('取消') ? 'amber' : 'green',
+    title: notice.includes('失败') ? (notice.includes('部分') ? '部分同步失败' : '同步失败') : notice.includes('取消') ? '同步已取消' : '同步完成',
+    detail: notice,
+    progressPercent: 0,
+    currentAccountName: '',
+  };
+});
 
 const accountsInSelectedCategory = computed(() => {
   let targets: MpAccount[] = [];
@@ -5561,6 +5623,66 @@ onUnmounted(() => {
                       @click="onHeaderSyncClick"
                     />
                   </UTooltip>
+                </div>
+              </div>
+
+              <div
+                v-if="articlePaneMode !== 'reports' && mobileSyncStatusState"
+                class="mt-3 rounded-[22px] border px-3.5 py-3 shadow-[0_14px_28px_rgba(15,23,42,0.06)]"
+                :class="
+                  mobileSyncStatusState.tone === 'blue'
+                    ? 'border-blue-200 bg-blue-50/90 text-blue-900 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-100'
+                    : mobileSyncStatusState.tone === 'green'
+                      ? 'border-emerald-200 bg-emerald-50/90 text-emerald-900 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100'
+                      : mobileSyncStatusState.tone === 'amber'
+                        ? 'border-amber-200 bg-amber-50/90 text-amber-900 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-100'
+                        : 'border-rose-200 bg-rose-50/90 text-rose-900 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-100'
+                "
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span
+                        class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                        :class="
+                          mobileSyncStatusState.tone === 'blue'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200'
+                            : mobileSyncStatusState.tone === 'green'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
+                              : mobileSyncStatusState.tone === 'amber'
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200'
+                        "
+                      >
+                        {{ mobileSyncStatusState.title }}
+                      </span>
+                      <span v-if="mobileSyncStatusState.currentAccountName" class="truncate text-sm font-semibold">
+                        {{ mobileSyncStatusState.currentAccountName }}
+                      </span>
+                    </div>
+                    <p class="mt-2 text-sm leading-6 opacity-90">
+                      {{ mobileSyncStatusState.detail }}
+                    </p>
+                  </div>
+                  <span v-if="mobileSyncStatusState.progressPercent > 0" class="shrink-0 text-sm font-semibold">
+                    {{ mobileSyncStatusState.progressPercent }}%
+                  </span>
+                </div>
+
+                <div v-if="mobileSyncStatusState.progressPercent > 0" class="mt-3 h-2 rounded-full bg-white/60 dark:bg-white/10">
+                  <div
+                    class="h-2 rounded-full transition-all"
+                    :class="
+                      mobileSyncStatusState.tone === 'blue'
+                        ? 'bg-blue-500'
+                        : mobileSyncStatusState.tone === 'green'
+                          ? 'bg-emerald-500'
+                          : mobileSyncStatusState.tone === 'amber'
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                    "
+                    :style="{ width: `${mobileSyncStatusState.progressPercent}%` }"
+                  />
                 </div>
               </div>
             </div>
