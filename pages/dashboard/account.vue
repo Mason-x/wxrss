@@ -12,6 +12,7 @@ import type {
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
+import { request } from '#shared/utils/request';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
 import { bootstrapAccountAi, getArticleList, INITIAL_SUBSCRIBE_PAGE_SIZE, syncRssFeed } from '~/apis';
@@ -58,10 +59,41 @@ interface AccountSyncRuntimeState {
   syncedArticles: number;
   errorMessage: string;
   updatedAt: number;
+  source: 'local' | 'remote';
 }
 
 interface AccountRow extends MpAccount {
   _runtimeSync?: AccountSyncRuntimeState | null;
+}
+
+interface RemoteBatchSyncAccountSnapshot {
+  fakeid: string;
+  nickname: string;
+  status: 'pending' | 'running' | 'success' | 'error' | 'canceled';
+  syncedMessages: number;
+  totalMessages: number;
+  syncedArticles: number;
+  updatedAt: number;
+  message?: string;
+}
+
+interface RemoteBatchSyncJobSnapshot {
+  jobId: string;
+  status: 'running' | 'success' | 'error' | 'canceled';
+  totalAccounts: number;
+  completedAccounts: number;
+  successCount: number;
+  failedCount: number;
+  currentFakeid: string;
+  currentNickname: string;
+  message: string;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt: number;
+  currentAccount: RemoteBatchSyncAccountSnapshot | null;
+  failedAccounts: RemoteBatchSyncAccountSnapshot[];
+  heapUsedMb: number;
+  pollAfterMs: number;
 }
 
 const toast = toastFactory();
@@ -117,6 +149,9 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
 const isCanceled = ref(false);
 const isDeleting = ref(false);
 const isSyncing = ref(false);
+const remoteBatchSyncPollTimer = ref<number | null>(null);
+const remoteBatchSyncRunningFakeid = ref<string | null>(null);
+const remoteBatchSyncFailedFakeids = ref<string[]>([]);
 
 // 当前正在同步的公众号id
 const syncingRowId = ref<string | null>(null);
@@ -612,7 +647,8 @@ function syncAccountRuntimeStateToRow(fakeid: string) {
 
 function setAccountRuntimeSyncRunning(
   account: Pick<MpAccount, 'fakeid' | 'count' | 'total_count' | 'articles'>,
-  overrides: Partial<Pick<AccountSyncRuntimeState, 'syncedMessages' | 'totalMessages' | 'syncedArticles'>> = {}
+  overrides: Partial<Pick<AccountSyncRuntimeState, 'syncedMessages' | 'totalMessages' | 'syncedArticles'>> = {},
+  source: AccountSyncRuntimeState['source'] = 'local'
 ) {
   accountRuntimeSyncStates[account.fakeid] = {
     status: 'running',
@@ -621,11 +657,12 @@ function setAccountRuntimeSyncRunning(
     syncedArticles: Math.max(0, Number(overrides.syncedArticles ?? account.articles) || 0),
     errorMessage: '',
     updatedAt: Date.now(),
+    source,
   };
   syncAccountRuntimeStateToRow(account.fakeid);
 }
 
-function setAccountRuntimeSyncError(fakeid: string, message: string) {
+function setAccountRuntimeSyncError(fakeid: string, message: string, source: AccountSyncRuntimeState['source'] = 'local') {
   const current = globalRowData.value.find(item => item.fakeid === fakeid);
   const previous = accountRuntimeSyncStates[fakeid];
   accountRuntimeSyncStates[fakeid] = {
@@ -635,6 +672,7 @@ function setAccountRuntimeSyncError(fakeid: string, message: string) {
     syncedArticles: previous?.syncedArticles ?? current?.articles ?? 0,
     errorMessage: String(message || '同步失败').trim(),
     updatedAt: Date.now(),
+    source,
   };
   syncAccountRuntimeStateToRow(fakeid);
 }
@@ -657,6 +695,130 @@ function getAccountRuntimeSyncPercent(account: AccountRow): number {
     return 0;
   }
   return Math.min(100, Math.max(0, Math.round((state.syncedMessages / state.totalMessages) * 100)));
+}
+
+function clearRemoteAccountRuntimeSyncState(fakeid: string) {
+  if (accountRuntimeSyncStates[fakeid]?.source !== 'remote') {
+    return;
+  }
+  clearAccountRuntimeSyncState(fakeid);
+}
+
+function applyRemoteRunningAccount(snapshot: RemoteBatchSyncAccountSnapshot) {
+  const current = globalRowData.value.find(item => item.fakeid === snapshot.fakeid);
+  setAccountRuntimeSyncRunning(
+    {
+      fakeid: snapshot.fakeid,
+      count: current?.count ?? snapshot.syncedMessages,
+      total_count: current?.total_count ?? snapshot.totalMessages,
+      articles: current?.articles ?? snapshot.syncedArticles,
+    },
+    {
+      syncedMessages: Number(snapshot.syncedMessages) || 0,
+      totalMessages: Number(snapshot.totalMessages) || 0,
+      syncedArticles: Number(snapshot.syncedArticles) || 0,
+    },
+    'remote'
+  );
+}
+
+function applyRemoteErrorAccount(snapshot: RemoteBatchSyncAccountSnapshot) {
+  const current = globalRowData.value.find(item => item.fakeid === snapshot.fakeid);
+  accountRuntimeSyncStates[snapshot.fakeid] = {
+    status: 'error',
+    syncedMessages: Number(snapshot.syncedMessages) || current?.count || 0,
+    totalMessages: Number(snapshot.totalMessages) || current?.total_count || 0,
+    syncedArticles: Number(snapshot.syncedArticles) || current?.articles || 0,
+    errorMessage: String(snapshot.message || '同步失败').trim(),
+    updatedAt: Number(snapshot.updatedAt) || Date.now(),
+    source: 'remote',
+  };
+  syncAccountRuntimeStateToRow(snapshot.fakeid);
+}
+
+function clearRemoteBatchSyncPollTimer() {
+  if (remoteBatchSyncPollTimer.value !== null) {
+    window.clearTimeout(remoteBatchSyncPollTimer.value);
+    remoteBatchSyncPollTimer.value = null;
+  }
+}
+
+function scheduleRemoteBatchSyncPoll(delayMs: number) {
+  if (!import.meta.client) {
+    return;
+  }
+  clearRemoteBatchSyncPollTimer();
+  remoteBatchSyncPollTimer.value = window.setTimeout(() => {
+    remoteBatchSyncPollTimer.value = null;
+    void syncRemoteBatchSyncStatus();
+  }, Math.max(1000, delayMs || 3000));
+}
+
+function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | null) {
+  const previousRunningFakeid = remoteBatchSyncRunningFakeid.value;
+  const nextRunningFakeid =
+    snapshot?.status === 'running' && snapshot.currentAccount?.status === 'running'
+      ? String(snapshot.currentAccount.fakeid || '')
+      : '';
+  const nextFailedFakeids = new Set(
+    (Array.isArray(snapshot?.failedAccounts) ? snapshot.failedAccounts : []).map(account => String(account.fakeid || ''))
+  );
+
+  if (previousRunningFakeid && previousRunningFakeid !== nextRunningFakeid && !nextFailedFakeids.has(previousRunningFakeid)) {
+    clearRemoteAccountRuntimeSyncState(previousRunningFakeid);
+  }
+
+  for (const fakeid of remoteBatchSyncFailedFakeids.value) {
+    if (!nextFailedFakeids.has(fakeid)) {
+      clearRemoteAccountRuntimeSyncState(fakeid);
+    }
+  }
+
+  if (snapshot?.currentAccount?.status === 'running') {
+    applyRemoteRunningAccount(snapshot.currentAccount);
+  } else if (nextRunningFakeid) {
+    clearRemoteAccountRuntimeSyncState(nextRunningFakeid);
+  }
+
+  for (const failedAccount of Array.isArray(snapshot?.failedAccounts) ? snapshot.failedAccounts : []) {
+    applyRemoteErrorAccount(failedAccount);
+  }
+
+  remoteBatchSyncRunningFakeid.value = nextRunningFakeid || null;
+  remoteBatchSyncFailedFakeids.value = Array.from(nextFailedFakeids);
+
+  if (!snapshot || snapshot.status !== 'running') {
+    if (!nextFailedFakeids.size && previousRunningFakeid) {
+      clearRemoteAccountRuntimeSyncState(previousRunningFakeid);
+    }
+  }
+}
+
+async function getRemoteBatchSyncStatus(): Promise<RemoteBatchSyncJobSnapshot | null> {
+  const resp = await request<{ data: RemoteBatchSyncJobSnapshot | null }>('/api/web/reader/batch-sync-status');
+  return resp.data || null;
+}
+
+async function syncRemoteBatchSyncStatus() {
+  clearRemoteBatchSyncPollTimer();
+
+  try {
+    const snapshot = await getRemoteBatchSyncStatus();
+    applyRemoteBatchSyncSnapshot(snapshot);
+
+    if (snapshot?.status === 'running') {
+      scheduleRemoteBatchSyncPoll(Math.max(1000, Number(snapshot.pollAfterMs) || 3000));
+    }
+  } catch (error) {
+    const statusCode = Number((error as { statusCode?: number; response?: { status?: number } })?.statusCode || 0)
+      || Number((error as { response?: { status?: number } })?.response?.status || 0);
+    if (statusCode === 401) {
+      applyRemoteBatchSyncSnapshot(null);
+      return;
+    }
+    console.warn('load remote batch sync status failed:', error);
+    scheduleRemoteBatchSyncPoll(5000);
+  }
 }
 
 function onMobileListScroll() {
@@ -727,6 +889,14 @@ watch(selectedRowIds, ids => {
       node.setSelected(shouldSelect);
     }
   });
+});
+
+onMounted(() => {
+  void syncRemoteBatchSyncStatus();
+});
+
+onUnmounted(() => {
+  clearRemoteBatchSyncPollTimer();
 });
 
 // 删除所选的公众号数据

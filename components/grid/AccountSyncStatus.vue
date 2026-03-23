@@ -8,6 +8,7 @@ interface AccountSyncRuntimeState {
   syncedArticles: number;
   errorMessage: string;
   updatedAt: number;
+  source?: 'local' | 'remote';
 }
 
 interface AccountRow {
@@ -46,14 +47,14 @@ defineExpose({
       class="space-y-1.5 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10"
     >
       <div class="flex items-center justify-between gap-2 text-[11px] text-blue-700 dark:text-blue-300">
-        <span class="font-medium">同步中</span>
+        <span class="font-medium">&#21516;&#27493;&#20013;</span>
         <span>{{ percent }}%</span>
       </div>
       <div class="h-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20">
         <div class="h-1.5 rounded-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
       </div>
       <p class="truncate text-[11px] text-blue-700 dark:text-blue-300">
-        {{ state.syncedMessages }}/{{ state.totalMessages || 0 }}，文章 {{ state.syncedArticles }}
+        {{ state.syncedMessages }}/{{ state.totalMessages || 0 }}&#65292;&#25991;&#31456; {{ state.syncedArticles }}
       </p>
     </div>
     <div
@@ -61,7 +62,7 @@ defineExpose({
       class="rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2 text-[11px] leading-5 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
       :title="state.errorMessage"
     >
-      <p class="font-medium">同步失败</p>
+      <p class="font-medium">&#21516;&#27493;&#22833;&#36133;</p>
       <p class="truncate">{{ state.errorMessage }}</p>
     </div>
   </div>
