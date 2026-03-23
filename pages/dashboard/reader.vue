@@ -267,12 +267,6 @@ const loginAccount = useLoginAccount();
 const preferences = usePreferences();
 const preferenceCapabilities = usePreferencesCapabilities();
 const { saveNow: savePreferencesNow, saving: savingPreferences } = useSavePreferences();
-const {
-  preference: themeModePreference,
-  effective: themeModeEffective,
-  options: themeModeOptions,
-  setThemeMode,
-} = useAppThemeMode();
 const { getSyncTimestamp } = useSyncDeadline();
 const FOCUS_CATEGORY_ID = '__focus__';
 const FOCUS_CATEGORY_LABEL = '重点关注';
@@ -5951,7 +5945,6 @@ onUnmounted(() => {
               <IframeHtmlRenderer
                 :html="selectedContentHtml"
                 :content-kind="selectedContentKind"
-                :theme="themeModeEffective"
                 @open-article-link="openArticleByLinkFromReport"
               />
             </div>
@@ -6078,22 +6071,6 @@ onUnmounted(() => {
                             </span>
                           </div>
                         </button>
-                        <div class="desktop-avatar-menu-section">
-                          <p class="desktop-avatar-menu-label">模式切换</p>
-                          <div class="desktop-avatar-menu-theme-grid">
-                            <button
-                              v-for="option in themeModeOptions"
-                              :key="`mobile-theme-${option.key}`"
-                              type="button"
-                              class="desktop-avatar-theme-option"
-                              :class="themeModePreference === option.key ? 'is-active' : ''"
-                              @click="setThemeMode(option.key)"
-                            >
-                              <UIcon :name="option.icon" class="size-4 shrink-0" />
-                              <span>{{ option.label }}</span>
-                            </button>
-                          </div>
-                        </div>
                         <button
                           type="button"
                           class="desktop-avatar-menu-item is-danger"
@@ -6353,22 +6330,6 @@ onUnmounted(() => {
                         </span>
                       </div>
                     </button>
-                    <div class="desktop-avatar-menu-section">
-                      <p class="desktop-avatar-menu-label">模式切换</p>
-                      <div class="desktop-avatar-menu-theme-grid">
-                        <button
-                          v-for="option in themeModeOptions"
-                          :key="`desktop-theme-${option.key}`"
-                          type="button"
-                          class="desktop-avatar-theme-option"
-                          :class="themeModePreference === option.key ? 'is-active' : ''"
-                          @click="setThemeMode(option.key)"
-                        >
-                          <UIcon :name="option.icon" class="size-4 shrink-0" />
-                          <span>{{ option.label }}</span>
-                        </button>
-                      </div>
-                    </div>
                     <button
                       type="button"
                       class="desktop-avatar-menu-item is-danger"
@@ -6941,7 +6902,6 @@ onUnmounted(() => {
           <IframeHtmlRenderer
             :html="selectedContentHtml"
             :content-kind="selectedContentKind"
-            :theme="themeModeEffective"
             @open-article-link="openArticleByLinkFromReport"
           />
         </div>
@@ -7474,19 +7434,6 @@ onUnmounted(() => {
 
 .desktop-avatar-menu-label {
   @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-slate-500;
-}
-
-.desktop-avatar-menu-theme-grid {
-  @apply mt-3 grid grid-cols-3 gap-2;
-}
-
-.desktop-avatar-theme-option {
-  @apply inline-flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] border border-slate-200/80 bg-slate-50/80 px-2 py-2 text-[11px] font-medium text-slate-600 transition-all duration-150
-    hover:-translate-y-px hover:border-slate-300 hover:bg-white hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900 dark:hover:text-white;
-}
-
-.desktop-avatar-theme-option.is-active {
-  @apply border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900;
 }
 
 .desktop-avatar-menu-item.is-danger {

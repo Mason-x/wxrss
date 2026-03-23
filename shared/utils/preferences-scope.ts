@@ -2,7 +2,6 @@ import { normalizePreferences } from '#shared/utils/preferences';
 import type { PreferenceKey, PreferenceRole, Preferences } from '~/types/preferences';
 
 export const USER_MANAGED_PREFERENCE_KEYS = [
-  'themeMode',
   'dailySyncEnabled',
   'dailySyncTime',
   'aiTagDefinitions',
@@ -37,6 +36,7 @@ export const USER_HIDDEN_PREFERENCE_KEYS = [
   'aiSummaryModel',
   'aiSummarySystemPrompt',
   'aiTagSystemPrompt',
+  'aiDailyReportSystemPrompt',
 ] as const satisfies PreferenceKey[];
 
 function pickPreferencesByKeys(
@@ -48,7 +48,7 @@ function pickPreferencesByKeys(
 
   for (const key of keys) {
     if (key in input) {
-      result[key] = input[key];
+      (result as Record<PreferenceKey, Preferences[PreferenceKey] | undefined>)[key] = input[key];
     }
   }
 

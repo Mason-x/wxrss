@@ -11,7 +11,6 @@ export type PreferenceRole = 'admin' | 'user';
 
 export interface Preferences {
   hideDeleted: boolean;
-  themeMode: 'system' | 'light' | 'dark';
 
   privateProxyList: string[];
   privateProxyAuthorization: string;
