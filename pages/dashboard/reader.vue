@@ -95,6 +95,7 @@ interface LoadAccountArticleOptions {
   maxAdditionalMessages?: number;
   startSyncedMessages?: number;
   stopWhenNoNewOnThisPage?: boolean;
+  allowHistoryBackfill?: boolean;
 }
 
 interface ArticleSummaryState {
@@ -4823,6 +4824,9 @@ async function _load(
     ? Math.max(0, Number(options.startSyncedMessages) || 0)
     : Math.max(0, Number(account.count) || 0);
   const stopWhenNoNewOnThisPage = options.stopWhenNoNewOnThisPage !== false;
+  const effectiveSyncTimestamp = options.allowHistoryBackfill
+    ? getSyncTimestamp()
+    : Math.max(getSyncTimestamp(), Number(account.last_update_time) || 0);
 
   if (isCanceled.value) {
     isCanceled.value = false;
@@ -4914,8 +4918,7 @@ async function _load(
 
   const tailCreateTime =
     cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(articles.at(-1)?.create_time) || 0;
-  const syncToTimestamp = getSyncTimestamp();
-  if (tailCreateTime > 0 && tailCreateTime < syncToTimestamp) {
+  if (tailCreateTime > 0 && tailCreateTime < effectiveSyncTimestamp) {
     loadMore = false;
   }
 
@@ -4932,6 +4935,7 @@ async function _load(
           initialPageSize: 0,
           maxAdditionalMessages,
           startSyncedMessages,
+          allowHistoryBackfill: options.allowHistoryBackfill,
         });
       },
       pickRandomSyncDelayMs(preferences.value as unknown as Preferences)
@@ -5108,6 +5112,7 @@ async function syncCurrentAccount(forceRssHistory = false, options: { historyChu
             maxAdditionalMessages: HISTORY_SYNC_CHUNK_MESSAGE_COUNT,
             startSyncedMessages: initialSyncedMessages,
             stopWhenNoNewOnThisPage: false,
+            allowHistoryBackfill: true,
           }
         : undefined
     );

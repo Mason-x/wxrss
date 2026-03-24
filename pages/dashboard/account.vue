@@ -232,9 +232,9 @@ async function _load(
 
   const tailCreateTime =
     cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(articles.at(-1)?.create_time) || 0;
-  const syncToTimestamp = getSyncTimestamp();
-  if (tailCreateTime > 0 && tailCreateTime < syncToTimestamp) {
-    // 已同步到配置的时间范围
+  const effectiveSyncTimestamp = Math.max(getSyncTimestamp(), Number(account.last_update_time) || 0);
+  if (tailCreateTime > 0 && tailCreateTime < effectiveSyncTimestamp) {
+    // 普通同步只拉取自上次同步边界以来的新内容，不主动回补更早的历史
     loadMore = false;
   }
 

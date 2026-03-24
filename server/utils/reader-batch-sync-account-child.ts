@@ -1020,6 +1020,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
   const fakeid = String(account.fakeid || '');
   const nickname = String(account.nickname || fakeid);
   const originalLastUpdateTime = Number(account.last_update_time) || 0;
+  const effectiveSyncTimestamp = Math.max(Number(payload.syncTimestamp) || 0, originalLastUpdateTime);
   let begin = 0;
   let page = 0;
   let totalInserted = 0;
@@ -1125,7 +1126,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
 
     const tailCreateTime =
       cacheBoundaryCreateTime > 0 ? cacheBoundaryCreateTime : Number(lastArticle?.create_time) || 0;
-    if (tailCreateTime > 0 && tailCreateTime < payload.syncTimestamp) {
+    if (tailCreateTime > 0 && tailCreateTime < effectiveSyncTimestamp) {
       shouldLoadMore = false;
     }
 
