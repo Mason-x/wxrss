@@ -37,7 +37,7 @@ export interface Preferences {
   dailySyncEnabled: boolean;
   dailySyncTime: string;
 
-  syncDateRange: '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
+  syncDateRange: '24h' | '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
   syncDatePoint: number;
 }
 
