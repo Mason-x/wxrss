@@ -1,19 +1,46 @@
 <template>
   <div class="iframe-html-renderer relative">
+    <iframe
+      ref="iframeRef"
+      class="block w-full border-0 bg-transparent"
+      :style="iframeStyle"
+      :srcdoc="preparedHtml"
+      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
+      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+      scrolling="no"
+      loading="lazy"
+      referrerpolicy="no-referrer"
+      @load="handleLoad"
+    />
+  </div>
+  <Teleport to="body">
     <div
-      v-if="searchable"
-      class="pointer-events-none absolute right-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] justify-end"
+      v-if="showFloatingSearchButton"
+      class="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1.25rem)] right-4 z-[90] md:right-6"
+    >
+      <UButton
+        size="sm"
+        color="gray"
+        variant="solid"
+        icon="i-lucide:search"
+        class="pointer-events-auto !h-12 !w-12 !rounded-full !p-0 shadow-[0_18px_40px_rgba(15,23,42,0.18)] dark:shadow-[0_18px_40px_rgba(2,6,23,0.42)]"
+        @click="openSearchPanel"
+      />
+    </div>
+
+    <div
+      v-if="showFloatingSearchPanel"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-[95] flex justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] md:px-6"
     >
       <div
-        v-if="searchPanelOpen"
-        class="pointer-events-auto flex w-[min(100%,24rem)] items-center gap-2 rounded-[22px] border border-slate-200/80 bg-white/95 px-2.5 py-2 shadow-[0_16px_40px_rgba(15,23,42,0.14)] backdrop-blur dark:border-slate-700/80 dark:bg-slate-950/92"
+        class="pointer-events-auto flex w-full max-w-[42rem] items-center gap-2 rounded-[26px] border border-slate-200/85 bg-white/96 px-3 py-3 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur dark:border-slate-700/85 dark:bg-slate-950/94"
       >
         <input
           ref="searchInputRef"
           v-model="searchKeyword"
           type="search"
           placeholder="搜索正文关键词"
-          class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 md:text-sm"
           @keydown="handleSearchInputKeydown"
         />
         <span class="min-w-[3.5rem] text-right text-[11px] font-medium text-slate-500 dark:text-slate-400">
@@ -37,31 +64,8 @@
         />
         <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" @click="closeSearchPanel" />
       </div>
-      <UButton
-        v-else
-        size="2xs"
-        color="gray"
-        variant="solid"
-        icon="i-lucide:search"
-        class="pointer-events-auto shadow-[0_12px_28px_rgba(15,23,42,0.14)]"
-        @click="openSearchPanel"
-      >
-        搜索
-      </UButton>
     </div>
-    <iframe
-      ref="iframeRef"
-      class="block w-full border-0 bg-transparent"
-      :style="iframeStyle"
-      :srcdoc="preparedHtml"
-      sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation"
-      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-      scrolling="no"
-      loading="lazy"
-      referrerpolicy="no-referrer"
-      @load="handleLoad"
-    />
-  </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -96,6 +100,7 @@ const searchKeyword = ref('');
 const searchMatches = ref<HTMLElement[]>([]);
 const activeSearchMatchIndex = ref(-1);
 const searchInputRef = ref<HTMLInputElement | null>(null);
+const rendererVisible = ref(false);
 const iframeStyle = {
   backgroundColor: '#ffffff',
 };
@@ -113,6 +118,8 @@ const VIDEO_PROXY_HOSTS = [
 ];
 
 const searchable = computed(() => Boolean(props.searchable));
+const showFloatingSearchButton = computed(() => searchable.value && rendererVisible.value && !searchPanelOpen.value);
+const showFloatingSearchPanel = computed(() => searchable.value && rendererVisible.value && searchPanelOpen.value);
 const searchStatusLabel = computed(() => {
   const keyword = searchKeyword.value.trim();
   if (!keyword) {
@@ -125,6 +132,19 @@ const searchStatusLabel = computed(() => {
 
   return `${activeSearchMatchIndex.value + 1}/${searchMatches.value.length}`;
 });
+
+function syncRendererVisibility(): void {
+  const iframe = iframeRef.value;
+  if (!iframe || typeof window === 'undefined') {
+    rendererVisible.value = false;
+    return;
+  }
+
+  const styles = window.getComputedStyle(iframe);
+  const rect = iframe.getBoundingClientRect();
+  rendererVisible.value =
+    styles.display !== 'none' && styles.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+}
 
 function buildSrcdoc(html: string): string {
   const sanitized = DOMPurify.sanitize(html || '', {
@@ -1234,6 +1254,7 @@ function bindReaderArticleLinkInteractions(doc: Document): void {
 
 function handleLoad(): void {
   nextTick(() => {
+    syncRendererVisibility();
     updateHeight();
     bindResizeObserver();
     const doc = iframeRef.value?.contentDocument;
@@ -1249,6 +1270,7 @@ function handleLoad(): void {
 
 watch(preparedHtml, async () => {
   await nextTick();
+  syncRendererVisibility();
   updateHeight();
 });
 
@@ -1266,6 +1288,22 @@ watch(
     searchPanelOpen.value = false;
     searchKeyword.value = '';
     clearSearchHighlights();
+    nextTick(() => {
+      syncRendererVisibility();
+    });
+  }
+);
+
+watch(
+  () => props.searchable,
+  () => {
+    if (!props.searchable) {
+      closeSearchPanel();
+    }
+
+    nextTick(() => {
+      syncRendererVisibility();
+    });
   }
 );
 
@@ -1281,8 +1319,11 @@ watch(
 );
 
 onMounted(() => {
+  syncRendererVisibility();
   window.addEventListener('resize', updateHeight);
+  window.addEventListener('resize', syncRendererVisibility);
   window.visualViewport?.addEventListener('resize', updateHeight);
+  window.visualViewport?.addEventListener('resize', syncRendererVisibility);
 });
 
 onUnmounted(() => {
@@ -1290,6 +1331,8 @@ onUnmounted(() => {
   clearGalleryInteractions();
   disconnectResizeObserver();
   window.removeEventListener('resize', updateHeight);
+  window.removeEventListener('resize', syncRendererVisibility);
   window.visualViewport?.removeEventListener('resize', updateHeight);
+  window.visualViewport?.removeEventListener('resize', syncRendererVisibility);
 });
 </script>
