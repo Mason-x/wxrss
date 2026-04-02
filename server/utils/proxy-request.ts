@@ -11,7 +11,7 @@ import { isDev, USER_AGENT } from '~/config';
 import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
 import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import type { RequestOptions } from '~/server/types';
-import { cookieStore, getCookieFromStore } from '~/server/utils/CookieStore';
+import { AccountCookie, cookieStore, getCookieFromStore } from '~/server/utils/CookieStore';
 import { logRequest, logResponse } from '~/server/utils/logger';
 import { isMemoryDebugEnabled, logMemory } from '~/server/utils/memory-debug';
 
@@ -546,14 +546,15 @@ export async function proxyMpRequest(options: RequestOptions) {
       const authKey = crypto.randomUUID().replace(/-/g, '');
       const { redirect_url } = await mpResponse.clone().json();
       const token = new URL(`http://localhost${redirect_url}`).searchParams.get('token')!;
-      const success = await cookieStore.setCookie(authKey, token, mpResponse.headers.getSetCookie());
+      const accountCookie = new AccountCookie(token, mpResponse.headers.getSetCookie());
+      const success = await cookieStore.setCookieValue(authKey, accountCookie.toJSON());
       if (success) {
         console.log('cookie 鍐欏叆鎴愬姛');
       } else {
         console.log('cookie 鍐欏叆澶辫触');
       }
       setCookies = [
-        createLocalProxyCookie('auth-key', authKey, options.event, dayjs().add(4, 'days').toDate()),
+        createLocalProxyCookie('auth-key', authKey, options.event, new Date(accountCookie.expiresAt)),
         createLocalProxyCookie('uuid', 'EXPIRED', options.event, dayjs().subtract(1, 'days').toDate()),
       ];
     } catch (error) {

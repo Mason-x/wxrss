@@ -9,12 +9,14 @@ export interface CookieKVValue {
   expiresAt?: number;
 }
 
-const COOKIE_TTL_MS = 60 * 60 * 24 * 4 * 1000; // 4 days
+const COOKIE_TTL_FALLBACK_MS = 60 * 60 * 24 * 4 * 1000;
 
 export async function setMpCookie(key: CookieKVKey, data: CookieKVValue): Promise<boolean> {
   try {
     const db = await getSqliteDb();
     const now = Date.now();
+    const expiresAt = Number(data.expiresAt);
+    const resolvedExpiresAt = Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt : now + COOKIE_TTL_FALLBACK_MS;
     await db.run(
       `
       INSERT INTO mp_cookie(auth_key, token, cookies_json, expires_at, updated_at)
@@ -28,7 +30,7 @@ export async function setMpCookie(key: CookieKVKey, data: CookieKVValue): Promis
       key,
       data.token,
       JSON.stringify(Array.isArray(data.cookies) ? data.cookies : []),
-      now + COOKIE_TTL_MS,
+      resolvedExpiresAt,
       now
     );
     return true;

@@ -1,4 +1,3 @@
-import dayjs from 'dayjs';
 import { getRequestHeader, type H3Event } from 'h3';
 import { getMpCookie } from '~/server/kv/cookie';
 import {
@@ -112,8 +111,7 @@ function mergeLoginMpInfo(base: LoginMpInfo, extra: LoginMpInfo): LoginMpInfo {
   const biz_uin = String(base.biz_uin || extra.biz_uin || '').trim();
   const alias = String(base.alias || extra.alias || '').trim();
   const identity_key =
-    buildIdentityKey({ user_name, biz_uin, alias }) ||
-    String(base.identity_key || extra.identity_key || '').trim();
+    buildIdentityKey({ user_name, biz_uin, alias }) || String(base.identity_key || extra.identity_key || '').trim();
 
   return {
     nick_name,
@@ -195,19 +193,19 @@ function isHttpsRequest(event: H3Event): boolean {
   return Boolean(encrypted);
 }
 
-function createAuthKeyCookie(event: H3Event, authKey: string): string {
+function createAuthKeyCookie(event: H3Event, authKey: string, expiresAt: number): string {
   const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
-  const expiresAt = dayjs().add(4, 'days').toDate().toUTCString();
-  return `auth-key=${authKey}; Path=/; Expires=${expiresAt}; HttpOnly; SameSite=Lax${secureAttr}`;
+  const expires = new Date(expiresAt).toUTCString();
+  return `auth-key=${authKey}; Path=/; Expires=${expires}; HttpOnly; SameSite=Lax${secureAttr}`;
 }
 
-function replaceAuthKeySetCookie(headers: Headers, authKey: string, event: H3Event): void {
+function replaceAuthKeySetCookie(headers: Headers, authKey: string, event: H3Event, expiresAt: number): void {
   const retainedSetCookies = headers.getSetCookie().filter(cookie => !cookie.startsWith('auth-key='));
   headers.delete('set-cookie');
   retainedSetCookies.forEach(cookie => {
     headers.append('set-cookie', cookie);
   });
-  headers.append('set-cookie', createAuthKeyCookie(event, authKey));
+  headers.append('set-cookie', createAuthKeyCookie(event, authKey, expiresAt));
 }
 
 async function resolveCanonicalAuthKey(options: {
@@ -277,20 +275,24 @@ async function resolveEffectiveIdentityKey(options: {
   return existingIdentityKey;
 }
 
-async function promoteTemporarySession(temporaryAuthKey: string, canonicalAuthKey: string): Promise<void> {
+async function promoteTemporarySession(temporaryAuthKey: string, canonicalAuthKey: string) {
   const temporaryKey = normalizeAuthKey(temporaryAuthKey);
   const canonicalKey = normalizeAuthKey(canonicalAuthKey);
-  if (!temporaryKey || !canonicalKey || temporaryKey === canonicalKey) {
-    return;
+  if (!temporaryKey || !canonicalKey) {
+    return null;
+  }
+  if (temporaryKey === canonicalKey) {
+    return await getMpCookie(canonicalKey);
   }
 
   const temporarySession = await getMpCookie(temporaryKey);
   if (!temporarySession) {
-    return;
+    return null;
   }
 
   await cookieStore.setCookieValue(canonicalKey, temporarySession);
   await cookieStore.deleteCookie(temporaryKey);
+  return temporarySession;
 }
 
 function createLoginError(message = '登录失败，请刷新二维码后重试') {
@@ -382,7 +384,8 @@ export default defineEventHandler(async event => {
       return createLoginError('当前公众号已被管理员禁止登录');
     }
 
-    await promoteTemporarySession(temporaryAuthKey, canonicalAuthKey);
+    const promotedSession = await promoteTemporarySession(temporaryAuthKey, canonicalAuthKey);
+    const sessionExpiresAt = Number(promotedSession?.expiresAt) || Date.now();
 
     if (effectiveIdentityKey) {
       await upsertAuthKeyBinding({
@@ -398,13 +401,13 @@ export default defineEventHandler(async event => {
 
     const headers = new Headers(response.headers);
     if (canonicalAuthKey !== temporaryAuthKey) {
-      replaceAuthKeySetCookie(headers, canonicalAuthKey, event);
+      replaceAuthKeySetCookie(headers, canonicalAuthKey, event, sessionExpiresAt);
     }
 
     const body = JSON.stringify({
       nickname: info.nick_name,
       avatar: info.head_img,
-      expires: dayjs().add(4, 'days').toString(),
+      expires: new Date(sessionExpiresAt).toString(),
       auth_key: canonicalAuthKey,
       identity_key: effectiveIdentityKey,
       role: resolvePreferenceRole(effectiveIdentityKey),
