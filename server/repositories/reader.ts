@@ -1179,6 +1179,7 @@ export async function listArticlesPage(
     category?: string;
     focused?: boolean;
     favorite?: boolean;
+    titleKeyword?: string;
   } = {}
 ): Promise<{ list: ReaderArticle[]; total: number; offset: number; limit: number }> {
   const owner = await resolveReaderOwner(authKey);
@@ -1204,6 +1205,11 @@ export async function listArticlesPage(
   if (typeof options.favorite === 'boolean') {
     where.push('a.favorite = ?');
     params.push(options.favorite ? 1 : 0);
+  }
+  if (typeof options.titleKeyword === 'string' && options.titleKeyword.trim()) {
+    const escapedKeyword = options.titleKeyword.trim().replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+    where.push("a.title LIKE ? ESCAPE '\\'");
+    params.push(`%${escapedKeyword}%`);
   }
 
   const whereSql = where.join(' AND ');

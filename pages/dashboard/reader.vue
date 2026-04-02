@@ -2054,6 +2054,12 @@ const articleListSearchOpen = ref(false);
 const articleListSearchKeyword = ref('');
 const articleListSearchActiveIndex = ref(-1);
 const articleListSearchInputRef = ref<HTMLInputElement | null>(null);
+const articleListSearchDebounceTimer = ref<number | null>(null);
+const articleListSearchLoadingResults = ref(false);
+const activeArticleListTitleKeyword = computed(() =>
+  articlePaneMode.value === 'articles' ? articleListSearchKeyword.value.trim() : ''
+);
+let articleListSearchWarmRequestId = 0;
 const articleListSearchMatches = computed<ArticleListSearchMatch[]>(() => {
   if (articlePaneMode.value !== 'articles') {
     return [];
@@ -2083,11 +2089,16 @@ const articleListSearchStatusLabel = computed(() => {
     return '输入后搜索';
   }
 
+  if (articleListSearchLoadingResults.value || articlePageLoading.value) {
+    return '搜索中';
+  }
+
   if (articleListSearchMatches.value.length === 0) {
     return '无结果';
   }
 
-  return `${articleListSearchActiveIndex.value + 1}/${articleListSearchMatches.value.length}`;
+  const totalLabel = articleTotalCount.value > 0 ? articleTotalCount.value : articleListSearchMatches.value.length;
+  return `${articleListSearchActiveIndex.value + 1}/${totalLabel}`;
 });
 const showMobileArticleListSearch = computed(
   () =>
@@ -2095,14 +2106,18 @@ const showMobileArticleListSearch = computed(
     mobileView.value === 'articles' &&
     articlePaneMode.value === 'articles' &&
     !loading.value &&
-    displayedArticles.value.length > 0
+    (displayedArticles.value.length > 0 ||
+      articleListSearchOpen.value ||
+      Boolean(articleListSearchKeyword.value.trim()))
 );
 const showDesktopArticleListSearch = computed(
   () =>
     isDesktopViewport.value &&
     articlePaneMode.value === 'articles' &&
     !loading.value &&
-    displayedArticles.value.length > 0
+    (displayedArticles.value.length > 0 ||
+      articleListSearchOpen.value ||
+      Boolean(articleListSearchKeyword.value.trim()))
 );
 const showArticleListSearchButton = computed(
   () => (showMobileArticleListSearch.value || showDesktopArticleListSearch.value) && !articleListSearchOpen.value
@@ -2581,9 +2596,19 @@ function openArticleListSearch() {
 }
 
 function closeArticleListSearch() {
+  const hadKeyword = Boolean(articleListSearchKeyword.value.trim());
+  articleListSearchWarmRequestId += 1;
+  if (articleListSearchDebounceTimer.value !== null) {
+    window.clearTimeout(articleListSearchDebounceTimer.value);
+    articleListSearchDebounceTimer.value = null;
+  }
   articleListSearchOpen.value = false;
   articleListSearchKeyword.value = '';
   articleListSearchActiveIndex.value = -1;
+  articleListSearchLoadingResults.value = false;
+  if (hadKeyword) {
+    void loadArticlePage(true);
+  }
 }
 
 function focusNextArticleListSearchMatch() {
@@ -2617,6 +2642,32 @@ function handleArticleListSearchInputKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     event.preventDefault();
     closeArticleListSearch();
+  }
+}
+
+async function warmArticleListSearchResults(keyword: string, requestId: number) {
+  try {
+    while (
+      articleListSearchOpen.value &&
+      requestId === articleListSearchWarmRequestId &&
+      activeArticleListTitleKeyword.value === keyword &&
+      articlePageHasMore.value
+    ) {
+      if (articlePageLoading.value) {
+        await new Promise(resolve => setTimeout(resolve, 80));
+        continue;
+      }
+
+      const previousOffset = articlePageOffset.value;
+      await loadMoreArticles();
+      if (articlePageOffset.value === previousOffset) {
+        break;
+      }
+    }
+  } finally {
+    if (requestId === articleListSearchWarmRequestId) {
+      articleListSearchLoadingResults.value = false;
+    }
   }
 }
 
@@ -2831,6 +2882,9 @@ async function loadArticlePage(
     }
     if (favoriteOnly.value) {
       query.favorite = 1;
+    }
+    if (activeArticleListTitleKeyword.value) {
+      query.titleKeyword = activeArticleListTitleKeyword.value;
     }
 
     const resp = await request<{
@@ -3081,16 +3135,43 @@ watch(articleListSearchKeyword, keyword => {
     return;
   }
 
+  articleListSearchWarmRequestId += 1;
+  if (articleListSearchDebounceTimer.value !== null) {
+    window.clearTimeout(articleListSearchDebounceTimer.value);
+    articleListSearchDebounceTimer.value = null;
+  }
+
   if (!keyword.trim()) {
+    articleListSearchLoadingResults.value = false;
     articleListSearchActiveIndex.value = -1;
+    void loadArticlePage(true);
     return;
   }
 
-  if (articleListSearchMatches.value.length > 0) {
-    setActiveArticleListSearchMatch(0);
-  } else {
-    articleListSearchActiveIndex.value = -1;
-  }
+  articleListSearchLoadingResults.value = true;
+  articleListSearchDebounceTimer.value = window.setTimeout(() => {
+    const keywordSnapshot = keyword.trim();
+    const requestId = articleListSearchWarmRequestId;
+    articleListSearchDebounceTimer.value = null;
+    void loadArticlePage(true).finally(() => {
+      if (requestId !== articleListSearchWarmRequestId) {
+        return;
+      }
+
+      if (articleListSearchMatches.value.length > 0) {
+        setActiveArticleListSearchMatch(0);
+      } else {
+        articleListSearchActiveIndex.value = -1;
+      }
+
+      if (articlePageHasMore.value) {
+        void warmArticleListSearchResults(keywordSnapshot, requestId);
+        return;
+      }
+
+      articleListSearchLoadingResults.value = false;
+    });
+  }, 220);
 });
 
 watch(
@@ -3098,6 +3179,37 @@ watch(
   () => {
     if (!showArticleListSearchButton.value && !showArticleListSearchPanel.value) {
       closeArticleListSearch();
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
+  [articlePaneMode, selectedAccount, selectedCategory, favoriteOnly],
+  () => {
+    if (articleListSearchOpen.value && activeArticleListTitleKeyword.value) {
+      articleListSearchWarmRequestId += 1;
+      const requestId = articleListSearchWarmRequestId;
+      const keywordSnapshot = activeArticleListTitleKeyword.value;
+      articleListSearchLoadingResults.value = true;
+      void loadArticlePage(true).finally(() => {
+        if (requestId !== articleListSearchWarmRequestId) {
+          return;
+        }
+
+        if (articleListSearchMatches.value.length > 0) {
+          setActiveArticleListSearchMatch(0);
+        } else {
+          articleListSearchActiveIndex.value = -1;
+        }
+
+        if (articlePageHasMore.value) {
+          void warmArticleListSearchResults(keywordSnapshot, requestId);
+          return;
+        }
+
+        articleListSearchLoadingResults.value = false;
+      });
     }
   },
   { flush: 'post' }

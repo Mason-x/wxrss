@@ -8,6 +8,7 @@ interface ArticlePageQuery {
   category?: string;
   focused?: string | number | boolean;
   favorite?: string | number | boolean;
+  titleKeyword?: string;
 }
 
 export default defineEventHandler(async event => {
@@ -32,5 +33,6 @@ export default defineEventHandler(async event => {
     category: query.category ? String(query.category) : undefined,
     focused: focusedRaw === undefined ? undefined : focused,
     favorite: favoriteRaw === undefined ? undefined : favorite,
+    titleKeyword: query.titleKeyword ? String(query.titleKeyword) : undefined,
   });
 });
