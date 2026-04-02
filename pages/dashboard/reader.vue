@@ -1554,8 +1554,20 @@ const mobileSyncStatusState = computed<MobileSyncStatusState | null>(() => {
   }
 
   return {
-    tone: notice.includes('失败') ? (notice.includes('部分') ? 'amber' : 'rose') : notice.includes('取消') ? 'amber' : 'green',
-    title: notice.includes('失败') ? (notice.includes('部分') ? '部分同步失败' : '同步失败') : notice.includes('取消') ? '同步已取消' : '同步完成',
+    tone: notice.includes('失败')
+      ? notice.includes('部分')
+        ? 'amber'
+        : 'rose'
+      : notice.includes('取消')
+        ? 'amber'
+        : 'green',
+    title: notice.includes('失败')
+      ? notice.includes('部分')
+        ? '部分同步失败'
+        : '同步失败'
+      : notice.includes('取消')
+        ? '同步已取消'
+        : '同步完成',
     detail: notice,
     progressPercent: 0,
     currentAccountName: '',
@@ -5447,9 +5459,15 @@ onUnmounted(() => {
         <motion.div
           v-if="mobileArticlesUnderlayActive && mobileArticlesUnderlaySnapshot"
           class="absolute inset-0 z-0 flex h-full flex-col app-shell-bg"
-          :style="{ x: mobileArticlesUnderlayX, scale: mobileArticlesUnderlayScale, opacity: mobileArticlesUnderlayOpacity }"
+          :style="{
+            x: mobileArticlesUnderlayX,
+            scale: mobileArticlesUnderlayScale,
+            opacity: mobileArticlesUnderlayOpacity,
+          }"
         >
-          <div class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+          <div
+            class="app-shell-glass relative z-10 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70"
+          >
             <div class="pointer-events-none px-4 pb-3 pt-3">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -5472,7 +5490,9 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="mobile-underlay-layer pointer-events-none flex-1 overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3">
+          <div
+            class="mobile-underlay-layer pointer-events-none flex-1 overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3"
+          >
             <div
               v-if="mobileArticlesUnderlaySnapshot.articles.length > 0"
               class="space-y-3 will-change-transform"
@@ -5501,7 +5521,10 @@ onUnmounted(() => {
                     <span v-if="isArticleUnread(article)" class="unread-dot" />
                     <span>{{ formatTimeStamp(article.update_time || article.create_time) }}</span>
                     <span class="article-star-underlay" :class="isArticleFavorite(article) ? 'is-active' : ''">
-                      <UIcon :name="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'" class="size-3.5" />
+                      <UIcon
+                        :name="isArticleFavorite(article) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                        class="size-3.5"
+                      />
                     </span>
                   </span>
                 </div>
@@ -5540,14 +5563,23 @@ onUnmounted(() => {
           :style="
             mobileView === 'article'
               ? mobileArticleUnderlayActive
-                ? { x: mobileArticleUnderlayX, scale: mobileArticleUnderlayScale, opacity: mobileArticleUnderlayOpacity }
+                ? {
+                    x: mobileArticleUnderlayX,
+                    scale: mobileArticleUnderlayScale,
+                    opacity: mobileArticleUnderlayOpacity,
+                  }
                 : { x: 0, scale: 1, opacity: 0 }
               : { x: mobileArticlesSwipeX, scale: 1, opacity: 1 }
           "
         >
-          <div class="mobile-articles-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('articles', $event)" />
+          <div
+            class="mobile-articles-edge-sensor absolute inset-y-0 left-0 z-30"
+            @pointerdown="beginMobileDrag('articles', $event)"
+          />
 
-          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+          <div
+            class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70"
+          >
             <div class="px-4 pb-3 pt-3">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -5674,7 +5706,10 @@ onUnmounted(() => {
                   </span>
                 </div>
 
-                <div v-if="mobileSyncStatusState.progressPercent > 0" class="mt-3 h-2 rounded-full bg-white/60 dark:bg-white/10">
+                <div
+                  v-if="mobileSyncStatusState.progressPercent > 0"
+                  class="mt-3 h-2 rounded-full bg-white/60 dark:bg-white/10"
+                >
                   <div
                     class="h-2 rounded-full transition-all"
                     :class="
@@ -5735,16 +5770,15 @@ onUnmounted(() => {
                       <span>{{ report.sourceCount }} 篇信息来源</span>
                     </div>
                   </div>
-                  <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
+                  <span
+                    class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80"
+                  >
                     <UIcon name="i-lucide:sparkles" class="size-4" />
                   </span>
                 </div>
               </motion.li>
             </ul>
-            <ul
-              v-else-if="displayedArticles.length > 0"
-              class="space-y-3"
-            >
+            <ul v-else-if="displayedArticles.length > 0" class="space-y-3">
               <motion.li
                 v-for="(article, index) in displayedArticles"
                 :key="articleKey(article)"
@@ -5800,7 +5834,9 @@ onUnmounted(() => {
                     <p class="min-w-0 text-sm font-medium leading-5 line-clamp-2">
                       {{ articleDisplayTitle(article) }}
                     </p>
-                    <div class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <div
+                      class="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400"
+                    >
                       <span class="min-w-0 flex items-center gap-2 truncate">
                         <span class="article-account-avatar">
                           <img
@@ -5831,10 +5867,7 @@ onUnmounted(() => {
                 </div>
               </motion.li>
             </ul>
-            <div
-              v-else
-              class="px-3 py-8"
-            >
+            <div v-else class="px-3 py-8">
               <EmptyStatePanel
                 :icon="articleListEmptyState.icon"
                 :title="articleListEmptyState.title"
@@ -5887,9 +5920,14 @@ onUnmounted(() => {
           :animate="{ opacity: 1, scale: 1 }"
           :transition="mobilePageTransition"
         >
-          <div class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30" @pointerdown="beginMobileDrag('article', $event)" />
+          <div
+            class="mobile-article-edge-sensor absolute inset-y-0 left-0 z-30"
+            @pointerdown="beginMobileDrag('article', $event)"
+          />
 
-          <div class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70">
+          <div
+            class="app-shell-glass relative z-10 shrink-0 overflow-hidden border-b border-slate-200/60 shadow-[0_1px_0_rgba(15,23,42,0.04)] dark:border-slate-800/70"
+          >
             <div class="px-4 pb-3 pt-3">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0 flex flex-1 items-start gap-3">
@@ -6064,20 +6102,22 @@ onUnmounted(() => {
                       </li>
                     </ul>
                   </template>
-                  <pre v-else class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
-                    selectedArticleSummaryState.summary
-                  }}</pre>
+                  <pre
+                    v-else
+                    class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200"
+                    >{{ selectedArticleSummaryState.summary }}</pre
+                  >
                 </div>
               </section>
 
               <IframeHtmlRenderer
                 :html="selectedContentHtml"
                 :content-kind="selectedContentKind"
+                :searchable="Boolean(selectedArticle)"
                 @open-article-link="openArticleByLinkFromReport"
               />
             </div>
           </motion.div>
-
         </motion.div>
       </div>
 
@@ -6108,261 +6148,280 @@ onUnmounted(() => {
             :onDragEnd="onDrawerDragEnd"
             @pointerdown="beginMobileDrag('drawer', $event)"
           >
-              <div class="app-shell-glass relative z-[220] isolate overflow-visible border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70">
-                <div class="flex items-start justify-between gap-3">
-                  <div
-                    v-if="loginAccount"
-                    ref="mobileAvatarMenuRef"
-                    class="relative z-10 min-w-0 flex flex-1 items-center gap-3"
-                    :class="mobileAvatarMenuOpen ? 'z-[240]' : ''"
-                  >
-                    <div class="shrink-0">
+            <div
+              class="app-shell-glass relative z-[220] isolate overflow-visible border-b border-slate-200/60 px-4 py-3 dark:border-slate-800/70"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div
+                  v-if="loginAccount"
+                  ref="mobileAvatarMenuRef"
+                  class="relative z-10 min-w-0 flex flex-1 items-center gap-3"
+                  :class="mobileAvatarMenuOpen ? 'z-[240]' : ''"
+                >
+                  <div class="shrink-0">
+                    <button
+                      type="button"
+                      class="avatar-btn flex size-10 items-center justify-center"
+                      aria-label="登录账号菜单"
+                      :aria-expanded="mobileAvatarMenuOpen ? 'true' : 'false'"
+                      @click="toggleMobileAvatarMenu"
+                    >
+                      <img
+                        v-if="loginAccount.avatar"
+                        :src="IMAGE_PROXY + loginAccount.avatar"
+                        alt=""
+                        class="size-full object-cover"
+                      />
+                      <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+                    </button>
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="min-w-0 truncate text-sm font-semibold">
+                      {{ loginAccount.nickname || '已登录账号' }}
+                    </p>
+                    <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
+                  </div>
+                  <Transition name="desktop-avatar-menu-fade">
+                    <button
+                      v-if="mobileAvatarMenuOpen"
+                      type="button"
+                      class="mobile-avatar-menu-backdrop"
+                      aria-label="关闭登录账号菜单"
+                      @click="mobileAvatarMenuOpen = false"
+                    />
+                  </Transition>
+                  <Transition name="desktop-avatar-menu-fade">
+                    <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
+                      <button
+                        v-if="isAdminLogin"
+                        type="button"
+                        class="desktop-avatar-menu-item"
+                        @click="openDashboardFromMobileAvatarMenu"
+                      >
+                        <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
+                        <span>管理</span>
+                      </button>
+                      <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
+                        <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
+                        <span>设置</span>
+                      </button>
                       <button
                         type="button"
-                        class="avatar-btn flex size-10 items-center justify-center"
-                        aria-label="登录账号菜单"
-                        :aria-expanded="mobileAvatarMenuOpen ? 'true' : 'false'"
-                        @click="toggleMobileAvatarMenu"
+                        class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
+                        :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
+                        :disabled="savingPreferences"
+                        :aria-checked="aiAutoSummaryOnSyncEnabled"
+                        :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
+                        role="switch"
+                        @click="toggleAiAutoSummaryOnSync"
                       >
+                        <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
+                        <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
+                          <div class="min-w-0 flex-1">
+                            <span class="block">自动摘要</span>
+                            <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">同步时自动摘要当天文章</p>
+                          </div>
+                          <span
+                            class="desktop-avatar-menu-switch"
+                            :class="{
+                              'is-active': aiAutoSummaryOnSyncEnabled,
+                              'is-loading': savingPreferences,
+                            }"
+                            aria-hidden="true"
+                          >
+                            <span class="desktop-avatar-menu-switch-thumb">
+                              <UIcon
+                                v-if="savingPreferences"
+                                name="i-lucide:loader-circle"
+                                class="size-3 animate-spin"
+                              />
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        class="desktop-avatar-menu-item is-danger"
+                        :disabled="logoutBtnLoading"
+                        @click="logoutFromMobileAvatarMenu"
+                      >
+                        <UIcon
+                          :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
+                          class="size-4 shrink-0"
+                          :class="logoutBtnLoading ? 'animate-spin' : ''"
+                        />
+                        <span>退出登录</span>
+                      </button>
+                    </div>
+                  </Transition>
+                </div>
+                <div v-else class="min-w-0 flex-1">
+                  <UButton size="sm" color="gray" variant="soft" icon="i-lucide:log-in" @click="openLogin">
+                    登录公众号
+                  </UButton>
+                </div>
+                <div class="flex shrink-0 items-center gap-1.5">
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:x"
+                    class="icon-btn"
+                    @click="mobileAccountsPanelOpen = false"
+                  />
+                </div>
+              </div>
+
+              <div class="mt-3 flex items-center gap-2">
+                <UInput
+                  v-model="accountKeyword"
+                  class="flex-1"
+                  size="sm"
+                  icon="i-lucide:search"
+                  placeholder="搜索订阅源"
+                />
+                <UButton
+                  size="sm"
+                  color="gray"
+                  variant="soft"
+                  icon="i-lucide:plus"
+                  :loading="addBtnLoading"
+                  @click="addAccount"
+                >
+                  添加
+                </UButton>
+              </div>
+
+              <div class="mt-2 flex max-h-[96px] content-start flex-wrap gap-1 overflow-y-auto pr-1">
+                <button
+                  v-for="category in categories"
+                  :key="category.id"
+                  type="button"
+                  class="rounded-full border px-2.5 py-1 text-xs transition-all duration-200"
+                  :class="
+                    selectedCategory === category.id
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                      : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
+                  "
+                  @click="onClickCategory(category.id)"
+                >
+                  {{ category.label }} · {{ category.count }}
+                </button>
+              </div>
+            </div>
+
+            <div ref="mobileAccountsListRef" class="relative z-0 min-h-0 flex-1 overflow-y-auto px-3 py-3">
+              <ul class="space-y-3">
+                <li
+                  class="rounded-[24px] border px-4 py-3 transition-all duration-200"
+                  :class="
+                    aggregateArticlesOptionSelected
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                      : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
+                  "
+                >
+                  <button
+                    type="button"
+                    class="flex w-full items-start gap-3 text-left"
+                    @click="showAggregateArticles()"
+                  >
+                    <div
+                      class="flex size-11 shrink-0 items-center justify-center rounded-full"
+                      :class="
+                        aggregateArticlesOptionSelected
+                          ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
+                          : 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300'
+                      "
+                    >
+                      <UIcon name="i-lucide:newspaper" class="size-5" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-semibold">全部文章</p>
+                      <p
+                        class="mt-1 text-xs"
+                        :class="
+                          aggregateArticlesOptionSelected
+                            ? 'text-slate-200 dark:text-slate-700'
+                            : 'text-slate-500 dark:text-slate-400'
+                        "
+                      >
+                        查看全部订阅源文章
+                        <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
+                      </p>
+                    </div>
+                  </button>
+                </li>
+                <li
+                  v-for="account in accountsInCategory"
+                  :key="account.fakeid"
+                  class="rounded-[24px] border px-4 py-3 transition-all duration-200"
+                  :class="
+                    selectedAccount === account.fakeid
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                      : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
+                  "
+                >
+                  <div class="flex items-start gap-3">
+                    <button
+                      type="button"
+                      class="min-w-0 flex flex-1 items-start gap-3 text-left"
+                      @click="onClickAccount(account)"
+                    >
+                      <div class="size-11 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                         <img
-                          v-if="loginAccount.avatar"
-                          :src="IMAGE_PROXY + loginAccount.avatar"
+                          v-if="account.round_head_img"
+                          :src="IMAGE_PROXY + account.round_head_img"
                           alt=""
                           class="size-full object-cover"
                         />
                         <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
-                      </button>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <p class="min-w-0 truncate text-sm font-semibold">
-                        {{ loginAccount.nickname || '已登录账号' }}
-                      </p>
-                      <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">剩余时间 {{ cookieRemainText }}</p>
-                    </div>
-                    <Transition name="desktop-avatar-menu-fade">
-                      <button
-                        v-if="mobileAvatarMenuOpen"
-                        type="button"
-                        class="mobile-avatar-menu-backdrop"
-                        aria-label="关闭登录账号菜单"
-                        @click="mobileAvatarMenuOpen = false"
-                      />
-                    </Transition>
-                    <Transition name="desktop-avatar-menu-fade">
-                      <div v-if="mobileAvatarMenuOpen" class="mobile-avatar-menu">
-                        <button
-                          v-if="isAdminLogin"
-                          type="button"
-                          class="desktop-avatar-menu-item"
-                          @click="openDashboardFromMobileAvatarMenu"
-                        >
-                          <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
-                          <span>管理</span>
-                        </button>
-                        <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromMobileAvatarMenu">
-                          <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
-                          <span>设置</span>
-                        </button>
-                        <button
-                          type="button"
-                          class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
-                          :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
-                          :disabled="savingPreferences"
-                          :aria-checked="aiAutoSummaryOnSyncEnabled"
-                          :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
-                          role="switch"
-                          @click="toggleAiAutoSummaryOnSync"
-                        >
-                          <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
-                          <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
-                            <div class="min-w-0 flex-1">
-                              <span class="block">自动摘要</span>
-                              <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                                同步时自动摘要当天文章
-                              </p>
-                            </div>
-                            <span
-                              class="desktop-avatar-menu-switch"
-                              :class="{
-                                'is-active': aiAutoSummaryOnSyncEnabled,
-                                'is-loading': savingPreferences,
-                              }"
-                              aria-hidden="true"
-                            >
-                              <span class="desktop-avatar-menu-switch-thumb">
-                                <UIcon
-                                  v-if="savingPreferences"
-                                  name="i-lucide:loader-circle"
-                                  class="size-3 animate-spin"
-                                />
-                              </span>
-                            </span>
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          class="desktop-avatar-menu-item is-danger"
-                          :disabled="logoutBtnLoading"
-                          @click="logoutFromMobileAvatarMenu"
-                        >
-                          <UIcon
-                            :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
-                            class="size-4 shrink-0"
-                            :class="logoutBtnLoading ? 'animate-spin' : ''"
-                          />
-                          <span>退出登录</span>
-                        </button>
-                      </div>
-                    </Transition>
-                  </div>
-                  <div v-else class="min-w-0 flex-1">
-                    <UButton
-                      size="sm"
-                      color="gray"
-                      variant="soft"
-                      icon="i-lucide:log-in"
-                      @click="openLogin"
-                    >
-                      登录公众号
-                    </UButton>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-1.5">
-                    <UButton
-                      size="2xs"
-                      color="gray"
-                      variant="ghost"
-                      icon="i-lucide:x"
-                      class="icon-btn"
-                      @click="mobileAccountsPanelOpen = false"
-                    />
-                  </div>
-                </div>
-
-                <div class="mt-3 flex items-center gap-2">
-                  <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索订阅源" />
-                  <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
-                    添加
-                  </UButton>
-                </div>
-
-                <div class="mt-2 flex max-h-[96px] content-start flex-wrap gap-1 overflow-y-auto pr-1">
-                  <button
-                    v-for="category in categories"
-                    :key="category.id"
-                    type="button"
-                    class="rounded-full border px-2.5 py-1 text-xs transition-all duration-200"
-                    :class="
-                      selectedCategory === category.id
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
-                    "
-                    @click="onClickCategory(category.id)"
-                  >
-                    {{ category.label }} · {{ category.count }}
-                  </button>
-                </div>
-              </div>
-
-              <div ref="mobileAccountsListRef" class="relative z-0 min-h-0 flex-1 overflow-y-auto px-3 py-3">
-                <ul class="space-y-3">
-                  <li
-                    class="rounded-[24px] border px-4 py-3 transition-all duration-200"
-                    :class="
-                      aggregateArticlesOptionSelected
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
-                    "
-                  >
-                    <button type="button" class="flex w-full items-start gap-3 text-left" @click="showAggregateArticles()">
-                      <div
-                        class="flex size-11 shrink-0 items-center justify-center rounded-full"
-                        :class="
-                          aggregateArticlesOptionSelected
-                            ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
-                            : 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300'
-                        "
-                      >
-                        <UIcon name="i-lucide:newspaper" class="size-5" />
                       </div>
                       <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-semibold">全部文章</p>
+                        <div class="flex items-center gap-2 min-w-0">
+                          <p class="truncate text-sm font-semibold">{{ account.nickname || account.fakeid }}</p>
+                          <span
+                            v-if="hasAccountNewArticles(account)"
+                            class="account-new-dot shrink-0"
+                            title="有新文章"
+                            aria-label="有新文章"
+                          />
+                        </div>
                         <p
                           class="mt-1 text-xs"
                           :class="
-                            aggregateArticlesOptionSelected
+                            selectedAccount === account.fakeid
                               ? 'text-slate-200 dark:text-slate-700'
                               : 'text-slate-500 dark:text-slate-400'
                           "
                         >
-                          查看全部订阅源文章
-                          <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
+                          <span
+                            class="mr-1.5 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none"
+                            :class="
+                              selectedAccount === account.fakeid
+                                ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
+                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                            "
+                          >
+                            {{ accountSourceMetaLabel(account) }}
+                          </span>
+                          {{ normalizeCategory(account) }}
+                          <span> · {{ account.articles || 0 }} 篇</span>
                         </p>
                       </div>
                     </button>
-                  </li>
-                  <li
-                    v-for="account in accountsInCategory"
-                    :key="account.fakeid"
-                    class="rounded-[24px] border px-4 py-3 transition-all duration-200"
-                    :class="
-                      selectedAccount === account.fakeid
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_18px_38px_rgba(15,23,42,0.18)] dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                        : 'border-white/80 bg-white/80 shadow-[0_14px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-slate-900/80'
-                    "
-                  >
-                    <div class="flex items-start gap-3">
-                      <button type="button" class="min-w-0 flex flex-1 items-start gap-3 text-left" @click="onClickAccount(account)">
-                        <div class="size-11 shrink-0 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                          <img
-                            v-if="account.round_head_img"
-                            :src="IMAGE_PROXY + account.round_head_img"
-                            alt=""
-                            class="size-full object-cover"
-                          />
-                          <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
-                        </div>
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-2 min-w-0">
-                            <p class="truncate text-sm font-semibold">{{ account.nickname || account.fakeid }}</p>
-                            <span
-                              v-if="hasAccountNewArticles(account)"
-                              class="account-new-dot shrink-0"
-                              title="有新文章"
-                              aria-label="有新文章"
-                            />
-                          </div>
-                          <p
-                            class="mt-1 text-xs"
-                            :class="selectedAccount === account.fakeid ? 'text-slate-200 dark:text-slate-700' : 'text-slate-500 dark:text-slate-400'"
-                          >
-                            <span
-                              class="mr-1.5 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none"
-                              :class="
-                                selectedAccount === account.fakeid
-                                  ? 'bg-white/20 text-white dark:bg-slate-900/10 dark:text-slate-900'
-                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                              "
-                            >
-                              {{ accountSourceMetaLabel(account) }}
-                            </span>
-                            {{ normalizeCategory(account) }}
-                            <span> · {{ account.articles || 0 }} 篇</span>
-                          </p>
-                        </div>
-                      </button>
-                      <UButton
-                        size="2xs"
-                        color="gray"
-                        variant="ghost"
-                        :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                        class="icon-btn account-star-btn mt-0.5"
-                        :class="isFocusedAccount(account) ? 'is-active' : ''"
-                        @click.stop="markAccountAsFocused(account)"
-                      />
-                    </div>
-                  </li>
-                </ul>
-              </div>
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                      class="icon-btn account-star-btn mt-0.5"
+                      :class="isFocusedAccount(account) ? 'is-active' : ''"
+                      @click.stop="markAccountAsFocused(account)"
+                    />
+                  </div>
+                </li>
+              </ul>
+            </div>
           </motion.aside>
         </motion.div>
       </AnimatePresence>
@@ -6371,670 +6430,716 @@ onUnmounted(() => {
     </div>
 
     <div v-else class="flex h-full min-h-0 gap-3 overflow-hidden p-3">
-    <aside class="app-shell-panel w-[320px] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
-      <header class="app-shell-glass relative z-20 shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
-        <div class="flex items-center justify-start gap-2">
-          <template v-if="loginAccount">
-            <div ref="desktopAvatarMenuRef" class="relative flex items-center gap-2">
-              <button
-                type="button"
-                class="avatar-btn"
-                aria-label="登录账号菜单"
-                :aria-expanded="desktopAvatarMenuOpen ? 'true' : 'false'"
-                @click="toggleDesktopAvatarMenu"
-              >
-                <img
-                  v-if="loginAccount.avatar"
-                  :src="IMAGE_PROXY + loginAccount.avatar"
-                  alt=""
-                  class="size-7 rounded-full object-cover"
-                />
-                <UIcon v-else name="i-lucide:user-round" class="size-4 text-slate-500" />
-              </button>
-              <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
-
-              <Transition name="desktop-avatar-menu-fade">
+      <aside class="app-shell-panel w-[320px] min-h-0 flex-shrink-0 flex flex-col overflow-hidden rounded-[30px]">
+        <header
+          class="app-shell-glass relative z-20 shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70"
+        >
+          <div class="flex items-center justify-start gap-2">
+            <template v-if="loginAccount">
+              <div ref="desktopAvatarMenuRef" class="relative flex items-center gap-2">
                 <button
-                  v-if="desktopAvatarMenuOpen"
                   type="button"
-                  class="desktop-avatar-menu-backdrop"
-                  aria-label="关闭登录账号菜单"
-                  @click="desktopAvatarMenuOpen = false"
-                />
-              </Transition>
-              <Transition name="desktop-avatar-menu-fade">
-                <div v-if="desktopAvatarMenuOpen" class="desktop-avatar-menu">
-                  <div class="desktop-avatar-menu-header">
-                    <p class="truncate text-sm font-semibold">{{ loginAccount.nickname || '已登录账号' }}</p>
-                    <p class="mt-1 text-xs text-slate-500">剩余时间 {{ cookieRemainText }}</p>
-                  </div>
-                  <div class="py-2">
-                    <button
-                      v-if="isAdminLogin"
-                      type="button"
-                      class="desktop-avatar-menu-item"
-                      @click="openDashboardFromAvatarMenu"
-                    >
-                      <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
-                      <span>管理</span>
-                    </button>
-                    <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromAvatarMenu">
-                      <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
-                      <span>设置</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
-                      :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
-                      :disabled="savingPreferences"
-                      :aria-checked="aiAutoSummaryOnSyncEnabled"
-                      :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
-                      role="switch"
-                      @click="toggleAiAutoSummaryOnSync"
-                    >
-                      <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
-                      <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
-                        <div class="min-w-0 flex-1">
-                          <span class="block">自动摘要</span>
-                          <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                            同步时自动摘要当天文章
-                          </p>
-                        </div>
-                        <span
-                          class="desktop-avatar-menu-switch"
-                          :class="{
-                            'is-active': aiAutoSummaryOnSyncEnabled,
-                            'is-loading': savingPreferences,
-                          }"
-                          aria-hidden="true"
-                        >
-                          <span class="desktop-avatar-menu-switch-thumb">
-                            <UIcon
-                              v-if="savingPreferences"
-                              name="i-lucide:loader-circle"
-                              class="size-3 animate-spin"
-                            />
-                          </span>
-                        </span>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      class="desktop-avatar-menu-item is-danger"
-                      :disabled="logoutBtnLoading"
-                      @click="logoutFromAvatarMenu"
-                    >
-                      <UIcon
-                        :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
-                        class="size-4 shrink-0"
-                        :class="logoutBtnLoading ? 'animate-spin' : ''"
-                      />
-                      <span>退出登录</span>
-                    </button>
-                  </div>
-                </div>
-              </Transition>
-            </div>
-          </template>
-            <UTooltip v-else text="登录公众号">
-              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:log-in" class="icon-btn" @click="openLogin" />
-            </UTooltip>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索订阅源" />
-          <UButton size="sm" color="gray" variant="soft" icon="i-lucide:plus" :loading="addBtnLoading" @click="addAccount">
-            添加
-          </UButton>
-        </div>
-
-        <div class="flex flex-wrap gap-1 max-h-[108px] overflow-y-auto">
-          <button
-            v-for="category in categories"
-            :key="category.id"
-            type="button"
-            class="px-2.5 py-1 rounded-full text-xs border transition-all duration-200"
-            :class="
-              selectedCategory === category.id
-                ? 'bg-slate-900 text-white border-slate-900 shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
-            "
-            @click="onClickCategory(category.id)"
-          >
-            {{ category.label }} · {{ category.count }}
-          </button>
-        </div>
-
-      </header>
-
-      <ul class="app-shell-scrollbar relative z-0 min-h-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70">
-        <li
-          class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
-          :class="
-            aggregateArticlesOptionSelected
-              ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
-              : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
-          "
-          @click="showAggregateArticles()"
-        >
-          <div class="flex items-center gap-2 min-w-0">
-            <div class="flex size-9 items-center justify-center rounded-full bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300 shrink-0">
-              <UIcon name="i-lucide:newspaper" class="size-4.5" />
-            </div>
-            <div class="min-w-0">
-              <p class="text-sm font-semibold truncate">全部文章</p>
-              <p class="text-xs text-slate-500 mt-1">
-                查看全部订阅源文章
-                <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
-              </p>
-            </div>
-          </div>
-        </li>
-        <li
-          v-for="account in accountsInCategory"
-          :key="account.fakeid"
-          class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
-          :class="
-            selectedAccount === account.fakeid
-              ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
-              : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
-          "
-          @click="onClickAccount(account)"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 min-w-0">
-              <div class="size-9 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700 shrink-0">
-                <img
-                  v-if="account.round_head_img"
-                  :src="IMAGE_PROXY + account.round_head_img"
-                  alt=""
-                  class="size-full object-cover"
-                />
-                <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
-              </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2 min-w-0">
-                  <p class="text-sm font-semibold truncate">{{ account.nickname || account.fakeid }}</p>
-                  <span
-                    v-if="hasAccountNewArticles(account)"
-                    class="account-new-dot shrink-0"
-                    title="有新文章"
-                    aria-label="有新文章"
+                  class="avatar-btn"
+                  aria-label="登录账号菜单"
+                  :aria-expanded="desktopAvatarMenuOpen ? 'true' : 'false'"
+                  @click="toggleDesktopAvatarMenu"
+                >
+                  <img
+                    v-if="loginAccount.avatar"
+                    :src="IMAGE_PROXY + loginAccount.avatar"
+                    alt=""
+                    class="size-7 rounded-full object-cover"
                   />
-                </div>
-                <p class="text-xs text-slate-500 mt-1">
-                  <span class="mr-1.5 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {{ accountSourceMetaLabel(account) }}
-                  </span>
-                  {{ normalizeCategory(account) }}
-                  <span> · {{ account.articles || 0 }} 篇</span>
-                </p>
-              </div>
-            </div>
-            <UTooltip :text="isFocusedAccount(account) ? '取消重点关注' : '设为重点关注'">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                class="icon-btn account-star-btn"
-                :class="isFocusedAccount(account) ? 'is-active' : ''"
-                @click.stop="markAccountAsFocused(account)"
-              />
-            </UTooltip>
-          </div>
-        </li>
-      </ul>
-    </aside>
+                  <UIcon v-else name="i-lucide:user-round" class="size-4 text-slate-500" />
+                </button>
+                <span class="cookie-inline-text">剩余时间 {{ cookieRemainText }}</span>
 
-    <section class="app-shell-panel w-[430px] min-h-0 flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
-      <header class="app-shell-glass shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2 min-w-0">
-            <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
-            <span class="text-xs text-slate-500 shrink-0">{{ currentListTotalCount }} 篇</span>
-            <span v-if="articlePaneMode !== 'reports' && syncStatusLineText" class="text-xs text-emerald-600 shrink-0">
-              {{ syncStatusLineText }}
-            </span>
-            <UTooltip
-              v-if="articlePaneMode !== 'reports'"
-              :text="`编辑当前${accountSourceLabel(selectedAccountInfo)}分类`"
-            >
+                <Transition name="desktop-avatar-menu-fade">
+                  <button
+                    v-if="desktopAvatarMenuOpen"
+                    type="button"
+                    class="desktop-avatar-menu-backdrop"
+                    aria-label="关闭登录账号菜单"
+                    @click="desktopAvatarMenuOpen = false"
+                  />
+                </Transition>
+                <Transition name="desktop-avatar-menu-fade">
+                  <div v-if="desktopAvatarMenuOpen" class="desktop-avatar-menu">
+                    <div class="desktop-avatar-menu-header">
+                      <p class="truncate text-sm font-semibold">{{ loginAccount.nickname || '已登录账号' }}</p>
+                      <p class="mt-1 text-xs text-slate-500">剩余时间 {{ cookieRemainText }}</p>
+                    </div>
+                    <div class="py-2">
+                      <button
+                        v-if="isAdminLogin"
+                        type="button"
+                        class="desktop-avatar-menu-item"
+                        @click="openDashboardFromAvatarMenu"
+                      >
+                        <UIcon name="i-lucide:layout-dashboard" class="size-4 shrink-0" />
+                        <span>管理</span>
+                      </button>
+                      <button type="button" class="desktop-avatar-menu-item" @click="openSettingsFromAvatarMenu">
+                        <UIcon name="i-lucide:settings-2" class="size-4 shrink-0" />
+                        <span>设置</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="desktop-avatar-menu-item desktop-avatar-menu-toggle"
+                        :class="aiAutoSummaryOnSyncEnabled ? 'is-active' : ''"
+                        :disabled="savingPreferences"
+                        :aria-checked="aiAutoSummaryOnSyncEnabled"
+                        :aria-label="aiAutoSummaryOnSyncEnabled ? '关闭自动摘要' : '开启自动摘要'"
+                        role="switch"
+                        @click="toggleAiAutoSummaryOnSync"
+                      >
+                        <UIcon name="i-lucide:sparkles" class="size-4 shrink-0" />
+                        <div class="min-w-0 flex-1 flex items-center justify-between gap-3">
+                          <div class="min-w-0 flex-1">
+                            <span class="block">自动摘要</span>
+                            <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">同步时自动摘要当天文章</p>
+                          </div>
+                          <span
+                            class="desktop-avatar-menu-switch"
+                            :class="{
+                              'is-active': aiAutoSummaryOnSyncEnabled,
+                              'is-loading': savingPreferences,
+                            }"
+                            aria-hidden="true"
+                          >
+                            <span class="desktop-avatar-menu-switch-thumb">
+                              <UIcon
+                                v-if="savingPreferences"
+                                name="i-lucide:loader-circle"
+                                class="size-3 animate-spin"
+                              />
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        class="desktop-avatar-menu-item is-danger"
+                        :disabled="logoutBtnLoading"
+                        @click="logoutFromAvatarMenu"
+                      >
+                        <UIcon
+                          :name="logoutBtnLoading ? 'i-lucide:loader-circle' : 'i-lucide:log-out'"
+                          class="size-4 shrink-0"
+                          :class="logoutBtnLoading ? 'animate-spin' : ''"
+                        />
+                        <span>退出登录</span>
+                      </button>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+            <UTooltip v-else text="登录公众号">
               <UButton
                 size="2xs"
                 color="gray"
                 variant="ghost"
-                icon="i-lucide:square-pen"
-                :disabled="!selectedAccountInfo"
+                icon="i-lucide:log-in"
                 class="icon-btn"
-                @click="editSelectedAccountCategory"
-              />
-            </UTooltip>
-            <UTooltip v-if="articlePaneMode !== 'reports'" text="删除当前订阅源">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-lucide:minus"
-                :disabled="!selectedAccount"
-                :loading="isDeleting"
-                class="icon-btn"
-                @click="deleteCurrentAccount"
+                @click="openLogin"
               />
             </UTooltip>
           </div>
 
           <div class="flex items-center gap-2">
-            <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                icon="i-heroicons:arrow-path-rounded-square-20-solid"
-                label="同步"
-                :disabled="!canSyncFromHeader"
-                :loading="isSyncing"
-                class="toolbar-text-btn"
-                @click="onHeaderSyncClick"
-              />
-            </UTooltip>
-          </div>
-        </div>
-
-        <div v-if="articlePaneMode === 'articles'" class="flex flex-wrap items-center justify-between gap-2">
-          <div class="flex flex-wrap gap-2 items-center">
-            <UTooltip :text="selectionBtnTooltip">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                :icon="selectionBtnIcon"
-                class="icon-btn"
-                @click="onSelectionAction"
-              />
-            </UTooltip>
-
-            <UTooltip v-if="downloadBtnLoading" text="停止抓取">
-              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:square" class="icon-btn" @click="stopDownload" />
-            </UTooltip>
-
-            <UTooltip text="抓取文章数据">
-              <ButtonGroup
-                :items="[
-                  { label: '文章内容', event: 'download-html' },
-                  { label: '阅读量(需登录)', event: 'download-metadata' },
-                  { label: '留言(需登录)', event: 'download-comment' },
-                ]"
-                @download-html="downloadArticles('html')"
-                @download-metadata="downloadArticles('metadata')"
-                @download-comment="downloadArticles('comment')"
-              >
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:download"
-                  :loading="downloadBtnLoading"
-                  class="icon-btn"
-                />
-              </ButtonGroup>
-            </UTooltip>
-
-            <span class="text-[11px] text-slate-500 self-center">
-              <template v-if="downloadBtnLoading">抓取 {{ downloadCompletedCount }}/{{ downloadTotalCount }}</template>
-              <template v-if="exportFileLoading">
-                <template v-if="downloadBtnLoading"> · </template>
-                {{ exportPhase }} {{ exportCompletedCount }}/{{ exportTotalCount }}
-              </template>
-            </span>
+            <UInput v-model="accountKeyword" class="flex-1" size="sm" icon="i-lucide:search" placeholder="搜索订阅源" />
+            <UButton
+              size="sm"
+              color="gray"
+              variant="soft"
+              icon="i-lucide:plus"
+              :loading="addBtnLoading"
+              @click="addAccount"
+            >
+              添加
+            </UButton>
           </div>
 
-          <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
-            <div class="rounded-full border border-white/80 bg-white/80 px-3 py-1.5 shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80">
-              <UCheckbox v-model="favoriteOnly" name="desktop-favorite-only" label="只看收藏" />
-            </div>
-            <UTooltip text="导出文章">
-              <ButtonGroup
-                :items="[
-                  { label: 'Excel', event: 'export-excel' },
-                  { label: 'JSON', event: 'export-json' },
-                  { label: 'HTML', event: 'export-html' },
-                  { label: 'Txt', event: 'export-text' },
-                  { label: 'Markdown', event: 'export-markdown' },
-                  { label: 'Word', event: 'export-word' },
-                ]"
-                @export-excel="exportArticles('excel')"
-                @export-json="exportArticles('json')"
-                @export-html="exportArticles('html')"
-                @export-text="exportArticles('text')"
-                @export-markdown="exportArticles('markdown')"
-                @export-word="exportArticles('word')"
-              >
-                <UButton
-                  size="2xs"
-                  color="gray"
-                  variant="ghost"
-                  icon="i-lucide:file-output"
-                  :loading="exportFileLoading"
-                  class="icon-btn"
-                />
-              </ButtonGroup>
-            </UTooltip>
+          <div class="flex flex-wrap gap-1 max-h-[108px] overflow-y-auto">
+            <button
+              v-for="category in categories"
+              :key="category.id"
+              type="button"
+              class="px-2.5 py-1 rounded-full text-xs border transition-all duration-200"
+              :class="
+                selectedCategory === category.id
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-[0_12px_24px_rgba(15,23,42,0.14)] dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                  : 'border-white/80 bg-white/70 text-slate-600 hover:-translate-y-px hover:bg-white dark:border-white/10 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-900'
+              "
+              @click="onClickCategory(category.id)"
+            >
+              {{ category.label }} · {{ category.count }}
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div v-if="loading" class="px-3 py-3">
-        <LoadingCards />
-      </div>
-
-      <div v-else-if="articlePaneMode === 'reports' && dailyReportLoading" class="px-3 py-3">
-        <LoadingCards />
-      </div>
-
-      <div v-else-if="articlePaneMode === 'reports' && displayedDailyReports.length === 0" class="flex-1">
-        <EmptyStatePanel
-          :icon="articleListEmptyState.icon"
-          :title="articleListEmptyState.title"
-          :description="articleListEmptyState.description"
-        />
-      </div>
-
-      <div v-else-if="articlePaneMode === 'reports'" class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <ul class="space-y-2">
+        <ul
+          class="app-shell-scrollbar relative z-0 min-h-0 flex-1 overflow-y-auto divide-y divide-slate-200/60 px-2 py-2 dark:divide-slate-800/70"
+        >
           <li
-            v-for="report in displayedDailyReports"
-            :key="report.reportDate"
-            class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
+            class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
             :class="
-              selectedDailyReport?.reportDate === report.reportDate
-                ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
-                : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
+              aggregateArticlesOptionSelected
+                ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
+                : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
             "
-            @click="openDailyReport(report)"
+            @click="showAggregateArticles()"
           >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="line-clamp-2 text-sm font-medium">{{ getDailyReportListTitle(report) }}</p>
-                <div class="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                  <span>{{ report.sourceCount }} 篇信息来源</span>
+            <div class="flex items-center gap-2 min-w-0">
+              <div
+                class="flex size-9 items-center justify-center rounded-full bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300 shrink-0"
+              >
+                <UIcon name="i-lucide:newspaper" class="size-4.5" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold truncate">全部文章</p>
+                <p class="text-xs text-slate-500 mt-1">
+                  查看全部订阅源文章
+                  <span> · {{ aggregateArticlesSourceCount }} 个订阅源</span>
+                </p>
+              </div>
+            </div>
+          </li>
+          <li
+            v-for="account in accountsInCategory"
+            :key="account.fakeid"
+            class="cursor-pointer rounded-[22px] px-3 py-2.5 transition-all duration-200"
+            :class="
+              selectedAccount === account.fakeid
+                ? 'bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:bg-slate-900'
+                : 'hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:bg-slate-900/70'
+            "
+            @click="onClickAccount(account)"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="size-9 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700 shrink-0">
+                  <img
+                    v-if="account.round_head_img"
+                    :src="IMAGE_PROXY + account.round_head_img"
+                    alt=""
+                    class="size-full object-cover"
+                  />
+                  <UIcon v-else name="i-lucide:user-round" class="size-full p-2 text-slate-500" />
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <p class="text-sm font-semibold truncate">{{ account.nickname || account.fakeid }}</p>
+                    <span
+                      v-if="hasAccountNewArticles(account)"
+                      class="account-new-dot shrink-0"
+                      title="有新文章"
+                      aria-label="有新文章"
+                    />
+                  </div>
+                  <p class="text-xs text-slate-500 mt-1">
+                    <span
+                      class="mr-1.5 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      {{ accountSourceMetaLabel(account) }}
+                    </span>
+                    {{ normalizeCategory(account) }}
+                    <span> · {{ account.articles || 0 }} 篇</span>
+                  </p>
                 </div>
               </div>
-              <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80">
-                <UIcon name="i-lucide:sparkles" class="size-4" />
-              </span>
+              <UTooltip :text="isFocusedAccount(account) ? '取消重点关注' : '设为重点关注'">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  :icon="isFocusedAccount(account) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                  class="icon-btn account-star-btn"
+                  :class="isFocusedAccount(account) ? 'is-active' : ''"
+                  @click.stop="markAccountAsFocused(account)"
+                />
+              </UTooltip>
             </div>
           </li>
         </ul>
-      </div>
+      </aside>
 
-      <div v-else-if="displayedArticles.length === 0" class="flex-1">
-        <EmptyStatePanel
-          :icon="articleListEmptyState.icon"
-          :title="articleListEmptyState.title"
-          :description="articleListEmptyState.description"
-        />
-      </div>
-
-      <div v-else v-bind="articleContainerProps" class="app-shell-scrollbar min-h-0 flex-1 h-0 overflow-y-auto px-2 py-2">
-      <ul v-bind="articleWrapperProps" class="space-y-2">
-        <li
-          v-for="row in virtualDisplayedArticles"
-          :key="articleKey(row.data)"
-          :data-article-key="articleKey(row.data)"
-          class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
-          :class="
-            selectedArticle && articleKey(selectedArticle) === articleKey(row.data)
-              ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
-              : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
-          "
-          @click="openArticle(row.data)"
-        >
-          <div class="flex items-start" :class="selectionMode ? 'gap-2' : ''">
-            <input
-              v-if="selectionMode"
-              type="checkbox"
-              class="mt-1"
-              :checked="isArticleSelected(row.data)"
-              @click.stop
-              @change="toggleArticleSelection(row.data, ($event.target as HTMLInputElement).checked)"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="mb-1.5 flex items-start justify-between gap-2">
-                <div class="min-w-0 flex flex-1 flex-wrap gap-1.5">
-                  <span
-                    v-for="tag in getArticleAiTags(row.data)"
-                    :key="`${articleKey(row.data)}:${tag.key}`"
-                    class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                    :style="getArticleTagStyle(tag)"
-                  >
-                    {{ tag.label }}
-                  </span>
-                </div>
+      <section class="app-shell-panel w-[430px] min-h-0 flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
+        <header class="app-shell-glass shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <h2 class="font-semibold truncate">{{ articleListTitle }}</h2>
+              <span class="text-xs text-slate-500 shrink-0">{{ currentListTotalCount }} 篇</span>
+              <span
+                v-if="articlePaneMode !== 'reports' && syncStatusLineText"
+                class="text-xs text-emerald-600 shrink-0"
+              >
+                {{ syncStatusLineText }}
+              </span>
+              <UTooltip
+                v-if="articlePaneMode !== 'reports'"
+                :text="`编辑当前${accountSourceLabel(selectedAccountInfo)}分类`"
+              >
                 <UButton
                   size="2xs"
                   color="gray"
                   variant="ghost"
-                  icon="i-lucide:sparkles"
-                  label="AI摘要"
-                  class="toolbar-text-btn shrink-0"
-                  @click.stop="openArticleSummaryDialog(row.data)"
+                  icon="i-lucide:square-pen"
+                  :disabled="!selectedAccountInfo"
+                  class="icon-btn"
+                  @click="editSelectedAccountCategory"
                 />
+              </UTooltip>
+              <UTooltip v-if="articlePaneMode !== 'reports'" text="删除当前订阅源">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:minus"
+                  :disabled="!selectedAccount"
+                  :loading="isDeleting"
+                  class="icon-btn"
+                  @click="deleteCurrentAccount"
+                />
+              </UTooltip>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-heroicons:arrow-path-rounded-square-20-solid"
+                  label="同步"
+                  :disabled="!canSyncFromHeader"
+                  :loading="isSyncing"
+                  class="toolbar-text-btn"
+                  @click="onHeaderSyncClick"
+                />
+              </UTooltip>
+            </div>
+          </div>
+
+          <div v-if="articlePaneMode === 'articles'" class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-2 items-center">
+              <UTooltip :text="selectionBtnTooltip">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  :icon="selectionBtnIcon"
+                  class="icon-btn"
+                  @click="onSelectionAction"
+                />
+              </UTooltip>
+
+              <UTooltip v-if="downloadBtnLoading" text="停止抓取">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:square"
+                  class="icon-btn"
+                  @click="stopDownload"
+                />
+              </UTooltip>
+
+              <UTooltip text="抓取文章数据">
+                <ButtonGroup
+                  :items="[
+                    { label: '文章内容', event: 'download-html' },
+                    { label: '阅读量(需登录)', event: 'download-metadata' },
+                    { label: '留言(需登录)', event: 'download-comment' },
+                  ]"
+                  @download-html="downloadArticles('html')"
+                  @download-metadata="downloadArticles('metadata')"
+                  @download-comment="downloadArticles('comment')"
+                >
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:download"
+                    :loading="downloadBtnLoading"
+                    class="icon-btn"
+                  />
+                </ButtonGroup>
+              </UTooltip>
+
+              <span class="text-[11px] text-slate-500 self-center">
+                <template v-if="downloadBtnLoading"
+                  >抓取 {{ downloadCompletedCount }}/{{ downloadTotalCount }}</template
+                >
+                <template v-if="exportFileLoading">
+                  <template v-if="downloadBtnLoading"> · </template>
+                  {{ exportPhase }} {{ exportCompletedCount }}/{{ exportTotalCount }}
+                </template>
+              </span>
+            </div>
+
+            <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <div
+                class="rounded-full border border-white/80 bg-white/80 px-3 py-1.5 shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-slate-900/80"
+              >
+                <UCheckbox v-model="favoriteOnly" name="desktop-favorite-only" label="只看收藏" />
               </div>
-              <p class="min-w-0 text-sm font-medium line-clamp-2 leading-5">
-                {{ articleDisplayTitle(row.data) }}
-              </p>
-              <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
-                <span class="min-w-0 flex items-center gap-2 truncate">
-                  <span class="article-account-avatar">
-                    <img
-                      v-if="row.data.round_head_img"
-                      :src="IMAGE_PROXY + row.data.round_head_img"
-                      alt=""
-                      class="size-full object-cover"
-                    />
-                    <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
-                  </span>
-                  <span class="truncate">{{ row.data.accountName }}</span>
+              <UTooltip text="导出文章">
+                <ButtonGroup
+                  :items="[
+                    { label: 'Excel', event: 'export-excel' },
+                    { label: 'JSON', event: 'export-json' },
+                    { label: 'HTML', event: 'export-html' },
+                    { label: 'Txt', event: 'export-text' },
+                    { label: 'Markdown', event: 'export-markdown' },
+                    { label: 'Word', event: 'export-word' },
+                  ]"
+                  @export-excel="exportArticles('excel')"
+                  @export-json="exportArticles('json')"
+                  @export-html="exportArticles('html')"
+                  @export-text="exportArticles('text')"
+                  @export-markdown="exportArticles('markdown')"
+                  @export-word="exportArticles('word')"
+                >
+                  <UButton
+                    size="2xs"
+                    color="gray"
+                    variant="ghost"
+                    icon="i-lucide:file-output"
+                    :loading="exportFileLoading"
+                    class="icon-btn"
+                  />
+                </ButtonGroup>
+              </UTooltip>
+            </div>
+          </div>
+        </header>
+
+        <div v-if="loading" class="px-3 py-3">
+          <LoadingCards />
+        </div>
+
+        <div v-else-if="articlePaneMode === 'reports' && dailyReportLoading" class="px-3 py-3">
+          <LoadingCards />
+        </div>
+
+        <div v-else-if="articlePaneMode === 'reports' && displayedDailyReports.length === 0" class="flex-1">
+          <EmptyStatePanel
+            :icon="articleListEmptyState.icon"
+            :title="articleListEmptyState.title"
+            :description="articleListEmptyState.description"
+          />
+        </div>
+
+        <div
+          v-else-if="articlePaneMode === 'reports'"
+          class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2"
+        >
+          <ul class="space-y-2">
+            <li
+              v-for="report in displayedDailyReports"
+              :key="report.reportDate"
+              class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
+              :class="
+                selectedDailyReport?.reportDate === report.reportDate
+                  ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
+                  : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
+              "
+              @click="openDailyReport(report)"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="line-clamp-2 text-sm font-medium">{{ getDailyReportListTitle(report) }}</p>
+                  <div class="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                    <span>{{ report.sourceCount }} 篇信息来源</span>
+                  </div>
+                </div>
+                <span
+                  class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-white/80 bg-white/80 text-sky-500 dark:border-white/10 dark:bg-slate-900/80"
+                >
+                  <UIcon name="i-lucide:sparkles" class="size-4" />
                 </span>
-                <span class="shrink-0 inline-flex items-center gap-1.5">
-                  <span v-if="isArticleUnread(row.data)" class="unread-dot" />
-                  <span>{{ formatTimeStamp(row.data.update_time || row.data.create_time) }}</span>
-                  <UTooltip :text="isArticleFavorite(row.data) ? '取消收藏' : '收藏文章'">
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div v-else-if="displayedArticles.length === 0" class="flex-1">
+          <EmptyStatePanel
+            :icon="articleListEmptyState.icon"
+            :title="articleListEmptyState.title"
+            :description="articleListEmptyState.description"
+          />
+        </div>
+
+        <div
+          v-else
+          v-bind="articleContainerProps"
+          class="app-shell-scrollbar min-h-0 flex-1 h-0 overflow-y-auto px-2 py-2"
+        >
+          <ul v-bind="articleWrapperProps" class="space-y-2">
+            <li
+              v-for="row in virtualDisplayedArticles"
+              :key="articleKey(row.data)"
+              :data-article-key="articleKey(row.data)"
+              class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
+              :class="
+                selectedArticle && articleKey(selectedArticle) === articleKey(row.data)
+                  ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
+                  : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
+              "
+              @click="openArticle(row.data)"
+            >
+              <div class="flex items-start" :class="selectionMode ? 'gap-2' : ''">
+                <input
+                  v-if="selectionMode"
+                  type="checkbox"
+                  class="mt-1"
+                  :checked="isArticleSelected(row.data)"
+                  @click.stop
+                  @change="toggleArticleSelection(row.data, ($event.target as HTMLInputElement).checked)"
+                />
+                <div class="min-w-0 flex-1">
+                  <div class="mb-1.5 flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex flex-1 flex-wrap gap-1.5">
+                      <span
+                        v-for="tag in getArticleAiTags(row.data)"
+                        :key="`${articleKey(row.data)}:${tag.key}`"
+                        class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                        :style="getArticleTagStyle(tag)"
+                      >
+                        {{ tag.label }}
+                      </span>
+                    </div>
                     <UButton
                       size="2xs"
                       color="gray"
                       variant="ghost"
-                      :icon="isArticleFavorite(row.data) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                      class="icon-btn article-star-btn"
-                      :class="isArticleFavorite(row.data) ? 'is-active' : ''"
-                      @click.stop="toggleArticleFavorite(row.data)"
+                      icon="i-lucide:sparkles"
+                      label="AI摘要"
+                      class="toolbar-text-btn shrink-0"
+                      @click.stop="openArticleSummaryDialog(row.data)"
                     />
-                  </UTooltip>
-                </span>
-              </div>
-            </div>
-          </div>
-        </li>
-      </ul>
-      </div>
-      <div
-        v-if="!loading && shouldShowArticleFooterAction"
-        class="shrink-0 border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
-      >
-        <UButton
-          size="2xs"
-          color="gray"
-          variant="ghost"
-          block
-          :loading="articleFooterActionLoading"
-          :disabled="articleFooterActionLoading"
-          @click="handleArticleFooterAction"
-        >
-          {{ articleFooterActionLabel }}
-        </UButton>
-      </div>
-    </section>
-
-    <main class="app-shell-panel min-h-0 flex-1 overflow-hidden rounded-[30px] flex flex-col">
-      <div class="app-shell-glass shrink-0 border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
-        <template v-if="selectedDailyReport || selectedArticle">
-          <div class="flex items-start justify-between gap-4">
-            <div class="min-w-0 flex-1">
-              <h1 class="text-[30px] leading-tight font-bold">{{ selectedContentTitle }}</h1>
-              <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
-                <span>{{ selectedContentMeta }}</span>
-                <button v-if="selectedArticle" type="button" class="text-blue-500 hover:text-blue-600" @click="openOriginalArticle(selectedArticle.link)">
-                  查看原文
-                </button>
-              </div>
-            </div>
-            <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
-              <UButton
-                size="2xs"
-                color="gray"
-                variant="ghost"
-                :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
-                class="icon-btn article-star-btn shrink-0"
-                :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
-                @click="toggleArticleFavorite(selectedArticle)"
-              />
-            </UTooltip>
-          </div>
-        </template>
-        <template v-else>
-          <p class="text-slate-500">选择文章后在这里阅读内容</p>
-        </template>
-      </div>
-
-      <div v-if="!selectedArticle && !selectedDailyReport">
-        <EmptyStatePanel
-          icon="i-lucide-file-text"
-          title="请选择一篇文章"
-          description="选择文章后，就可以在这里阅读正文内容。"
-        />
-      </div>
-      <div v-else-if="selectedArticle && contentLoading">
-        <EmptyStatePanel
-          icon="i-lucide-loader-circle"
-          title="内容加载中"
-          description="正在准备文章内容，请稍候。"
-        />
-      </div>
-      <div v-else class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
-        <div class="mx-auto w-full max-w-[920px]">
-          <section
-            v-if="selectedArticle"
-            class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  <UIcon name="i-lucide:sparkles" class="size-4 text-sky-500" />
-                  <span>AI 摘要</span>
-                </p>
-              </div>
-
-              <UButton
-                size="xs"
-                color="primary"
-                variant="soft"
-                :disabled="isSyncing"
-                :loading="selectedArticleSummaryState.status === 'loading'"
-                @click="generateSelectedArticleSummary"
-              >
-                {{
-                  selectedArticleSummaryState.status === 'success'
-                    ? '重新生成'
-                    : selectedArticleSummaryState.status === 'error'
-                      ? '重试'
-                      : '生成摘要'
-                }}
-              </UButton>
-            </div>
-
-            <div
-              v-if="!aiSummaryConfigured && selectedArticleSummaryState.status === 'idle'"
-              class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
-            >
-              <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
-              <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">打开设置</UButton>
-            </div>
-
-            <div
-              v-else-if="selectedArticleSummaryState.status === 'idle' && isSyncing"
-              class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
-            >
-              {{ SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE }}
-            </div>
-
-            <div
-              v-else-if="selectedArticleSummaryState.status === 'loading'"
-              class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
-            >
-              正在生成摘要，请稍候……
-            </div>
-
-            <div
-              v-else-if="selectedArticleSummaryState.status === 'error'"
-              class="mt-3 rounded-[18px] border border-rose-200/80 bg-rose-50/90 px-3 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
-            >
-              {{ selectedArticleSummaryState.error }}
-            </div>
-
-            <div
-              v-else-if="selectedArticleSummaryState.status === 'success'"
-              class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
-            >
-              <template v-if="selectedArticleSummaryPayload">
-                <div class="mx-auto max-w-[760px]">
-                  <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
-                    <div
-                      v-for="tag in selectedArticleSummaryTagDisplays"
-                      :key="`desktop-summary-tag-${tag.key}`"
-                      class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
-                      :style="getArticleTagStyle(tag)"
-                    >
-                      {{ tag.label }}
-                    </div>
                   </div>
-                  <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
-                    <p
-                      v-for="(paragraph, index) in selectedArticleSummaryParagraphs"
-                      :key="`desktop-summary-paragraph-${index}`"
-                      class="rounded-[16px] bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-slate-900/60"
-                      v-html="renderSummaryParagraphHtml(paragraph)"
-                    />
+                  <p class="min-w-0 text-sm font-medium line-clamp-2 leading-5">
+                    {{ articleDisplayTitle(row.data) }}
+                  </p>
+                  <div class="mt-1 text-xs text-slate-500 flex items-center justify-between gap-2">
+                    <span class="min-w-0 flex items-center gap-2 truncate">
+                      <span class="article-account-avatar">
+                        <img
+                          v-if="row.data.round_head_img"
+                          :src="IMAGE_PROXY + row.data.round_head_img"
+                          alt=""
+                          class="size-full object-cover"
+                        />
+                        <UIcon v-else name="i-lucide:user-round" class="size-3.5 text-slate-400" />
+                      </span>
+                      <span class="truncate">{{ row.data.accountName }}</span>
+                    </span>
+                    <span class="shrink-0 inline-flex items-center gap-1.5">
+                      <span v-if="isArticleUnread(row.data)" class="unread-dot" />
+                      <span>{{ formatTimeStamp(row.data.update_time || row.data.create_time) }}</span>
+                      <UTooltip :text="isArticleFavorite(row.data) ? '取消收藏' : '收藏文章'">
+                        <UButton
+                          size="2xs"
+                          color="gray"
+                          variant="ghost"
+                          :icon="isArticleFavorite(row.data) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                          class="icon-btn article-star-btn"
+                          :class="isArticleFavorite(row.data) ? 'is-active' : ''"
+                          @click.stop="toggleArticleFavorite(row.data)"
+                        />
+                      </UTooltip>
+                    </span>
                   </div>
                 </div>
-                <ul
-                  v-if="selectedArticleSummaryPayload.highlights.length > 0"
-                  class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
-                >
-                  <li
-                    v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
-                    :key="`desktop-summary-highlight-${index}`"
-                    class="flex gap-2"
-                  >
-                    <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky-400" />
-                    <span>{{ highlight }}</span>
-                  </li>
-                </ul>
-              </template>
-              <pre v-else class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200">{{
-                selectedArticleSummaryState.summary
-              }}</pre>
-            </div>
-          </section>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div
+          v-if="!loading && shouldShowArticleFooterAction"
+          class="shrink-0 border-t border-slate-200/60 px-3 py-2 dark:border-slate-800/70"
+        >
+          <UButton
+            size="2xs"
+            color="gray"
+            variant="ghost"
+            block
+            :loading="articleFooterActionLoading"
+            :disabled="articleFooterActionLoading"
+            @click="handleArticleFooterAction"
+          >
+            {{ articleFooterActionLabel }}
+          </UButton>
+        </div>
+      </section>
 
-          <IframeHtmlRenderer
-            :html="selectedContentHtml"
-            :content-kind="selectedContentKind"
-            @open-article-link="openArticleByLinkFromReport"
+      <main class="app-shell-panel min-h-0 flex-1 overflow-hidden rounded-[30px] flex flex-col">
+        <div class="app-shell-glass shrink-0 border-b border-slate-200/60 px-6 py-4 dark:border-slate-800/70">
+          <template v-if="selectedDailyReport || selectedArticle">
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0 flex-1">
+                <h1 class="text-[30px] leading-tight font-bold">{{ selectedContentTitle }}</h1>
+                <div class="mt-2 text-sm text-slate-500 flex items-center gap-4">
+                  <span>{{ selectedContentMeta }}</span>
+                  <button
+                    v-if="selectedArticle"
+                    type="button"
+                    class="text-blue-500 hover:text-blue-600"
+                    @click="openOriginalArticle(selectedArticle.link)"
+                  >
+                    查看原文
+                  </button>
+                </div>
+              </div>
+              <UTooltip v-if="selectedArticle" :text="isArticleFavorite(selectedArticle) ? '取消收藏' : '收藏文章'">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  :icon="isArticleFavorite(selectedArticle) ? 'i-heroicons:star-solid' : 'i-heroicons:star'"
+                  class="icon-btn article-star-btn shrink-0"
+                  :class="isArticleFavorite(selectedArticle) ? 'is-active' : ''"
+                  @click="toggleArticleFavorite(selectedArticle)"
+                />
+              </UTooltip>
+            </div>
+          </template>
+          <template v-else>
+            <p class="text-slate-500">选择文章后在这里阅读内容</p>
+          </template>
+        </div>
+
+        <div v-if="!selectedArticle && !selectedDailyReport">
+          <EmptyStatePanel
+            icon="i-lucide-file-text"
+            title="请选择一篇文章"
+            description="选择文章后，就可以在这里阅读正文内容。"
           />
         </div>
-      </div>
-    </main>
+        <div v-else-if="selectedArticle && contentLoading">
+          <EmptyStatePanel icon="i-lucide-loader-circle" title="内容加载中" description="正在准备文章内容，请稍候。" />
+        </div>
+        <div v-else class="app-shell-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="mx-auto w-full max-w-[920px]">
+            <section
+              v-if="selectedArticle"
+              class="mb-4 rounded-[24px] border border-sky-100/90 bg-[linear-gradient(135deg,rgba(240,249,255,0.96),rgba(255,255,255,0.98))] px-4 py-4 shadow-[0_18px_36px_rgba(14,165,233,0.08)] dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.5),rgba(2,6,23,0.96))]"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    <UIcon name="i-lucide:sparkles" class="size-4 text-sky-500" />
+                    <span>AI 摘要</span>
+                  </p>
+                </div>
+
+                <UButton
+                  size="xs"
+                  color="primary"
+                  variant="soft"
+                  :disabled="isSyncing"
+                  :loading="selectedArticleSummaryState.status === 'loading'"
+                  @click="generateSelectedArticleSummary"
+                >
+                  {{
+                    selectedArticleSummaryState.status === 'success'
+                      ? '重新生成'
+                      : selectedArticleSummaryState.status === 'error'
+                        ? '重试'
+                        : '生成摘要'
+                  }}
+                </UButton>
+              </div>
+
+              <div
+                v-if="!aiSummaryConfigured && selectedArticleSummaryState.status === 'idle'"
+                class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+              >
+                <p>请先在设置里填写 OpenAI 兼容接口配置。</p>
+                <UButton size="2xs" color="gray" variant="soft" class="mt-2" @click="openSystemMenu">打开设置</UButton>
+              </div>
+
+              <div
+                v-else-if="selectedArticleSummaryState.status === 'idle' && isSyncing"
+                class="mt-3 rounded-[18px] border border-amber-200/80 bg-amber-50/90 px-3 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+              >
+                {{ SYNC_BLOCKED_ARTICLE_SUMMARY_MESSAGE }}
+              </div>
+
+              <div
+                v-else-if="selectedArticleSummaryState.status === 'loading'"
+                class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 text-sm text-slate-600 dark:border-sky-500/20 dark:bg-slate-950/70 dark:text-slate-300"
+              >
+                正在生成摘要，请稍候……
+              </div>
+
+              <div
+                v-else-if="selectedArticleSummaryState.status === 'error'"
+                class="mt-3 rounded-[18px] border border-rose-200/80 bg-rose-50/90 px-3 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"
+              >
+                {{ selectedArticleSummaryState.error }}
+              </div>
+
+              <div
+                v-else-if="selectedArticleSummaryState.status === 'success'"
+                class="mt-3 rounded-[18px] border border-sky-100/80 bg-white px-3 py-3 dark:border-sky-500/20 dark:bg-slate-950/70"
+              >
+                <template v-if="selectedArticleSummaryPayload">
+                  <div class="mx-auto max-w-[760px]">
+                    <div v-if="selectedArticleSummaryTagDisplays.length > 0" class="flex flex-wrap gap-2">
+                      <div
+                        v-for="tag in selectedArticleSummaryTagDisplays"
+                        :key="`desktop-summary-tag-${tag.key}`"
+                        class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none shadow-[0_1px_2px_rgba(15,23,42,0.08)]"
+                        :style="getArticleTagStyle(tag)"
+                      >
+                        {{ tag.label }}
+                      </div>
+                    </div>
+                    <div class="mt-3 space-y-3 text-[15px] leading-8 text-slate-800 dark:text-slate-100">
+                      <p
+                        v-for="(paragraph, index) in selectedArticleSummaryParagraphs"
+                        :key="`desktop-summary-paragraph-${index}`"
+                        class="rounded-[16px] bg-white/90 px-3 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.04)] dark:bg-slate-900/60"
+                        v-html="renderSummaryParagraphHtml(paragraph)"
+                      />
+                    </div>
+                  </div>
+                  <ul
+                    v-if="selectedArticleSummaryPayload.highlights.length > 0"
+                    class="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-slate-200"
+                  >
+                    <li
+                      v-for="(highlight, index) in selectedArticleSummaryPayload.highlights"
+                      :key="`desktop-summary-highlight-${index}`"
+                      class="flex gap-2"
+                    >
+                      <span class="mt-[7px] size-1.5 shrink-0 rounded-full bg-sky-400" />
+                      <span>{{ highlight }}</span>
+                    </li>
+                  </ul>
+                </template>
+                <pre
+                  v-else
+                  class="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 dark:text-slate-200"
+                  >{{ selectedArticleSummaryState.summary }}</pre
+                >
+              </div>
+            </section>
+
+            <IframeHtmlRenderer
+              :html="selectedContentHtml"
+              :content-kind="selectedContentKind"
+              :searchable="Boolean(selectedArticle)"
+              @open-article-link="openArticleByLinkFromReport"
+            />
+          </div>
+        </div>
+      </main>
     </div>
 
     <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
@@ -7071,7 +7176,11 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <h3 class="min-w-0 w-full text-base font-semibold leading-6 text-slate-900 dark:text-slate-100">
-                  {{ articleSummaryDialogArticle ? articleDisplayTitle(articleSummaryDialogArticle) : '选择文章后查看摘要' }}
+                  {{
+                    articleSummaryDialogArticle
+                      ? articleDisplayTitle(articleSummaryDialogArticle)
+                      : '选择文章后查看摘要'
+                  }}
                 </h3>
               </div>
             </div>
@@ -7160,7 +7269,10 @@ onUnmounted(() => {
           }}</pre>
         </div>
 
-        <div v-else class="rounded-[20px] border border-slate-200/80 bg-white px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-400">
+        <div
+          v-else
+          class="rounded-[20px] border border-slate-200/80 bg-white px-4 py-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-400"
+        >
           暂无摘要，点击下方按钮生成。
         </div>
 
@@ -7289,7 +7401,9 @@ onUnmounted(() => {
 
         <div class="space-y-4">
           <p class="text-sm text-slate-500 truncate">
-            当前{{ accountSourceLabel(categoryEditorAccount) }}：{{ categoryEditorAccount?.nickname || categoryEditorAccount?.fakeid || '-' }}
+            当前{{ accountSourceLabel(categoryEditorAccount) }}：{{
+              categoryEditorAccount?.nickname || categoryEditorAccount?.fakeid || '-'
+            }}
           </p>
 
           <div class="space-y-2">
@@ -7374,7 +7488,9 @@ onUnmounted(() => {
 
           <div class="flex items-center justify-end gap-2 pt-2">
             <UButton size="xs" color="gray" variant="ghost" @click="categoryEditorOpen = false">取消</UButton>
-            <UButton size="xs" color="primary" :loading="categoryEditorSaving" @click="saveCategoryEditor">保存</UButton>
+            <UButton size="xs" color="primary" :loading="categoryEditorSaving" @click="saveCategoryEditor"
+              >保存</UButton
+            >
           </div>
         </div>
       </UCard>
@@ -7457,7 +7573,6 @@ onUnmounted(() => {
         </Transition>
       </div>
     </Transition>
-
   </div>
 </template>
 
@@ -7574,7 +7689,9 @@ onUnmounted(() => {
 
 .desktop-avatar-menu-fade-enter-active,
 .desktop-avatar-menu-fade-leave-active {
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .desktop-avatar-menu-fade-enter-from,
@@ -7723,7 +7840,12 @@ onUnmounted(() => {
 }
 
 .mobile-article-sheet {
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.985) 0%, rgba(255, 255, 255, 1) 12%, rgba(255, 255, 255, 1) 100%);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.985) 0%,
+    rgba(255, 255, 255, 1) 12%,
+    rgba(255, 255, 255, 1) 100%
+  );
 }
 
 :global(.dark) .mobile-article-sheet {
@@ -7748,7 +7870,9 @@ onUnmounted(() => {
 
 .mobile-menu-drop-enter-active,
 .mobile-menu-drop-leave-active {
-  transition: transform 220ms ease, opacity 220ms ease;
+  transition:
+    transform 220ms ease,
+    opacity 220ms ease;
 }
 
 .mobile-menu-drop-enter-from,

@@ -1,5 +1,54 @@
 <template>
-  <div class="iframe-html-renderer">
+  <div class="iframe-html-renderer relative">
+    <div
+      v-if="searchable"
+      class="pointer-events-none absolute right-3 top-3 z-20 flex max-w-[calc(100%-1.5rem)] justify-end"
+    >
+      <div
+        v-if="searchPanelOpen"
+        class="pointer-events-auto flex w-[min(100%,24rem)] items-center gap-2 rounded-[22px] border border-slate-200/80 bg-white/95 px-2.5 py-2 shadow-[0_16px_40px_rgba(15,23,42,0.14)] backdrop-blur dark:border-slate-700/80 dark:bg-slate-950/92"
+      >
+        <input
+          ref="searchInputRef"
+          v-model="searchKeyword"
+          type="search"
+          placeholder="搜索正文关键词"
+          class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+          @keydown="handleSearchInputKeydown"
+        />
+        <span class="min-w-[3.5rem] text-right text-[11px] font-medium text-slate-500 dark:text-slate-400">
+          {{ searchStatusLabel }}
+        </span>
+        <UButton
+          size="2xs"
+          color="gray"
+          variant="ghost"
+          icon="i-lucide:chevron-up"
+          :disabled="searchMatches.length === 0"
+          @click="focusPreviousSearchMatch"
+        />
+        <UButton
+          size="2xs"
+          color="gray"
+          variant="ghost"
+          icon="i-lucide:chevron-down"
+          :disabled="searchMatches.length === 0"
+          @click="focusNextSearchMatch"
+        />
+        <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" @click="closeSearchPanel" />
+      </div>
+      <UButton
+        v-else
+        size="2xs"
+        color="gray"
+        variant="solid"
+        icon="i-lucide:search"
+        class="pointer-events-auto shadow-[0_12px_28px_rgba(15,23,42,0.14)]"
+        @click="openSearchPanel"
+      >
+        搜索
+      </UButton>
+    </div>
     <iframe
       ref="iframeRef"
       class="block w-full border-0 bg-transparent"
@@ -25,6 +74,7 @@ import type { Preferences } from '~/types/preferences';
 interface Props {
   html: string;
   contentKind?: 'default' | 'rss' | 'report';
+  searchable?: boolean;
 }
 
 interface MpVideoInfoResponse {
@@ -41,6 +91,11 @@ const preferences = usePreferences() as unknown as Ref<Preferences>;
 const preferenceCapabilities = usePreferencesCapabilities();
 const fetcher = $fetch as <T>(request: NitroFetchRequest, options?: Record<string, any>) => Promise<T>;
 const preparedHtml = ref('');
+const searchPanelOpen = ref(false);
+const searchKeyword = ref('');
+const searchMatches = ref<HTMLElement[]>([]);
+const activeSearchMatchIndex = ref(-1);
+const searchInputRef = ref<HTMLInputElement | null>(null);
 const iframeStyle = {
   backgroundColor: '#ffffff',
 };
@@ -56,6 +111,20 @@ const VIDEO_PROXY_HOSTS = [
   'puui.qpic.cn',
   'vpic.cn',
 ];
+
+const searchable = computed(() => Boolean(props.searchable));
+const searchStatusLabel = computed(() => {
+  const keyword = searchKeyword.value.trim();
+  if (!keyword) {
+    return '输入后搜索';
+  }
+
+  if (searchMatches.value.length === 0) {
+    return '无结果';
+  }
+
+  return `${activeSearchMatchIndex.value + 1}/${searchMatches.value.length}`;
+});
 
 function buildSrcdoc(html: string): string {
   const sanitized = DOMPurify.sanitize(html || '', {
@@ -423,6 +492,16 @@ function buildSrcdoc(html: string): string {
       td, th {
         word-break: break-word;
       }
+      [data-iframe-search-match="true"] {
+        border-radius: 0.22em;
+        background: rgba(250, 204, 21, 0.32);
+        box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.12);
+        scroll-margin-top: 96px;
+      }
+      [data-iframe-search-match="true"][data-iframe-search-current="true"] {
+        background: rgba(249, 115, 22, 0.34);
+        box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.28);
+      }
     </style>
   `;
 
@@ -608,6 +687,251 @@ function disconnectResizeObserver(): void {
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;
+  }
+}
+
+function isSearchExcludedNode(node: Text): boolean {
+  const parent = node.parentElement;
+  if (!parent) {
+    return true;
+  }
+
+  if (!String(node.textContent || '').trim()) {
+    return true;
+  }
+
+  if (
+    parent.closest(
+      'script, style, noscript, textarea, input, select, button, option, [data-iframe-search-match="true"]'
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function clearSearchHighlights(doc: Document | null = iframeRef.value?.contentDocument || null): void {
+  if (!doc) {
+    searchMatches.value = [];
+    activeSearchMatchIndex.value = -1;
+    return;
+  }
+
+  const parents = new Set<Node>();
+  doc.querySelectorAll<HTMLElement>('[data-iframe-search-match="true"]').forEach(match => {
+    const parent = match.parentNode;
+    if (!parent) {
+      return;
+    }
+
+    parents.add(parent);
+    parent.replaceChild(doc.createTextNode(match.textContent || ''), match);
+  });
+
+  parents.forEach(parent => {
+    parent.normalize();
+  });
+
+  searchMatches.value = [];
+  activeSearchMatchIndex.value = -1;
+}
+
+function collectSearchMatches(doc: Document, keyword: string): HTMLElement[] {
+  const normalizedKeyword = keyword.trim();
+  if (!normalizedKeyword || !doc.body) {
+    return [];
+  }
+
+  const keywordLower = normalizedKeyword.toLocaleLowerCase();
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+
+  while (walker.nextNode()) {
+    const currentNode = walker.currentNode as Text;
+    if (!isSearchExcludedNode(currentNode)) {
+      textNodes.push(currentNode);
+    }
+  }
+
+  const matches: HTMLElement[] = [];
+
+  textNodes.forEach(node => {
+    const originalText = String(node.textContent || '');
+    const lowerText = originalText.toLocaleLowerCase();
+    let searchStart = 0;
+    let matchIndex = lowerText.indexOf(keywordLower, searchStart);
+
+    if (matchIndex === -1) {
+      return;
+    }
+
+    const fragment = doc.createDocumentFragment();
+
+    while (matchIndex !== -1) {
+      if (matchIndex > searchStart) {
+        fragment.append(doc.createTextNode(originalText.slice(searchStart, matchIndex)));
+      }
+
+      const highlight = doc.createElement('span');
+      highlight.setAttribute('data-iframe-search-match', 'true');
+      highlight.textContent = originalText.slice(matchIndex, matchIndex + normalizedKeyword.length);
+      fragment.append(highlight);
+      matches.push(highlight);
+
+      searchStart = matchIndex + normalizedKeyword.length;
+      matchIndex = lowerText.indexOf(keywordLower, searchStart);
+    }
+
+    if (searchStart < originalText.length) {
+      fragment.append(doc.createTextNode(originalText.slice(searchStart)));
+    }
+
+    node.parentNode?.replaceChild(fragment, node);
+  });
+
+  return matches;
+}
+
+function findScrollableAncestor(element: HTMLElement): HTMLElement | Window {
+  let current = element.parentElement;
+  while (current) {
+    const styles = window.getComputedStyle(current);
+    const overflowY = styles.overflowY || styles.overflow;
+    if (/(auto|scroll|overlay)/.test(overflowY) && current.scrollHeight > current.clientHeight + 1) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return window;
+}
+
+function scrollMatchIntoView(match: HTMLElement): void {
+  const iframe = iframeRef.value;
+  if (!iframe) {
+    return;
+  }
+
+  const iframeRect = iframe.getBoundingClientRect();
+  const matchRect = match.getBoundingClientRect();
+  const offsetTop = 88;
+  const scrollTarget = findScrollableAncestor(iframe);
+
+  if (scrollTarget === window) {
+    const nextTop = window.scrollY + iframeRect.top + matchRect.top - offsetTop;
+    window.scrollTo({
+      top: Math.max(nextTop, 0),
+      behavior: 'smooth',
+    });
+    return;
+  }
+
+  const container = scrollTarget as HTMLElement;
+  const containerRect = container.getBoundingClientRect();
+  const nextTop = container.scrollTop + (iframeRect.top - containerRect.top) + matchRect.top - offsetTop;
+  container.scrollTo({
+    top: Math.max(nextTop, 0),
+    behavior: 'smooth',
+  });
+}
+
+function setActiveSearchMatch(index: number, options: { scroll?: boolean } = {}): void {
+  if (searchMatches.value.length === 0) {
+    activeSearchMatchIndex.value = -1;
+    return;
+  }
+
+  const total = searchMatches.value.length;
+  const nextIndex = ((index % total) + total) % total;
+  activeSearchMatchIndex.value = nextIndex;
+
+  searchMatches.value.forEach((match, matchIndex) => {
+    if (matchIndex === nextIndex) {
+      match.setAttribute('data-iframe-search-current', 'true');
+    } else {
+      match.removeAttribute('data-iframe-search-current');
+    }
+  });
+
+  if (options.scroll !== false) {
+    scrollMatchIntoView(searchMatches.value[nextIndex]);
+  }
+}
+
+function applySearch(keyword: string): void {
+  const doc = iframeRef.value?.contentDocument || null;
+  clearSearchHighlights(doc);
+
+  if (!searchable.value || !doc) {
+    return;
+  }
+
+  const normalizedKeyword = keyword.trim();
+  if (!normalizedKeyword) {
+    updateHeight();
+    return;
+  }
+
+  searchMatches.value = collectSearchMatches(doc, normalizedKeyword);
+  if (searchMatches.value.length > 0) {
+    setActiveSearchMatch(0);
+  } else {
+    activeSearchMatchIndex.value = -1;
+  }
+
+  updateHeight();
+}
+
+function focusNextSearchMatch(): void {
+  if (searchMatches.value.length === 0) {
+    return;
+  }
+
+  setActiveSearchMatch(activeSearchMatchIndex.value + 1);
+}
+
+function focusPreviousSearchMatch(): void {
+  if (searchMatches.value.length === 0) {
+    return;
+  }
+
+  setActiveSearchMatch(activeSearchMatchIndex.value - 1);
+}
+
+function openSearchPanel(): void {
+  if (!searchable.value) {
+    return;
+  }
+
+  searchPanelOpen.value = true;
+  nextTick(() => {
+    searchInputRef.value?.focus();
+    searchInputRef.value?.select();
+  });
+}
+
+function closeSearchPanel(): void {
+  searchPanelOpen.value = false;
+  searchKeyword.value = '';
+  clearSearchHighlights();
+  updateHeight();
+}
+
+function handleSearchInputKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      focusPreviousSearchMatch();
+      return;
+    }
+    focusNextSearchMatch();
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeSearchPanel();
   }
 }
 
@@ -916,6 +1240,9 @@ function handleLoad(): void {
     if (doc) {
       bindGalleryInteractions(doc);
       bindReaderArticleLinkInteractions(doc);
+      if (searchable.value && searchKeyword.value.trim()) {
+        applySearch(searchKeyword.value);
+      }
     }
   });
 }
@@ -925,12 +1252,25 @@ watch(preparedHtml, async () => {
   updateHeight();
 });
 
+watch(searchKeyword, keyword => {
+  if (!searchPanelOpen.value) {
+    return;
+  }
+
+  applySearch(keyword);
+});
+
 watch(
-  [
-    () => props.html,
-    () => props.theme,
-    () => preferenceCapabilities.value.privateProxyConfigured,
-  ],
+  () => props.html,
+  () => {
+    searchPanelOpen.value = false;
+    searchKeyword.value = '';
+    clearSearchHighlights();
+  }
+);
+
+watch(
+  [() => props.html, () => preferenceCapabilities.value.privateProxyConfigured],
   () => {
     void refreshPreparedHtml();
   },
@@ -946,6 +1286,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearSearchHighlights();
   clearGalleryInteractions();
   disconnectResizeObserver();
   window.removeEventListener('resize', updateHeight);

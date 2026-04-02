@@ -1,8 +1,10 @@
 <template>
   <div>
     <USlideover v-model="isOpen" :ui="{ width: 'max-w-[720px]' }">
-      <div class="article-preview h-screen overflow-y-scroll bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        <IframeHtmlRenderer :html="articleHtml" />
+      <div
+        class="article-preview h-screen overflow-y-scroll bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100"
+      >
+        <IframeHtmlRenderer :html="articleHtml" searchable />
       </div>
     </USlideover>
   </div>
