@@ -184,6 +184,11 @@ interface MobileSwipeResolvedAction {
   execute: () => Promise<void>;
 }
 
+interface ArticleListSearchMatch {
+  key: string;
+  index: number;
+}
+
 interface MobileHeaderLayerState {
   kind: 'articles' | 'article';
   title: string;
@@ -1629,6 +1634,11 @@ const {
   itemHeight: 84,
   overscan: 10,
 });
+const articleContainerBindProps = computed(() => {
+  const nextProps = { ...(articleContainerProps as Record<string, any>) };
+  delete nextProps.ref;
+  return nextProps;
+});
 
 const articleListTitle = computed(() => {
   const selected = findAccount(selectedAccount.value);
@@ -2038,6 +2048,68 @@ const allVisibleArticlesSelected = computed(() => {
   }
   return selectedArticleKeys.value.size === visibleArticleKeys.value.length;
 });
+const ARTICLE_LIST_VIRTUAL_ITEM_HEIGHT = 84;
+const desktopArticlesListRef = ref<HTMLElement | null>(null);
+const articleListSearchOpen = ref(false);
+const articleListSearchKeyword = ref('');
+const articleListSearchActiveIndex = ref(-1);
+const articleListSearchInputRef = ref<HTMLInputElement | null>(null);
+const articleListSearchMatches = computed<ArticleListSearchMatch[]>(() => {
+  if (articlePaneMode.value !== 'articles') {
+    return [];
+  }
+
+  const keyword = articleListSearchKeyword.value.trim().toLocaleLowerCase();
+  if (!keyword) {
+    return [];
+  }
+
+  return displayedArticles.value.reduce<ArticleListSearchMatch[]>((matches, article, index) => {
+    if (articleDisplayTitle(article).toLocaleLowerCase().includes(keyword)) {
+      matches.push({
+        key: articleKey(article),
+        index,
+      });
+    }
+    return matches;
+  }, []);
+});
+const activeArticleListSearchKey = computed(
+  () => articleListSearchMatches.value[articleListSearchActiveIndex.value]?.key || null
+);
+const articleListSearchStatusLabel = computed(() => {
+  const keyword = articleListSearchKeyword.value.trim();
+  if (!keyword) {
+    return '输入后搜索';
+  }
+
+  if (articleListSearchMatches.value.length === 0) {
+    return '无结果';
+  }
+
+  return `${articleListSearchActiveIndex.value + 1}/${articleListSearchMatches.value.length}`;
+});
+const showMobileArticleListSearch = computed(
+  () =>
+    !isDesktopViewport.value &&
+    mobileView.value === 'articles' &&
+    articlePaneMode.value === 'articles' &&
+    !loading.value &&
+    displayedArticles.value.length > 0
+);
+const showDesktopArticleListSearch = computed(
+  () =>
+    isDesktopViewport.value &&
+    articlePaneMode.value === 'articles' &&
+    !loading.value &&
+    displayedArticles.value.length > 0
+);
+const showArticleListSearchButton = computed(
+  () => (showMobileArticleListSearch.value || showDesktopArticleListSearch.value) && !articleListSearchOpen.value
+);
+const showArticleListSearchPanel = computed(
+  () => (showMobileArticleListSearch.value || showDesktopArticleListSearch.value) && articleListSearchOpen.value
+);
 
 const selectionBtnIcon = computed(() => {
   if (!selectionMode.value) return 'i-lucide:list-checks';
@@ -2333,6 +2405,7 @@ watch(mobileView, () => {
   if (mobileView.value !== 'articles') {
     mobileArticlesSwipeX.set(0);
     mobileArticlesUnderlayActive.value = false;
+    closeArticleListSearch();
   }
 });
 
@@ -2425,6 +2498,126 @@ function ensureArticleVisibleInContainer(container: HTMLElement, key: string | n
   articleElement.scrollIntoView({
     block: 'nearest',
   });
+}
+
+function setDesktopArticlesListContainerRef(element: any) {
+  desktopArticlesListRef.value = element instanceof HTMLElement ? element : null;
+
+  const virtualListRef = (articleContainerProps as Record<string, any>).ref;
+  if (typeof virtualListRef === 'function') {
+    virtualListRef(element);
+    return;
+  }
+
+  if (virtualListRef && typeof virtualListRef === 'object' && 'value' in virtualListRef) {
+    virtualListRef.value = element;
+  }
+}
+
+function getArticleListSearchContainer(): HTMLElement | null {
+  if (isDesktopViewport.value) {
+    return desktopArticlesListRef.value;
+  }
+
+  return resolveScrollableElement(mobileArticlesListRef.value);
+}
+
+function scrollArticleListSearchMatchIntoView(match: ArticleListSearchMatch) {
+  const container = getArticleListSearchContainer();
+  if (!container) {
+    return;
+  }
+
+  if (isDesktopViewport.value) {
+    const estimatedTop = Math.max(
+      match.index * ARTICLE_LIST_VIRTUAL_ITEM_HEIGHT -
+        Math.max((container.clientHeight - ARTICLE_LIST_VIRTUAL_ITEM_HEIGHT) / 2, 0),
+      0
+    );
+
+    container.scrollTo({
+      top: estimatedTop,
+      behavior: 'smooth',
+    });
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        ensureArticleVisibleInContainer(container, match.key);
+      });
+    });
+    return;
+  }
+
+  const articleElement = findArticleElementInContainer(container, match.key);
+  if (articleElement) {
+    articleElement.scrollIntoView({
+      block: 'nearest',
+      behavior: 'smooth',
+    });
+  }
+}
+
+function setActiveArticleListSearchMatch(index: number, options: { scroll?: boolean } = {}) {
+  if (articleListSearchMatches.value.length === 0) {
+    articleListSearchActiveIndex.value = -1;
+    return;
+  }
+
+  const total = articleListSearchMatches.value.length;
+  const nextIndex = ((index % total) + total) % total;
+  articleListSearchActiveIndex.value = nextIndex;
+
+  if (options.scroll !== false) {
+    scrollArticleListSearchMatchIntoView(articleListSearchMatches.value[nextIndex]);
+  }
+}
+
+function openArticleListSearch() {
+  articleListSearchOpen.value = true;
+  nextTick(() => {
+    articleListSearchInputRef.value?.focus();
+    articleListSearchInputRef.value?.select();
+  });
+}
+
+function closeArticleListSearch() {
+  articleListSearchOpen.value = false;
+  articleListSearchKeyword.value = '';
+  articleListSearchActiveIndex.value = -1;
+}
+
+function focusNextArticleListSearchMatch() {
+  if (articleListSearchMatches.value.length === 0) {
+    return;
+  }
+
+  setActiveArticleListSearchMatch(articleListSearchActiveIndex.value + 1);
+}
+
+function focusPreviousArticleListSearchMatch() {
+  if (articleListSearchMatches.value.length === 0) {
+    return;
+  }
+
+  setActiveArticleListSearchMatch(articleListSearchActiveIndex.value - 1);
+}
+
+function handleArticleListSearchInputKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      focusPreviousArticleListSearchMatch();
+      return;
+    }
+
+    focusNextArticleListSearchMatch();
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeArticleListSearch();
+  }
 }
 
 function restoreMobileArticlesScrollTop(scrollTop: number, focusArticleKey: string | null = null) {
@@ -2862,6 +3055,53 @@ function clearSelectionOutOfScope() {
 watch(displayedArticles, () => {
   clearSelectionOutOfScope();
 });
+
+watch(articleListSearchMatches, matches => {
+  if (!articleListSearchOpen.value) {
+    return;
+  }
+
+  if (matches.length === 0) {
+    articleListSearchActiveIndex.value = -1;
+    return;
+  }
+
+  const currentKey = activeArticleListSearchKey.value;
+  const currentIndex = currentKey ? matches.findIndex(match => match.key === currentKey) : -1;
+  if (currentIndex >= 0) {
+    articleListSearchActiveIndex.value = currentIndex;
+    return;
+  }
+
+  setActiveArticleListSearchMatch(0);
+});
+
+watch(articleListSearchKeyword, keyword => {
+  if (!articleListSearchOpen.value) {
+    return;
+  }
+
+  if (!keyword.trim()) {
+    articleListSearchActiveIndex.value = -1;
+    return;
+  }
+
+  if (articleListSearchMatches.value.length > 0) {
+    setActiveArticleListSearchMatch(0);
+  } else {
+    articleListSearchActiveIndex.value = -1;
+  }
+});
+
+watch(
+  [articlePaneMode, isDesktopViewport],
+  () => {
+    if (!showArticleListSearchButton.value && !showArticleListSearchPanel.value) {
+      closeArticleListSearch();
+    }
+  },
+  { flush: 'post' }
+);
 
 watch(selectionMode, enabled => {
   if (!enabled) {
@@ -5785,6 +6025,11 @@ onUnmounted(() => {
                 :data-article-key="articleKey(article)"
                 layout
                 class="rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_18px_36px_rgba(15,23,42,0.07)] transition-colors dark:border-white/10 dark:bg-slate-900/80"
+                :class="
+                  activeArticleListSearchKey === articleKey(article)
+                    ? 'ring-2 ring-amber-300/80 border-amber-200 dark:ring-amber-400/40 dark:border-amber-400/30'
+                    : ''
+                "
                 :initial="prefersReducedMotion ? false : { opacity: 0, y: 14, scale: 0.985 }"
                 :animate="{ opacity: 1, y: 0, scale: 1 }"
                 :whileTap="{ scale: 0.988 }"
@@ -5892,6 +6137,58 @@ onUnmounted(() => {
               </UButton>
             </div>
           </motion.div>
+
+          <div
+            v-if="showMobileArticleListSearch && showArticleListSearchButton"
+            class="pointer-events-none absolute bottom-4 right-4 z-20"
+          >
+            <UButton
+              size="sm"
+              color="gray"
+              variant="solid"
+              icon="i-lucide:search"
+              class="article-list-search-fab pointer-events-auto"
+              @click="openArticleListSearch"
+            />
+          </div>
+
+          <div
+            v-if="showMobileArticleListSearch && showArticleListSearchPanel"
+            class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
+          >
+            <div
+              class="pointer-events-auto flex w-full max-w-[42rem] items-center gap-2 rounded-[26px] border border-slate-200/85 bg-white/96 px-3 py-3 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur dark:border-slate-700/85 dark:bg-slate-950/94"
+            >
+              <input
+                ref="articleListSearchInputRef"
+                v-model="articleListSearchKeyword"
+                type="search"
+                placeholder="搜索文章标题"
+                class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500 md:text-sm"
+                @keydown="handleArticleListSearchInputKeydown"
+              />
+              <span class="min-w-[3.5rem] text-right text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {{ articleListSearchStatusLabel }}
+              </span>
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:chevron-up"
+                :disabled="articleListSearchMatches.length === 0"
+                @click="focusPreviousArticleListSearchMatch"
+              />
+              <UButton
+                size="2xs"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:chevron-down"
+                :disabled="articleListSearchMatches.length === 0"
+                @click="focusNextArticleListSearchMatch"
+              />
+              <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" @click="closeArticleListSearch" />
+            </div>
+          </div>
         </motion.div>
 
         <motion.div
@@ -6665,7 +6962,9 @@ onUnmounted(() => {
         </ul>
       </aside>
 
-      <section class="app-shell-panel w-[430px] min-h-0 flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col">
+      <section
+        class="app-shell-panel relative w-[430px] min-h-0 flex-shrink-0 overflow-hidden rounded-[30px] flex flex-col"
+      >
         <header class="app-shell-glass shrink-0 space-y-2 border-b border-slate-200/60 p-3 dark:border-slate-800/70">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
@@ -6875,7 +7174,8 @@ onUnmounted(() => {
 
         <div
           v-else
-          v-bind="articleContainerProps"
+          :ref="setDesktopArticlesListContainerRef"
+          v-bind="articleContainerBindProps"
           class="app-shell-scrollbar min-h-0 flex-1 h-0 overflow-y-auto px-2 py-2"
         >
           <ul v-bind="articleWrapperProps" class="space-y-2">
@@ -6884,11 +7184,14 @@ onUnmounted(() => {
               :key="articleKey(row.data)"
               :data-article-key="articleKey(row.data)"
               class="cursor-pointer rounded-[22px] border border-transparent px-3 py-3 transition-all duration-200"
-              :class="
+              :class="[
                 selectedArticle && articleKey(selectedArticle) === articleKey(row.data)
                   ? 'border-white/80 bg-white shadow-[0_14px_28px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-slate-900'
-                  : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70'
-              "
+                  : 'hover:border-white/70 hover:bg-white/80 hover:shadow-[0_12px_24px_rgba(15,23,42,0.05)] dark:hover:border-white/10 dark:hover:bg-slate-900/70',
+                activeArticleListSearchKey === articleKey(row.data)
+                  ? 'ring-2 ring-amber-300/80 border-amber-200 dark:ring-amber-400/40 dark:border-amber-400/30'
+                  : '',
+              ]"
               @click="openArticle(row.data)"
             >
               <div class="flex items-start" :class="selectionMode ? 'gap-2' : ''">
@@ -6974,6 +7277,58 @@ onUnmounted(() => {
           >
             {{ articleFooterActionLabel }}
           </UButton>
+        </div>
+
+        <div
+          v-if="showDesktopArticleListSearch && showArticleListSearchButton"
+          class="pointer-events-none absolute bottom-4 right-4 z-20"
+        >
+          <UButton
+            size="sm"
+            color="gray"
+            variant="solid"
+            icon="i-lucide:search"
+            class="article-list-search-fab pointer-events-auto"
+            @click="openArticleListSearch"
+          />
+        </div>
+
+        <div
+          v-if="showDesktopArticleListSearch && showArticleListSearchPanel"
+          class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3"
+        >
+          <div
+            class="pointer-events-auto flex w-[calc(100%-1.5rem)] items-center gap-2 rounded-[26px] border border-slate-200/85 bg-white/96 px-3 py-3 shadow-[0_24px_60px_rgba(15,23,42,0.18)] backdrop-blur dark:border-slate-700/85 dark:bg-slate-950/94"
+          >
+            <input
+              ref="articleListSearchInputRef"
+              v-model="articleListSearchKeyword"
+              type="search"
+              placeholder="搜索文章标题"
+              class="min-w-0 flex-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500"
+              @keydown="handleArticleListSearchInputKeydown"
+            />
+            <span class="min-w-[3.5rem] text-right text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              {{ articleListSearchStatusLabel }}
+            </span>
+            <UButton
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:chevron-up"
+              :disabled="articleListSearchMatches.length === 0"
+              @click="focusPreviousArticleListSearchMatch"
+            />
+            <UButton
+              size="2xs"
+              color="gray"
+              variant="ghost"
+              icon="i-lucide:chevron-down"
+              :disabled="articleListSearchMatches.length === 0"
+              @click="focusNextArticleListSearchMatch"
+            />
+            <UButton size="2xs" color="gray" variant="ghost" icon="i-lucide:x" @click="closeArticleListSearch" />
+          </div>
         </div>
       </section>
 
@@ -7879,5 +8234,17 @@ onUnmounted(() => {
 .mobile-menu-drop-leave-to {
   opacity: 0;
   transform: translateY(-12px);
+}
+
+.article-list-search-fab {
+  @apply !inline-flex size-11 !p-0 !gap-0 items-center justify-center rounded-full border border-slate-200
+    bg-white/95 text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.18)] backdrop-blur
+    dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200;
+}
+
+.article-list-search-fab :deep(.iconify),
+.article-list-search-fab :deep([class*='i-']) {
+  width: 16px !important;
+  height: 16px !important;
 }
 </style>

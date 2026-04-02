@@ -23,7 +23,7 @@
         color="gray"
         variant="solid"
         icon="i-lucide:search"
-        class="pointer-events-auto !h-12 !w-12 !rounded-full !p-0 shadow-[0_18px_40px_rgba(15,23,42,0.18)] dark:shadow-[0_18px_40px_rgba(2,6,23,0.42)]"
+        class="iframe-search-fab pointer-events-auto"
         @click="openSearchPanel"
       />
     </div>
@@ -1336,3 +1336,17 @@ onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', syncRendererVisibility);
 });
 </script>
+
+<style scoped>
+.iframe-search-fab {
+  @apply !inline-flex size-11 !p-0 !gap-0 items-center justify-center rounded-full border border-slate-200
+    bg-white/95 text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.18)] backdrop-blur
+    dark:border-slate-700 dark:bg-slate-900/95 dark:text-slate-200;
+}
+
+.iframe-search-fab :deep(.iconify),
+.iframe-search-fab :deep([class*='i-']) {
+  width: 16px !important;
+  height: 16px !important;
+}
+</style>
