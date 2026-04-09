@@ -32,6 +32,8 @@ LABEL maintainer="findsource@proton.me" \
       org.opencontainers.image.description="wxrss production image" \
       org.opencontainers.image.licenses="MIT"
 
+# Keep CA roots current for outbound TLS requests.
+RUN apk add --no-cache ca-certificates && update-ca-certificates
 WORKDIR /app
 
 COPY --from=build-env /app/.output ./
