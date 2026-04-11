@@ -21,7 +21,7 @@ ENV NODE_ENV=production \
 RUN yarn build
 
 
-FROM node:22-alpine
+FROM node:22-slim
 
 ARG VERSION=unknown
 
@@ -32,8 +32,13 @@ LABEL maintainer="findsource@proton.me" \
       org.opencontainers.image.description="wxrss production image" \
       org.opencontainers.image.licenses="MIT"
 
-# Keep CA roots current for outbound TLS requests.
-RUN apk add --no-cache ca-certificates && update-ca-certificates
+# Install Chromium, fonts, and CA roots for server-side PDF export.
+RUN apt-get update && apt-get install -y \
+    chromium fonts-noto-cjk fonts-noto-color-emoji ca-certificates \
+    --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 COPY --from=build-env /app/.output ./
