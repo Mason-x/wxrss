@@ -42,6 +42,8 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 COPY --from=build-env /app/.output ./
+# puppeteer 被 Rollup external 排除，运行时需要从 node_modules 加载（Chromium 已通过 apt 安装，跳过下载）
+RUN npm install --no-save --ignore-scripts puppeteer@24
 
 RUN mkdir -p .data/kv .data/sqlite && chown -R node:node /app
 

@@ -117,6 +117,9 @@ export default defineNuxtConfig({
     externals: {
       traceInclude: nitroTraceInclude,
     },
+    rollupConfig: {
+      external: ['puppeteer'],
+    },
     storage: {
       kv: {
         driver: nitroKvDriver,
