@@ -619,6 +619,63 @@ function deriveFallbackSiteIcon(siteUrl: string): string {
   }
 }
 
+async function discoverSiteIconFromHtml(siteUrl: string): Promise<string> {
+  const target = String(siteUrl || '').trim();
+  if (!target) {
+    return '';
+  }
+
+  try {
+    const response = await fetch(target, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 RSS Reader',
+        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      return '';
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    const iconCandidates: string[] = [];
+    const metaCandidates: string[] = [];
+
+    $('link[href]').each((_, element) => {
+      const rel = normalizeWhitespace(String(element.attribs?.rel || '')).toLowerCase();
+      const href = normalizeWhitespace(String(element.attribs?.href || ''));
+      if (!href) {
+        return;
+      }
+      if (rel.includes('apple-touch-icon')) {
+        iconCandidates.unshift(href);
+        return;
+      }
+      if (rel.split(/\s+/).includes('icon') || rel.includes('shortcut icon')) {
+        iconCandidates.push(href);
+      }
+    });
+
+    $('meta[content]').each((_, element) => {
+      const name = normalizeWhitespace(String(element.attribs?.name || '')).toLowerCase();
+      const property = normalizeWhitespace(String(element.attribs?.property || '')).toLowerCase();
+      const content = normalizeWhitespace(String(element.attribs?.content || ''));
+      if (!content) {
+        return;
+      }
+      if (property === 'og:image' || name === 'twitter:image') {
+        metaCandidates.push(content);
+      }
+    });
+
+    const candidate = [...iconCandidates, ...metaCandidates].find(Boolean);
+    return candidate ? resolveAbsoluteUrl(candidate, target) : '';
+  } catch {
+    return '';
+  }
+}
+
 function normalizeBodyHtml(rawHtml: string, fallbackText: string): string {
   const trimmed = String(rawHtml || '').trim();
   if (!trimmed) {
@@ -781,7 +838,10 @@ async function fetchAndParseRssFeed(sourceUrl: string): Promise<ParsedRssFeed> {
     normalizeWhitespace(String(feed.find('logo').first().text() || '')) ||
     normalizeWhitespace(String(feed.find('icon').first().text() || '')) ||
     firstAttrByLocalNames(root, ['image'], 'href');
-  const image = resolveAbsoluteUrl(imageSource, siteUrl || sourceUrl) || deriveFallbackSiteIcon(siteUrl || sourceUrl);
+  const image =
+    resolveAbsoluteUrl(imageSource, siteUrl || sourceUrl) ||
+    (await discoverSiteIconFromHtml(siteUrl || sourceUrl)) ||
+    deriveFallbackSiteIcon(siteUrl || sourceUrl);
 
   const itemNodes = channel.length ? channel.find('item').toArray() : feed.find('entry').toArray();
   const items = itemNodes
