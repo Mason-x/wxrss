@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import type { ChipColor } from '#ui/types';
 import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
+import QQGroupModal from '~/components/modal/QQGroup.vue';
 import { docsWebSite } from '~/config';
 import { gotoLink } from '~/utils';
+
+const modal = useModal();
 
 const props = withDefaults(
   defineProps<{
@@ -16,18 +18,6 @@ const props = withDefaults(
 const credentialsDialogOpen = ref(false);
 const credentialState = ref<CredentialState>('inactive');
 const credentialPendingCount = ref(0);
-const credentialColor: ComputedRef<ChipColor> = computed<ChipColor>(() => {
-  switch (credentialState.value) {
-    case 'active':
-      return 'green';
-    case 'inactive':
-      return 'gray';
-    case 'warning':
-      return 'amber';
-    default:
-      return 'gray';
-  }
-});
 
 const credentialBadgeText = computed(() => {
   const count = credentialPendingCount.value;
@@ -39,6 +29,26 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
 
 <template>
   <ul :class="props.mobile ? 'flex flex-wrap items-center gap-3' : 'hidden md:flex items-center gap-3'">
+    <li>
+      <UTooltip text="商业版 · 公号三刀（更稳定 · 免代理）">
+        <UIcon
+          @click="gotoLink('https://github.com/zoro-build/wechat')"
+          name="i-lucide:crown"
+          class="dashboard-action-icon text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300"
+        />
+      </UTooltip>
+    </li>
+
+    <li>
+      <UTooltip text="加入QQ群">
+        <UIcon
+          @click="modal.open(QQGroupModal)"
+          name="i-tdesign:logo-qq-filled"
+          class="dashboard-action-icon text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300"
+        />
+      </UTooltip>
+    </li>
+
     <li>
       <CredentialsDialog
         v-model:open="credentialsDialogOpen"
@@ -71,6 +81,16 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
         <UIcon
           name="i-lucide:book-open"
           @click="gotoLink(docsWebSite)"
+          class="dashboard-action-icon text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300"
+        />
+      </UTooltip>
+    </li>
+
+    <li>
+      <UTooltip text="GitHub">
+        <UIcon
+          name="i-lucide:github"
+          @click="gotoLink('https://github.com/wechat-article/wechat-article-exporter')"
           class="dashboard-action-icon text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300"
         />
       </UTooltip>
