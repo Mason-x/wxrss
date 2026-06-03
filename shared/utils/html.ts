@@ -98,6 +98,18 @@ function extractJsDecodeField(rawHTML: string, fieldName: string): string {
   );
 }
 
+function extractCgiStringField(rawHTML: string, fieldName: string): string {
+  const escapedFieldName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = rawHTML.match(
+    new RegExp(
+      `${escapedFieldName}\\s*:\\s*(?:JsDecode\\('((?:\\\\.|[^'\\\\])*)'\\)|'((?:\\\\.|[^'\\\\])*)'|"((?:\\\\.|[^"\\\\])*)")`,
+      's'
+    )
+  );
+
+  return match?.[1] || match?.[2] || match?.[3] || '';
+}
+
 function normalizeMultilineText(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
@@ -270,9 +282,9 @@ function extractTextFromHtmlFragment(fragmentHtml: string): string {
 }
 
 function parseCgiDataArticleFallback(rawHTML: string): DynamicArticleFallback | null {
-  const rawTitle = extractJsDecodeField(rawHTML, 'title');
-  const rawContent = extractJsDecodeField(rawHTML, 'content_noencode') || extractJsDecodeField(rawHTML, 'desc');
-  const rawCoverUrl = extractJsDecodeField(rawHTML, 'cdn_url');
+  const rawTitle = extractCgiStringField(rawHTML, 'title');
+  const rawContent = extractCgiStringField(rawHTML, 'content_noencode') || extractCgiStringField(rawHTML, 'desc');
+  const rawCoverUrl = extractCgiStringField(rawHTML, 'cdn_url');
 
   const title = normalizeMultilineText(decodeJsEscapedText(rawTitle));
   const content = normalizeMultilineText(decodeJsEscapedText(rawContent));
@@ -1086,6 +1098,87 @@ function extractCgiScript(html: string) {
   return scriptEl.html()?.trim() || null;
 }
 
+function extractCgiDataNewObjectCode(code: string): string | null {
+  const markerIndex = code.indexOf('window.cgiDataNew');
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const equalsIndex = code.indexOf('=', markerIndex);
+  const start = equalsIndex >= 0 ? code.indexOf('{', equalsIndex) : -1;
+  if (start < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let quote: '"' | "'" | '`' | '' = '';
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let i = start; i < code.length; i++) {
+    const char = code[i];
+    const next = code[i + 1];
+
+    if (lineComment) {
+      if (char === '\n' || char === '\r') {
+        lineComment = false;
+      }
+      continue;
+    }
+
+    if (blockComment) {
+      if (char === '*' && next === '/') {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = '';
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      lineComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      blockComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      continue;
+    }
+
+    if (char === '{') {
+      depth++;
+      continue;
+    }
+
+    if (char === '}') {
+      depth--;
+      if (depth === 0) {
+        return code.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * 浠?html 涓彁鍙?cgiDataNew 瀵硅薄
  * @param html 鏂囩珷鐨勫畬鏁?html 鍐呭
@@ -1127,6 +1220,12 @@ function parseCgiDataNewOnServerDeprecated(html: string): Promise<any> {
   const code = extractCgiScript(html);
   if (!code) {
     return Promise.resolve(null);
+  }
+
+  const objectCode = extractCgiDataNewObjectCode(code);
+  if (objectCode) {
+    const func = new Function('JsDecode', `return (${objectCode});`);
+    return func(decodeJsEscapedText);
   }
 
   // 1. 鍒涘缓娌欑
