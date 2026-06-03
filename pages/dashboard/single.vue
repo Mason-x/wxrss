@@ -33,7 +33,7 @@ useHead({
   title: `单篇文章下载 | ${websiteName}`,
 });
 
-type ExportFormat = 'html' | 'excel' | 'json';
+type ExportFormat = 'html' | 'excel' | 'json' | 'pdf';
 
 interface SingleArticleRow extends Partial<ArticleMetadata> {
   id: string;
@@ -565,8 +565,7 @@ async function handleExport(format: ExportFormat) {
   exportPhase.value = format.toUpperCase();
   const exporter = new Exporter(selected.map(row => row.link));
   try {
-    const exportType = format === 'html' ? 'html' : format === 'excel' ? 'excel' : 'json';
-    await exporter.startExport(exportType);
+    await exporter.startExport(format);
     toast.success('导出成功', `已完成 ${format.toUpperCase()} 导出`);
   } catch (error: any) {
     toast.error('导出失败', error?.message || '请稍后再试');
@@ -653,10 +652,12 @@ function refreshActionCells() {
                 { label: 'HTML', event: 'export-html' },
                 { label: 'Excel', event: 'export-excel' },
                 { label: 'JSON', event: 'export-json' },
+                { label: 'PDF（内测）', event: 'export-pdf' },
               ]"
               @export-html="() => handleExport('html')"
               @export-excel="() => handleExport('excel')"
               @export-json="() => handleExport('json')"
+              @export-pdf="() => handleExport('pdf')"
             >
               <UButton
                 size="sm"

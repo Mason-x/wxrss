@@ -433,6 +433,7 @@ function onSelectionChanged(event: SelectionChangedEvent) {
 
 const selectedArticleUrls = computed(() => selectedArticles.value.map(article => article.link));
 const selectedCount = computed(() => selectedArticles.value.length);
+const contentNotDownloadedCount = computed(() => selectedArticles.value.filter(article => !article.contentDownload).length);
 
 function isArticleSelected(article: Article) {
   return selectedArticleRowIds.value.includes(getArticleRowId(article));
@@ -644,13 +645,15 @@ const exportLabel = computed(() => {
                 { label: 'Txt', event: 'export-article-text' },
                 { label: 'Markdown', event: 'export-article-markdown' },
                 { label: 'Word（内测）', event: 'export-article-word' },
+                { label: 'PDF（内测）', event: 'export-article-pdf' },
               ]"
               @export-article-excel="exportFile('excel', selectedArticleUrls)"
               @export-article-json="exportFile('json', selectedArticleUrls)"
-              @export-article-html="exportFile('html', selectedArticleUrls)"
-              @export-article-text="exportFile('text', selectedArticleUrls)"
-              @export-article-markdown="exportFile('markdown', selectedArticleUrls)"
-              @export-article-word="exportFile('word', selectedArticleUrls)"
+              @export-article-html="exportFile('html', selectedArticleUrls, contentNotDownloadedCount)"
+              @export-article-text="exportFile('text', selectedArticleUrls, contentNotDownloadedCount)"
+              @export-article-markdown="exportFile('markdown', selectedArticleUrls, contentNotDownloadedCount)"
+              @export-article-word="exportFile('word', selectedArticleUrls, contentNotDownloadedCount)"
+              @export-article-pdf="exportFile('pdf', selectedArticleUrls, contentNotDownloadedCount)"
             >
               <UButton
                 size="sm"

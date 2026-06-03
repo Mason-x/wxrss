@@ -197,6 +197,15 @@ export async function getArticleByLink(url: string): Promise<AppMsgExWithFakeID>
   return resp.article;
 }
 
+export async function getSingleArticleByLink(url: string): Promise<AppMsgExWithFakeID | null> {
+  const resp = await request<{ article: AppMsgExWithFakeID | null }>('/api/web/reader/article-by-link', {
+    query: {
+      url,
+    },
+  });
+  return resp.article || null;
+}
+
 /**
  * 文章被删除
  * @param url
