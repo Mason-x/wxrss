@@ -1,8 +1,10 @@
-FROM node:22-alpine AS build-env
+FROM node:22-slim AS build-env
 
 RUN corepack enable
 RUN corepack prepare yarn@1.22.22 --activate
-RUN apk add --no-cache python3 py3-setuptools make g++
+RUN apt-get update && apt-get install -y \
+    python3 python3-setuptools make g++ \
+    --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -42,6 +44,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 COPY --from=build-env /app/.output ./
+RUN node -e "require('./server/node_modules/sqlite3')"
 # puppeteer 被 Rollup external 排除，运行时需要从 node_modules 加载（Chromium 已通过 apt 安装，跳过下载）
 RUN npm install --no-save --ignore-scripts puppeteer@24
 
