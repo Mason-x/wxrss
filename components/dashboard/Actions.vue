@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import QQGroupModal from '~/components/modal/QQGroup.vue';
 import { docsWebSite } from '~/config';
 import { gotoLink } from '~/utils';
@@ -14,17 +13,6 @@ const props = withDefaults(
     mobile: false,
   }
 );
-
-const credentialsDialogOpen = ref(false);
-const credentialState = ref<CredentialState>('inactive');
-const credentialPendingCount = ref(0);
-
-const credentialBadgeText = computed(() => {
-  const count = credentialPendingCount.value;
-  if (count <= 0) return '';
-  return count > 9 ? '+' : `${count}`;
-});
-const isCredentialActive = computed(() => credentialState.value === 'active');
 </script>
 
 <template>
@@ -46,33 +34,6 @@ const isCredentialActive = computed(() => credentialState.value === 'active');
           name="i-tdesign:logo-qq-filled"
           class="dashboard-action-icon text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300"
         />
-      </UTooltip>
-    </li>
-
-    <li>
-      <CredentialsDialog
-        v-model:open="credentialsDialogOpen"
-        v-model:state="credentialState"
-        @update:pending-count="credentialPendingCount = $event"
-      />
-      <UTooltip text="抓取 Credentials">
-        <div class="dashboard-action-trigger relative">
-          <UIcon
-            @click="credentialsDialogOpen = true"
-            name="i-lucide:dog"
-            :class="[
-              'dashboard-action-icon',
-              { 'text-slate-500 hover:text-sky-600 dark:text-slate-400 dark:hover:text-sky-300': !isCredentialActive },
-              { 'text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-300': isCredentialActive },
-            ]"
-          />
-          <span
-            v-if="credentialBadgeText"
-            class="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[10px] leading-none text-white shadow-[0_10px_18px_rgba(244,63,94,0.28)]"
-          >
-            {{ credentialBadgeText }}
-          </span>
-        </div>
       </UTooltip>
     </li>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatDistance } from 'date-fns';
 import { request } from '#shared/utils/request';
+import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import StorageUsage from '~/components/StorageUsage.vue';
 import { IMAGE_PROXY } from '~/config';
 import type { LogoutResponse } from '~/types/types';
@@ -8,6 +9,9 @@ import type { LogoutResponse } from '~/types/types';
 const loginAccount = useLoginAccount();
 const route = useRoute();
 const { navigateToLogin } = useMpAuth();
+const credentialsDialogOpen = ref(false);
+const credentialState = ref<CredentialState>('inactive');
+const credentialPendingCount = ref(0);
 
 const now = ref(new Date());
 const distance = computed(() => {
@@ -101,6 +105,21 @@ onUnmounted(() => {
 
 <template>
   <footer class="space-y-3 border-t border-slate-200/70 pt-4 dark:border-slate-800/80">
+    <CredentialsDialog
+      v-model:open="credentialsDialogOpen"
+      v-model:state="credentialState"
+      @update:pending-count="credentialPendingCount = $event"
+    />
+    <UButton
+      block
+      color="blue"
+      variant="soft"
+      icon="i-lucide:key-round"
+      class="justify-center rounded-full"
+      @click="credentialsDialogOpen = true"
+    >
+      导入 Credential<span v-if="credentialPendingCount > 0">（{{ credentialPendingCount }}）</span>
+    </UButton>
     <div v-if="loginAccount" class="app-shell-muted space-y-3 rounded-[24px] p-3">
       <div class="flex items-center gap-3">
         <img

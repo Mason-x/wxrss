@@ -29,6 +29,7 @@ import {
   syncRssFeed,
 } from '~/apis';
 import ButtonGroup from '~/components/ButtonGroup.vue';
+import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import LoadingCards from '~/components/mobile/LoadingCards.vue';
@@ -68,6 +69,9 @@ useHead({
 });
 
 const profileCredentials = useLocalStorage<ParsedCredential[]>('auto-detect-credentials:credentials', []);
+const credentialsDialogOpen = ref(false);
+const credentialState = ref<CredentialState>('inactive');
+const credentialPendingCount = ref(0);
 
 interface ReaderCategory {
   id: string;
@@ -5826,6 +5830,11 @@ onUnmounted(() => {
 
 <template>
   <div class="reader-page-shell app-shell-bg overflow-hidden text-slate-900 dark:text-slate-100">
+    <CredentialsDialog
+      v-model:open="credentialsDialogOpen"
+      v-model:state="credentialState"
+      @update:pending-count="credentialPendingCount = $event"
+    />
     <div v-if="!isDesktopViewport" class="reader-mobile-shell relative h-full overflow-hidden">
       <div class="reader-mobile-shell relative h-full overflow-hidden">
         <motion.div
@@ -6007,6 +6016,17 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex items-center gap-2">
+                  <UTooltip text="导入 Credential">
+                    <UButton
+                      size="2xs"
+                      color="gray"
+                      variant="ghost"
+                      icon="i-lucide:key-round"
+                      label="凭据"
+                      class="toolbar-text-btn"
+                      @click="credentialsDialogOpen = true"
+                    />
+                  </UTooltip>
                   <UTooltip v-if="articlePaneMode === 'articles'" :text="favoriteOnly ? '取消只看收藏' : '只看收藏'">
                     <UButton
                       size="2xs"
@@ -7137,6 +7157,17 @@ onUnmounted(() => {
             </div>
 
             <div class="flex items-center gap-2">
+              <UTooltip text="导入 Credential">
+                <UButton
+                  size="2xs"
+                  color="gray"
+                  variant="ghost"
+                  icon="i-lucide:key-round"
+                  label="凭据"
+                  class="toolbar-text-btn"
+                  @click="credentialsDialogOpen = true"
+                />
+              </UTooltip>
               <UTooltip v-if="articlePaneMode !== 'reports'" :text="syncHeaderTooltip">
                 <UButton
                   size="2xs"
