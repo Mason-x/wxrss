@@ -13,25 +13,36 @@ class ExtractSetCookie:
         self.cookies = {}
 
     def response(self, flow: mitmproxy.http.HTTPFlow):
-        # 检查请求的 URL 是否符合过滤器
-        if flow.request.url.startswith("https://mp.weixin.qq.com/s?__biz="):
-            # 提取 __biz 参数
-            parsed_url = urlparse(flow.request.url)
-            query_params = parse_qs(parsed_url.query)
-            biz = query_params.get('__biz', [None])[0]
-            if biz:
-                # 提取响应头中的 Set-Cookie 数据
-                set_cookie_header = flow.response.headers.get("Set-Cookie")
-                if set_cookie_header:
-                    timestamp = int(time.time() * 1000)
-                    self.cookies[biz] = {
-                        "url": flow.request.url,
-                        "set_cookie": set_cookie_header,
-                        "timestamp": timestamp,
-                    }
-                    # 将 cookies 数据保存到文件中
-                    with open("credentials.json", "w") as file:
-                        json.dump(list(self.cookies.values()), file, indent=4)
+        if flow.request.pretty_host != "mp.weixin.qq.com":
+            return
+
+        parsed_url = urlparse(flow.request.url)
+        query_params = parse_qs(parsed_url.query)
+        biz = query_params.get('__biz', [None])[0]
+        pass_ticket = query_params.get('pass_ticket', [None])[0]
+        uin = query_params.get('uin', [None])[0] or flow.request.headers.get("x-wechat-uin")
+        key = query_params.get('key', [None])[0] or flow.request.headers.get("x-wechat-key")
+        if not all([biz, pass_ticket, uin, key]):
+            return
+
+        set_cookie_headers = flow.response.headers.get_all("Set-Cookie")
+        timestamp = int(time.time() * 1000)
+        self.cookies[biz] = {
+            "url": flow.request.url,
+            "set_cookie": ", ".join(set_cookie_headers),
+            "biz": biz,
+            "uin": uin,
+            "key": key,
+            "pass_ticket": pass_ticket,
+            "exportkey": flow.request.headers.get("exportkey", ""),
+            "user_agent": flow.request.headers.get("user-agent", ""),
+            "referer": flow.request.headers.get("referer", ""),
+            "acct_mode": flow.request.headers.get("x-wechat-acctmode", ""),
+            "cookie": flow.request.headers.get("cookie", ""),
+            "timestamp": timestamp,
+        }
+        with open("credentials.json", "w", encoding="utf-8") as file:
+            json.dump(list(self.cookies.values()), file, ensure_ascii=False, indent=4)
 
 
 addons = [

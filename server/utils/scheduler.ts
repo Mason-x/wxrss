@@ -1,7 +1,4 @@
 import dayjs from 'dayjs';
-import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { USER_AGENT } from '~/config';
-import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
 import {
   getSchedulerArticles,
   listSchedulerStates,
@@ -13,37 +10,11 @@ import {
   upsertSchedulerState,
 } from '~/server/kv/scheduler';
 import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
-import { getStoredPreferencesByAuthKey, listStoredPreferencesEntries } from '~/server/repositories/preferences';
-import { listAccounts, listArticlesPage, upsertArticles } from '~/server/repositories/reader';
-import { cookieStore } from '~/server/utils/CookieStore';
+import { listStoredPreferencesEntries } from '~/server/repositories/preferences';
+import { listAccounts, listArticlesPage } from '~/server/repositories/reader';
 import { syncRssFeed } from '~/server/utils/rss';
 
-const MAX_PAGE_PER_ACCOUNT = 50;
 const MAX_ARTICLES_PER_ACCOUNT = 3000;
-
-interface PublishListItem {
-  publish_info: string;
-}
-
-interface PublishPage {
-  total_count: number;
-  publish_list: PublishListItem[];
-}
-
-interface BaseResp {
-  ret: number;
-  err_msg: string;
-}
-
-interface AppMsgPublishResponse {
-  base_resp: BaseResp;
-  publish_page: string;
-}
-
-interface PrivateProxyConfig {
-  privateProxyList: string[];
-  privateProxyAuthorization: string;
-}
 
 function compactArticlePayload(article: Record<string, any>): Record<string, any> {
   return {
@@ -64,44 +35,6 @@ function compactArticlePayload(article: Record<string, any>): Record<string, any
     copyright_type: Number(article?.copyright_type) || 0,
     is_deleted: Boolean(article?.is_deleted),
     _status: String(article?._status || ''),
-  };
-}
-
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function buildMpRequestHeaders(cookie: string): Record<string, string> {
-  return {
-    Referer: 'https://mp.weixin.qq.com/',
-    Origin: 'https://mp.weixin.qq.com',
-    'User-Agent': USER_AGENT,
-    'Accept-Encoding': 'identity',
-    Cookie: cookie,
-  };
-}
-
-function buildPrivateProxyEndpoint(
-  proxy: string,
-  targetEndpoint: string,
-  targetHeaders: Record<string, string>,
-  authorization: string
-): string {
-  return `${proxy}?url=${encodeURIComponent(targetEndpoint)}&headers=${encodeURIComponent(
-    JSON.stringify(targetHeaders)
-  )}&authorization=${encodeURIComponent(authorization)}`;
-}
-
-async function resolvePrivateProxyConfig(authKey: string): Promise<PrivateProxyConfig> {
-  const storedPreferences = await getStoredPreferencesByAuthKey(authKey);
-  const privateProxyList = sanitizePrivateProxyList(storedPreferences.preferences.privateProxyList || []);
-  if (privateProxyList.length === 0) {
-    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
-  }
-
-  return {
-    privateProxyList,
-    privateProxyAuthorization: String(storedPreferences.preferences.privateProxyAuthorization || '').trim(),
   };
 }
 
@@ -217,21 +150,6 @@ function sameSchedulerConfig(left: SchedulerConfig, right: SchedulerConfig): boo
   );
 }
 
-function buildSchedulerAccountPayload(account: SchedulerAccount, totalCount: number) {
-  return {
-    fakeid: account.fakeid,
-    source_type: account.source_type || 'mp',
-    source_url: account.source_url || '',
-    site_url: account.site_url || '',
-    description: account.description || '',
-    nickname: account.nickname || '',
-    round_head_img: account.round_head_img || '',
-    category: account.category || '',
-    focused: Boolean(account.focused),
-    total_count: totalCount,
-  };
-}
-
 function filterArticlesBySyncThreshold(articles: any[], syncThreshold: number): any[] {
   if (!Array.isArray(articles)) {
     return [];
@@ -245,157 +163,6 @@ function filterArticlesBySyncThreshold(articles: any[], syncThreshold: number): 
     const createTime = Number(article?.create_time) || 0;
     return createTime <= 0 || createTime >= syncThreshold;
   });
-}
-
-async function fetchAppMsgPublish(
-  cookie: string,
-  token: string,
-  fakeid: string,
-  begin: number,
-  size: number,
-  privateProxyConfig: PrivateProxyConfig
-): Promise<AppMsgPublishResponse> {
-  const query = new URLSearchParams({
-    sub: 'list',
-    search_field: 'null',
-    begin: String(begin),
-    count: String(size),
-    query: '',
-    fakeid,
-    type: '101_1',
-    free_publish_type: '1',
-    sub_action: 'list_ex',
-    token,
-    lang: 'zh_CN',
-    f: 'json',
-    ajax: '1',
-  });
-
-  const targetEndpoint = `https://mp.weixin.qq.com/cgi-bin/appmsgpublish?${query.toString()}`;
-  const targetHeaders = buildMpRequestHeaders(cookie);
-  let lastError: Error | null = null;
-
-  for (const proxy of privateProxyConfig.privateProxyList) {
-    try {
-      const response = await fetch(
-        buildPrivateProxyEndpoint(proxy, targetEndpoint, targetHeaders, privateProxyConfig.privateProxyAuthorization),
-        {
-          method: 'GET',
-          headers: {
-            'Accept-Encoding': 'identity',
-          },
-        }
-      );
-      return await response.json();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-  throw new Error('private proxy request failed');
-}
-
-function parseArticles(resp: AppMsgPublishResponse): { articles: any[]; completed: boolean; totalCount: number } {
-  if (!resp || !resp.base_resp) {
-    throw new Error('invalid appmsgpublish response');
-  }
-
-  if (resp.base_resp.ret !== 0) {
-    throw new Error(`${resp.base_resp.ret}:${resp.base_resp.err_msg || 'sync failed'}`);
-  }
-
-  const publishPage = JSON.parse(resp.publish_page || '{}') as PublishPage;
-  const list = Array.isArray(publishPage.publish_list) ? publishPage.publish_list : [];
-  const nonEmptyList = list.filter(item => Boolean(item?.publish_info));
-
-  const articles = nonEmptyList.flatMap(item => {
-    try {
-      const publishInfo = JSON.parse(item.publish_info || '{}') as Record<string, any>;
-      return Array.isArray(publishInfo.appmsgex) ? publishInfo.appmsgex.map(compactArticlePayload) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  return {
-    articles,
-    completed: nonEmptyList.length === 0,
-    totalCount: Number.isFinite(publishPage.total_count) ? publishPage.total_count : 0,
-  };
-}
-
-async function syncOneAccount(
-  authKey: string,
-  cookie: string,
-  token: string,
-  account: SchedulerAccount,
-  config: SchedulerConfig,
-  privateProxyConfig: PrivateProxyConfig
-): Promise<number> {
-  const fakeid = account.fakeid;
-  const cached = await getSchedulerArticles(authKey, fakeid);
-  const oldArticles = cached?.articles || [];
-  const oldLatest = oldArticles.reduce((max, article) => Math.max(max, Number(article?.create_time) || 0), 0);
-  const syncThreshold = calcSyncThreshold(config);
-
-  let begin = 0;
-  let page = 0;
-  let totalCount = cached?.totalCount || 0;
-  const collected: any[] = [];
-  let reachedBoundary = false;
-
-  while (page < MAX_PAGE_PER_ACCOUNT) {
-    const resp = await fetchAppMsgPublish(cookie, token, fakeid, begin, 20, privateProxyConfig);
-    const { articles, completed, totalCount: latestTotalCount } = parseArticles(resp);
-    totalCount = latestTotalCount || totalCount;
-
-    if (articles.length === 0 || completed) {
-      break;
-    }
-
-    for (const article of articles) {
-      const createTime = Number(article?.create_time) || 0;
-      if (oldLatest > 0 && createTime > 0 && createTime <= oldLatest) {
-        reachedBoundary = true;
-        break;
-      }
-      if (syncThreshold > 0 && createTime > 0 && createTime < syncThreshold) {
-        reachedBoundary = true;
-        break;
-      }
-      collected.push(article);
-    }
-
-    if (reachedBoundary) {
-      break;
-    }
-
-    const beginStep = articles.filter(article => Number(article?.itemidx) === 1).length;
-    if (beginStep <= 0) {
-      break;
-    }
-    begin += beginStep;
-    page++;
-
-    await sleep(pickRandomSyncDelayMs(config));
-  }
-
-  const merged = dedupeArticles(collected, oldArticles);
-  await setSchedulerArticles(authKey, fakeid, {
-    articles: merged,
-    totalCount,
-  });
-  await upsertArticles(authKey, {
-    account: buildSchedulerAccountPayload(account, totalCount),
-    articles: collected,
-    totalCount,
-    completed: false,
-  });
-
-  return collected.length;
 }
 
 async function syncOneRssAccount(authKey: string, account: SchedulerAccount, config: SchedulerConfig): Promise<number> {
@@ -460,15 +227,7 @@ async function runSchedulerForState(state: SchedulerState): Promise<void> {
     }
 
     if (mpAccounts.length > 0) {
-      const token = await cookieStore.getToken(authKey);
-      const cookie = await cookieStore.getCookie(authKey);
-      if (!token || !cookie) {
-        throw new Error('cookie or token missing');
-      }
-      const privateProxyConfig = await resolvePrivateProxyConfig(authKey);
-      for (const account of mpAccounts) {
-        await syncOneAccount(authKey, cookie, token, account, config, privateProxyConfig);
-      }
+      throw new Error('微信公众号定时同步需要短期 Credential，请在阅读页导入 Charles 会话后执行批量同步');
     }
 
     await upsertSchedulerState(authKey, {

@@ -59,12 +59,15 @@ import {
   updateAccountFocused,
 } from '~/store/v2/info';
 import { migrateLegacyIndexedDbToServer, migrateLegacyLargeCacheToServer } from '~/store/v2/legacy-migration';
+import type { ParsedCredential } from '~/types/credential';
 import type { Preferences } from '~/types/preferences';
 import type { AccountInfo, AppMsgExWithFakeID, LogoutResponse } from '~/types/types';
 
 useHead({
   title: '聚心阅读',
 });
+
+const profileCredentials = useLocalStorage<ParsedCredential[]>('auto-detect-credentials:credentials', []);
 
 interface ReaderCategory {
   id: string;
@@ -5417,20 +5420,37 @@ async function startRemoteBatchSync(targets: MpAccount[]): Promise<RemoteBatchSy
     method: 'POST',
     body: {
       fakeids: targets.map(account => account.fakeid),
-      accounts: targets.map(account => ({
-        fakeid: account.fakeid,
-        completed: Boolean(account.completed),
-        count: Number(account.count) || 0,
-        articles: Number(account.articles) || 0,
-        category: String(account.category || ''),
-        focused: Boolean(account.focused),
-        nickname: String(account.nickname || ''),
-        round_head_img: String(account.round_head_img || ''),
-        total_count: Number(account.total_count) || 0,
-        create_time: Number(account.create_time) || 0,
-        update_time: Number(account.update_time) || 0,
-        last_update_time: Number(account.last_update_time) || 0,
-      })),
+      accounts: targets.map(account => {
+        const credential = profileCredentials.value.find(item => item.biz === account.fakeid);
+        const credentialValid = Boolean(
+          credential?.uin &&
+            credential?.key &&
+            credential?.pass_ticket &&
+            Date.now() < Number(credential.timestamp || 0) + 25 * 60 * 1000
+        );
+        return {
+          fakeid: account.fakeid,
+          completed: Boolean(account.completed),
+          count: Number(account.count) || 0,
+          articles: Number(account.articles) || 0,
+          category: String(account.category || ''),
+          focused: Boolean(account.focused),
+          nickname: String(account.nickname || ''),
+          round_head_img: String(account.round_head_img || ''),
+          total_count: Number(account.total_count) || 0,
+          create_time: Number(account.create_time) || 0,
+          update_time: Number(account.update_time) || 0,
+          last_update_time: Number(account.last_update_time) || 0,
+          credential: credentialValid
+            ? {
+                uin: credential?.uin || '',
+                key: credential?.key || '',
+                pass_ticket: credential?.pass_ticket || '',
+                timestamp: credential?.timestamp || 0,
+              }
+            : undefined,
+        };
+      }),
       syncTimestamp: getSyncTimestamp(),
       accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
       accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),

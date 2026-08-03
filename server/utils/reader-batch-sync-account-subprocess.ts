@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { USER_AGENT } from '~/config';
 import { logMemory } from '~/server/utils/memory-debug';
 import { ensureRuntimeChildScript } from '~/server/utils/runtime-child-script';
 import { READER_BATCH_SYNC_ACCOUNT_CHILD_SOURCE } from '~/server/utils/runtime-child-sources.generated';
@@ -17,12 +16,16 @@ export interface ReaderBatchAccountRecord {
   create_time?: number;
   update_time?: number;
   last_update_time?: number;
+  credential?: {
+    uin: string;
+    key: string;
+    pass_ticket: string;
+    timestamp?: number;
+  };
 }
 
 export interface ReaderBatchAccountSubprocessInput {
   authKey: string;
-  token: string;
-  cookie: string;
   syncTimestamp: number;
   accountSyncMinSeconds: number;
   accountSyncMaxSeconds: number;
@@ -89,7 +92,6 @@ type ChildInboundMessage =
   | {
       type: 'start';
       payload: ReaderBatchAccountSubprocessInput & {
-        userAgent: string;
         timeoutMs: number;
         maxJsonBytes: number;
       };
@@ -263,7 +265,6 @@ export function syncReaderBatchAccountInSubprocess(
       type: 'start',
       payload: {
         ...input,
-        userAgent: USER_AGENT,
         timeoutMs: requestTimeoutMs,
         maxJsonBytes,
       },

@@ -92,6 +92,20 @@
                 >
               </div>
             </div>
+            <div v-if="item.key === 'charles'" class="space-y-4">
+              <p class="text-sm text-gray-600 dark:text-gray-300">
+                导入 Charles 保存的 <code>.chlz</code> 会话。系统只在浏览器本地解析并保存 Credential，不会上传会话文件。
+              </p>
+              <input ref="charlesFileInput" class="hidden" type="file" accept=".chlz" @change="importCharlesSession" />
+              <UButton
+                color="blue"
+                icon="i-lucide:file-up"
+                :loading="importingCharles"
+                @click="charlesFileInput?.click()"
+              >
+                选择 Charles 会话
+              </UButton>
+            </div>
           </template>
         </UTabs>
         <ul class="flex flex-col mt-3 p-1 gap-4 overflow-y-scroll h-[calc(100vh-20rem)] no-scrollbar">
@@ -139,6 +153,7 @@
 
 <script setup lang="ts">
 import dayjs from 'dayjs';
+import JSZip from 'jszip';
 import { getArticleList, getArticleListWithCredential } from '~/apis';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
@@ -171,6 +186,10 @@ const tabs = [
   {
     key: 'mitmproxy',
     label: 'mitmproxy 插件版',
+  },
+  {
+    key: 'charles',
+    label: 'Charles 导入',
   },
 ];
 
@@ -243,11 +262,162 @@ accountEventBus.on((event, payload) => {
 });
 
 interface Credential {
-  url: string;
-  set_cookie: string;
-  timestamp: number;
-  name: string;
-  avatar: string;
+  url?: string;
+  set_cookie?: string;
+  timestamp?: number;
+  name?: string;
+  avatar?: string;
+  biz?: string;
+  uin?: string;
+  key?: string;
+  pass_ticket?: string;
+  cookie?: string;
+  appmsg_token?: string;
+  wap_sid2?: string;
+  exportkey?: string;
+  user_agent?: string;
+  referer?: string;
+  acct_mode?: string;
+}
+
+function decodeRepeated(value: string): string {
+  let current = String(value || '');
+  for (let index = 0; index < 8; index++) {
+    try {
+      const next = decodeURIComponent(current);
+      if (next === current) break;
+      current = next;
+    } catch {
+      break;
+    }
+  }
+  return current;
+}
+
+function getQueryValue(query: string, key: string): string {
+  const value = new URLSearchParams(String(query || '').replace(/^\?/, '')).get(key) || '';
+  return decodeRepeated(value);
+}
+
+async function parseCapturedCredential(item: Credential): Promise<ParsedCredential | null> {
+  let searchParams = new URLSearchParams();
+  if (item.url) {
+    try {
+      searchParams = new URL(item.url).searchParams;
+    } catch {
+      return null;
+    }
+  }
+
+  const biz = decodeRepeated(item.biz || searchParams.get('__biz') || '');
+  const uin = decodeRepeated(item.uin || searchParams.get('uin') || '');
+  const key = decodeRepeated(item.key || searchParams.get('key') || '');
+  const passTicket = decodeRepeated(item.pass_ticket || searchParams.get('pass_ticket') || '');
+  if (!biz || !uin || !key || !passTicket) {
+    return null;
+  }
+
+  const setCookie = String(item.set_cookie || '');
+  const parsedCookie = parseSetCookie(setCookie);
+  const wapSidMatch = setCookie.match(/wap_sid2=(?<wap_sid2>.+?);/);
+  const timestamp = Number(item.timestamp) || Date.now();
+  const info = await getInfoCache(biz);
+  return {
+    nickname: item.name || info?.nickname,
+    avatar: item.avatar || info?.round_head_img,
+    biz,
+    uin,
+    key,
+    pass_ticket: passTicket,
+    wap_sid2: item.wap_sid2 || wapSidMatch?.groups?.wap_sid2 || '',
+    appmsg_token: item.appmsg_token || parsedCookie.appmsg_token,
+    cookie: item.cookie || parsedCookie.cookie,
+    exportkey: item.exportkey || '',
+    user_agent: item.user_agent || '',
+    referer: item.referer || '',
+    acct_mode: item.acct_mode || '',
+    timestamp,
+    time: dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss'),
+    valid: Date.now() < timestamp + 1000 * 60 * CREDENTIAL_LIVE_MINUTES,
+    added: Boolean(info),
+  };
+}
+
+async function applyCapturedCredentials(items: Credential[]): Promise<number> {
+  const parsed = await Promise.all(items.map(item => parseCapturedCredential(item)));
+  const validItems = parsed.filter((item): item is ParsedCredential => Boolean(item));
+  const merged = new Map(credentials.value.map(item => [item.biz, item]));
+  for (const item of validItems) {
+    const previous = merged.get(item.biz);
+    if (!previous || item.timestamp >= previous.timestamp) {
+      merged.set(item.biz, {
+        ...previous,
+        ...item,
+        added: item.added ?? previous?.added,
+      });
+    }
+  }
+  credentials.value = Array.from(merged.values()).sort((a, b) => b.timestamp - a.timestamp);
+  return new Set(validItems.map(item => item.biz)).size;
+}
+
+const charlesFileInput = ref<HTMLInputElement | null>(null);
+const importingCharles = ref(false);
+
+async function importCharlesSession(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file || importingCharles.value) return;
+
+  importingCharles.value = true;
+  try {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const captured: Credential[] = [];
+    const metaFiles = Object.values(zip.files).filter(entry => /^\d+-meta\.json$/.test(entry.name));
+    for (const entry of metaFiles) {
+      const meta = JSON.parse(await entry.async('string')) as any;
+      const headers = new Map<string, string>();
+      for (const header of meta?.request?.header?.headers || []) {
+        headers.set(
+          String(header?.name || '')
+            .trim()
+            .toLowerCase(),
+          String(header?.value || '')
+        );
+      }
+      const query = String(meta?.query || '');
+      const biz = getQueryValue(query, '__biz');
+      const passTicket = getQueryValue(query, 'pass_ticket');
+      const uin = headers.get('x-wechat-uin') || getQueryValue(query, 'uin');
+      const key = headers.get('x-wechat-key') || getQueryValue(query, 'key');
+      if (!biz || !passTicket || !uin || !key) continue;
+
+      const timestamp = Date.parse(String(meta?.times?.requestBegin || meta?.times?.start || '')) || file.lastModified;
+      captured.push({
+        biz,
+        uin,
+        key,
+        pass_ticket: passTicket,
+        exportkey: headers.get('exportkey') || '',
+        user_agent: headers.get('user-agent') || '',
+        referer: headers.get('referer') || '',
+        acct_mode: headers.get('x-wechat-acctmode') || '',
+        cookie: headers.get('cookie') || '',
+        timestamp,
+      });
+    }
+
+    const imported = await applyCapturedCredentials(captured);
+    if (imported === 0) {
+      throw new Error('会话中未找到完整的 __biz、pass_ticket、x-wechat-uin 和 x-wechat-key');
+    }
+    toast.success('Charles 导入成功', `已导入 ${imported} 个公众号的 Credential。`);
+  } catch (error: any) {
+    toast.error('Charles 导入失败', String(error?.message || error || '无法解析会话文件'));
+  } finally {
+    importingCharles.value = false;
+    input.value = '';
+  }
 }
 
 let timer: number;
@@ -386,45 +556,7 @@ async function fetchCredentials() {
     return;
   }
 
-  const _credentials: ParsedCredential[] = [];
-  for (const item of result) {
-    const searchParams = new URL(item.url).searchParams;
-    const __biz = searchParams.get('__biz')!;
-    const uin = searchParams.get('uin')!;
-    const key = searchParams.get('key')!;
-    const pass_ticket = searchParams.get('pass_ticket')!;
-
-    let wap_sid2 = null;
-    const matchResult = item.set_cookie.match(/wap_sid2=(?<wap_sid2>.+?);/);
-    if (matchResult && matchResult.groups && matchResult.groups.wap_sid2) {
-      wap_sid2 = matchResult.groups.wap_sid2;
-    }
-
-    const { appmsg_token, cookie } = parseSetCookie(item.set_cookie);
-
-    // 验证完整性
-    if (!__biz || !uin || !key || !pass_ticket || !wap_sid2) {
-      continue;
-    }
-
-    const info = await getInfoCache(__biz);
-    _credentials.push({
-      nickname: item.name || info?.nickname,
-      avatar: item.avatar || info?.round_head_img,
-      biz: __biz,
-      uin: uin,
-      key: key,
-      pass_ticket: pass_ticket,
-      wap_sid2: wap_sid2,
-      appmsg_token: appmsg_token,
-      cookie: cookie,
-      timestamp: item.timestamp,
-      time: dayjs(item.timestamp).format('YYYY-MM-DD HH:mm:ss'),
-      valid: Date.now() < item.timestamp + 1000 * 60 * CREDENTIAL_LIVE_MINUTES,
-      added: Boolean(info),
-    });
-  }
-  credentials.value = _credentials.sort((a, b) => b.timestamp - a.timestamp);
+  await applyCapturedCredentials(result);
 }
 
 const wsURL = ref('wss://127.0.0.1:65001');
@@ -454,45 +586,7 @@ async function startListenService(isManual = false) {
     } catch (e) {
       console.warn('解析失败: ', e);
     }
-    const _credentials: ParsedCredential[] = [];
-    for (const item of result) {
-      const searchParams = new URL(item.url).searchParams;
-      const __biz = searchParams.get('__biz')!;
-      const uin = searchParams.get('uin')!;
-      const key = searchParams.get('key')!;
-      const pass_ticket = searchParams.get('pass_ticket')!;
-
-      let wap_sid2 = null;
-      const matchResult = item.set_cookie.match(/wap_sid2=(?<wap_sid2>.+?);/);
-      if (matchResult && matchResult.groups && matchResult.groups.wap_sid2) {
-        wap_sid2 = matchResult.groups.wap_sid2;
-      }
-
-      const { appmsg_token, cookie } = parseSetCookie(item.set_cookie);
-
-      // 验证完整性
-      if (!__biz || !uin || !key || !pass_ticket || !wap_sid2) {
-        continue;
-      }
-
-      const info = await getInfoCache(__biz);
-      _credentials.push({
-        nickname: item.name || info?.nickname,
-        avatar: item.avatar || info?.round_head_img,
-        biz: __biz,
-        uin: uin,
-        key: key,
-        pass_ticket: pass_ticket,
-        wap_sid2: wap_sid2,
-        appmsg_token: appmsg_token,
-        cookie: cookie,
-        timestamp: item.timestamp,
-        time: dayjs(item.timestamp).format('YYYY-MM-DD HH:mm:ss'),
-        valid: Date.now() < item.timestamp + 1000 * 60 * CREDENTIAL_LIVE_MINUTES,
-        added: Boolean(info),
-      });
-    }
-    credentials.value = _credentials.sort((a, b) => b.timestamp - a.timestamp);
+    await applyCapturedCredentials(result);
   });
   ws.addEventListener('close', () => {
     wsMonitoring.value = false;

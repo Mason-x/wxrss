@@ -372,7 +372,7 @@ export async function proxyMpRequest(options: RequestOptions) {
     'Accept-Encoding': 'identity',
   });
 
-  const cookie: string | null = options.cookie || (await getCookieFromStore(options.event));
+  const cookie: string | null = options.cookie !== undefined ? options.cookie : await getCookieFromStore(options.event);
   if (cookie) {
     targetHeaders.set('Cookie', cookie);
   }

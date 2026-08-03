@@ -2,6 +2,7 @@ import { normalizeSyncDelayRange } from '#shared/utils/sync-delay';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 import { startReaderBatchSyncJobStatus } from '~/server/utils/reader-batch-sync';
 import type { ReaderBatchSyncJobSubprocessAccount } from '~/server/utils/reader-batch-sync-job-subprocess';
+import type { ProfileCredential } from '~/types/credential';
 
 interface BatchSyncStartBody {
   fakeids?: string[];
@@ -18,6 +19,7 @@ interface BatchSyncStartBody {
     create_time?: number;
     update_time?: number;
     last_update_time?: number;
+    credential?: ProfileCredential;
   }>;
   syncTimestamp?: number;
   accountSyncMinSeconds?: number;
@@ -52,6 +54,15 @@ export default defineEventHandler(async event => {
           create_time: Number(account.create_time) || 0,
           update_time: Number(account.update_time) || 0,
           last_update_time: Number(account.last_update_time) || 0,
+          credential:
+            account.credential?.uin && account.credential?.key && account.credential?.pass_ticket
+              ? {
+                  uin: String(account.credential.uin),
+                  key: String(account.credential.key),
+                  pass_ticket: String(account.credential.pass_ticket),
+                  timestamp: Number(account.credential.timestamp) || 0,
+                }
+              : undefined,
         }))
     : [];
   const snapshot = startReaderBatchSyncJobStatus(authKey, {

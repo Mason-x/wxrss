@@ -10,6 +10,10 @@ export interface ProfileGetMsgResponse {
   general_msg_list: string;
 }
 
+export interface ProfileGetMsgGeneralList {
+  list?: ParsedProfileGetMsg[];
+}
+
 export interface app_msg_item {
   audio_fileid: number;
   author: string;
@@ -20,7 +24,7 @@ export interface app_msg_item {
   del_flag: number;
   digest: string;
   duration: number;
-  fileid: number;
+  fileid: number | string;
   item_show_type: number;
   malicious_content_type: number;
   malicious_title_reason_id: number;
@@ -45,6 +49,6 @@ export interface ProfileGetMsg_comm_msg_info {
 }
 
 export interface ParsedProfileGetMsg {
-  app_msg_ext_info: ProfileGetMsg_app_msg_ext_info;
+  app_msg_ext_info?: ProfileGetMsg_app_msg_ext_info;
   comm_msg_info: ProfileGetMsg_comm_msg_info;
 }

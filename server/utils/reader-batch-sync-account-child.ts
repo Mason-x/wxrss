@@ -1,4 +1,3 @@
-import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -130,15 +129,18 @@ interface ReaderAccountRecord {
   create_time?: number;
   update_time?: number;
   last_update_time?: number;
+  credential?: ProfileCredential;
+}
+
+interface ProfileCredential {
+  uin: string;
+  key: string;
+  pass_ticket: string;
+  timestamp?: number;
 }
 
 interface ReaderBatchAccountChildInput {
   authKey: string;
-  token: string;
-  cookie: string;
-  userAgent: string;
-  privateProxyList: string[];
-  privateProxyAuthorization: string;
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
@@ -147,7 +149,7 @@ interface ReaderBatchAccountChildInput {
   account: ReaderAccountRecord;
 }
 
-interface DirectAppmsgPublishResponse {
+interface DirectProfileGetMsgResponse {
   base_resp: {
     ret: number;
     err_msg?: string;
@@ -156,6 +158,7 @@ interface DirectAppmsgPublishResponse {
   total_count?: number;
   page_message_count?: number;
   completed?: boolean;
+  next_offset?: number;
 }
 
 interface ArticleCacheSummary {
@@ -202,7 +205,8 @@ const DEFAULT_SYNC_DELAY_MIN_SECONDS = 3;
 const DEFAULT_SYNC_DELAY_MAX_SECONDS = 5;
 const MIN_ALLOWED_SECONDS = 1;
 const MAX_ALLOWED_SECONDS = 30;
-const PRIVATE_PROXY_REQUIRED_MESSAGE = 'private proxy required';
+const PROFILE_REQUEST_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36 WAE/1.0';
 
 let cancelRequested = false;
 let started = false;
@@ -276,33 +280,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function normalizeProxyList(values: string[]): string[] {
-  if (!Array.isArray(values)) {
-    return [];
-  }
-
-  return values.map(value => String(value || '').trim()).filter(Boolean);
-}
-
-function buildMpRequestHeaders(cookie: string, userAgent: string): Record<string, string> {
+function buildProfileRequestHeaders(): Record<string, string> {
   return {
     Referer: 'https://mp.weixin.qq.com/',
     Origin: 'https://mp.weixin.qq.com',
-    'User-Agent': userAgent,
+    'User-Agent': PROFILE_REQUEST_USER_AGENT,
     'Accept-Encoding': 'identity',
-    Cookie: cookie,
+    Connection: 'close',
   };
-}
-
-function buildPrivateProxyEndpoint(
-  proxy: string,
-  targetEndpoint: string,
-  targetHeaders: Record<string, string>,
-  authorization: string
-): string {
-  return `${proxy}?url=${encodeURIComponent(targetEndpoint)}&headers=${encodeURIComponent(
-    JSON.stringify(targetHeaders)
-  )}&authorization=${encodeURIComponent(authorization)}`;
 }
 
 function resolveDbPath(): string {
@@ -807,203 +792,224 @@ async function getArticleCacheSummary(
   };
 }
 
-async function fetchAppmsgPublishDirect(
-  token: string,
-  cookie: string,
+function normalizeProfileUrl(value: unknown): string {
+  const decoded = String(value || '')
+    .replace(/&amp;/g, '&')
+    .trim();
+  if (decoded.startsWith('//')) {
+    return `https:${decoded}`;
+  }
+  if (decoded.startsWith('/')) {
+    return `https://mp.weixin.qq.com${decoded}`;
+  }
+  return decoded;
+}
+
+function getProfileUrlNumber(url: string, key: string): number {
+  try {
+    return Number(new URL(url).searchParams.get(key)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function compactProfileArticle(
+  item: Record<string, any>,
+  message: Record<string, any>,
+  fakeid: string,
+  fallbackItemidx: number
+): Record<string, any> | null {
+  const link = normalizeProfileUrl(item?.content_url);
+  const title = String(item?.title || '').trim();
+  if (!link || !title) {
+    return null;
+  }
+
+  const appmsgid = getProfileUrlNumber(link, 'mid') || Number(message?.comm_msg_info?.id) || 0;
+  const itemidx = getProfileUrlNumber(link, 'idx') || fallbackItemidx;
+  const createTime = Number(message?.comm_msg_info?.datetime) || 0;
+  return compactArticlePayload({
+    aid: appmsgid > 0 ? `${fakeid}_${appmsgid}_${itemidx}` : '',
+    appmsgid,
+    itemidx,
+    link,
+    title,
+    digest: String(item?.digest || ''),
+    author_name: String(item?.author || ''),
+    cover: normalizeProfileUrl(item?.cover),
+    create_time: createTime,
+    update_time: createTime,
+    item_show_type: Number(item?.item_show_type) || 0,
+    media_duration: String(item?.duration || ''),
+    appmsg_album_infos: [],
+    copyright_stat: Number(item?.copyright_stat) || 0,
+    copyright_type: 0,
+    is_deleted: Boolean(item?.del_flag),
+    _status: '',
+  });
+}
+
+function parseProfileArticles(
+  raw: Record<string, any>,
+  fakeid: string
+): {
+  articles: Record<string, any>[];
+  messageCount: number;
+} {
+  let parsed: Record<string, any> | Record<string, any>[];
+  try {
+    parsed = JSON.parse(String(raw.general_msg_list || '')) as Record<string, any> | Record<string, any>[];
+  } catch {
+    throw new Error('profile_ext general_msg_list parse failed');
+  }
+
+  const messages = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.list) ? parsed.list : [];
+  const articles: Record<string, any>[] = [];
+  for (const message of messages) {
+    const root = message?.app_msg_ext_info;
+    if (!root) {
+      continue;
+    }
+    const main = compactProfileArticle(root, message, fakeid, 1);
+    if (main) {
+      articles.push(main);
+    }
+    const children = Array.isArray(root.multi_app_msg_item_list) ? root.multi_app_msg_item_list : [];
+    children.forEach((child: Record<string, any>, index: number) => {
+      const article = compactProfileArticle(child, message, fakeid, index + 2);
+      if (article) {
+        articles.push(article);
+      }
+    });
+  }
+
+  return {
+    articles,
+    messageCount: Math.max(0, Number(raw.msg_count) || messages.length),
+  };
+}
+
+async function fetchProfileGetMsgDirect(
+  credential: ProfileCredential,
   fakeid: string,
   begin: number,
   size: number,
-  userAgent: string,
-  privateProxyList: string[],
-  privateProxyAuthorization: string,
   timeoutMs: number,
   maxJsonBytes: number
-): Promise<DirectAppmsgPublishResponse> {
-  const endpoint = new URL('https://mp.weixin.qq.com/cgi-bin/appmsgpublish');
+): Promise<DirectProfileGetMsgResponse> {
+  const endpoint = new URL('https://mp.weixin.qq.com/mp/profile_ext');
   endpoint.search = new URLSearchParams({
-    sub: 'list',
-    search_field: 'null',
-    begin: String(begin),
+    action: 'getmsg',
+    __biz: fakeid,
+    offset: String(begin),
     count: String(size),
-    query: '',
-    fakeid,
-    type: '101_1',
-    free_publish_type: '1',
-    sub_action: 'list_ex',
-    token,
-    lang: 'zh_CN',
+    uin: credential.uin,
+    key: credential.key,
+    pass_ticket: credential.pass_ticket,
     f: 'json',
-    ajax: '1',
+    is_ok: '1',
+    scene: '124',
   }).toString();
 
-  const proxies = normalizeProxyList(privateProxyList);
-  if (proxies.length === 0) {
-    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
-  }
+  const text = await new Promise<string>((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        protocol: endpoint.protocol,
+        hostname: endpoint.hostname,
+        port: endpoint.port ? Number(endpoint.port) : undefined,
+        path: endpoint.pathname + endpoint.search,
+        method: 'GET',
+        headers: buildProfileRequestHeaders(),
+        agent: false,
+      },
+      response => {
+        const status = Number(response.statusCode || 0);
+        const contentLength = Number(response.headers['content-length'] || 0);
+        if (Number.isFinite(contentLength) && contentLength > maxJsonBytes) {
+          response.resume();
+          reject(
+            new Error(`mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`)
+          );
+          return;
+        }
 
-  const targetHeaders = buildMpRequestHeaders(cookie, userAgent);
-  let text = '';
-  let lastError: Error | null = null;
-
-  for (const proxy of proxies) {
-    const proxyEndpoint = new URL(
-      buildPrivateProxyEndpoint(
-        proxy,
-        endpoint.toString(),
-        targetHeaders,
-        String(privateProxyAuthorization || '').trim()
-      )
-    );
-    try {
-      text = await new Promise<string>((resolve, reject) => {
-        const requestImpl = proxyEndpoint.protocol === 'https:' ? httpsRequest : httpRequest;
-        const req = requestImpl(
-          {
-            protocol: proxyEndpoint.protocol,
-            hostname: proxyEndpoint.hostname,
-            port: proxyEndpoint.port ? Number(proxyEndpoint.port) : undefined,
-            path: proxyEndpoint.pathname + proxyEndpoint.search,
-            method: 'GET',
-            headers: {
-              'Accept-Encoding': 'identity',
-              Connection: 'close',
-            },
-            agent: false,
-          },
-          response => {
-            const status = Number(response.statusCode || 0);
-            const contentLength = Number(response.headers['content-length'] || 0);
-            if (Number.isFinite(contentLength) && contentLength > maxJsonBytes) {
-              response.resume();
-              reject(
-                new Error(
-                  `mp response too large(status=${status}, content-length=${contentLength}, limit=${maxJsonBytes})`
-                )
-              );
-              return;
-            }
-
-            response.setEncoding('utf8');
-            let bytes = 0;
-            let body = '';
-            let settled = false;
-
-            const fail = (error: Error) => {
-              if (settled) {
-                return;
-              }
-              settled = true;
-              response.destroy();
-              reject(error);
-            };
-
-            response.on('data', chunk => {
-              const chunkText = String(chunk || '');
-              bytes += Buffer.byteLength(chunkText, 'utf8');
-              if (bytes > maxJsonBytes) {
-                fail(new Error(`mp response too large(status=${status}, bytes=${bytes}, limit=${maxJsonBytes})`));
-                return;
-              }
-              body += chunkText;
-            });
-            response.on('end', () => {
-              if (settled) {
-                return;
-              }
-              settled = true;
-              resolve(body);
-            });
-            response.on('error', error => {
-              fail(error instanceof Error ? error : new Error(String(error)));
-            });
+        response.setEncoding('utf8');
+        let bytes = 0;
+        let body = '';
+        let settled = false;
+        const fail = (error: Error) => {
+          if (settled) {
+            return;
           }
-        );
+          settled = true;
+          response.destroy();
+          reject(error);
+        };
 
-        req.on('error', error => {
-          reject(error instanceof Error ? error : new Error(String(error)));
+        response.on('data', chunk => {
+          const chunkText = String(chunk || '');
+          bytes += Buffer.byteLength(chunkText, 'utf8');
+          if (bytes > maxJsonBytes) {
+            fail(new Error(`mp response too large(status=${status}, bytes=${bytes}, limit=${maxJsonBytes})`));
+            return;
+          }
+          body += chunkText;
         });
-        req.setTimeout(Math.max(1000, timeoutMs), () => {
-          req.destroy(new Error(`mp request timeout(timeoutMs=${timeoutMs})`));
+        response.on('end', () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (status < 200 || status >= 300) {
+            reject(new Error(`profile_ext request failed(status=${status})`));
+            return;
+          }
+          resolve(body);
         });
-        req.end();
-      });
-      lastError = null;
-      break;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
-  }
+        response.on('error', error => {
+          fail(error instanceof Error ? error : new Error(String(error)));
+        });
+      }
+    );
 
-  if (lastError) {
-    throw lastError;
-  }
+    req.on('error', error => {
+      reject(error instanceof Error ? error : new Error(String(error)));
+    });
+    req.setTimeout(Math.max(1000, timeoutMs), () => {
+      req.destroy(new Error(`profile_ext request timeout(timeoutMs=${timeoutMs})`));
+    });
+    req.end();
+  });
 
   let raw: Record<string, any>;
   try {
     raw = JSON.parse(text || '{}') as Record<string, any>;
   } catch {
-    throw new Error(`mp response is not json: ${String(text || '').slice(0, 220)}`);
+    throw new Error(`profile_ext response is not json: ${String(text || '').slice(0, 220)}`);
   }
 
-  if (!raw?.base_resp) {
+  const ret = Number(raw?.ret);
+  if (!Number.isFinite(ret)) {
+    return { base_resp: { ret: -1, err_msg: 'invalid profile_ext response' } };
+  }
+  if (ret !== 0) {
     return {
       base_resp: {
-        ret: -1,
-        err_msg: 'invalid appmsgpublish response',
+        ret,
+        err_msg: String(raw.errmsg || 'profile_ext failed'),
       },
     };
   }
 
-  if (Number(raw.base_resp.ret) !== 0) {
-    return {
-      base_resp: {
-        ret: Number(raw.base_resp.ret) || -1,
-        err_msg: String(raw.base_resp.err_msg || 'appmsgpublish failed'),
-      },
-    };
-  }
-
-  let publishPage: { total_count?: number; publish_list?: Array<{ publish_info?: string }> };
-  try {
-    publishPage = JSON.parse(String(raw.publish_page || '{}')) as {
-      total_count?: number;
-      publish_list?: Array<{ publish_info?: string }>;
-    };
-  } catch {
-    throw new Error('appmsgpublish publish_page parse failed');
-  }
-
-  const publishList = Array.isArray(publishPage.publish_list) ? publishPage.publish_list : [];
-  const articles: Record<string, any>[] = [];
-  let pageMessageCount = 0;
-
-  for (const item of publishList) {
-    if (!item?.publish_info) {
-      continue;
-    }
-    pageMessageCount += 1;
-    try {
-      const publishInfo = JSON.parse(String(item.publish_info || '{}')) as {
-        appmsgex?: Record<string, any>[];
-      };
-      const appmsgList = Array.isArray(publishInfo.appmsgex) ? publishInfo.appmsgex : [];
-      for (const article of appmsgList) {
-        articles.push(compactArticlePayload(article));
-      }
-    } catch {
-      // Ignore malformed publish_info blocks and continue syncing.
-    }
-  }
-
+  const { articles, messageCount } = parseProfileArticles(raw, fakeid);
+  const nextOffset = Math.max(begin + messageCount, Number(raw.next_offset) || 0);
   return {
-    base_resp: {
-      ret: 0,
-      err_msg: String(raw.base_resp.err_msg || ''),
-    },
+    base_resp: { ret: 0, err_msg: String(raw.errmsg || '') },
     articles,
-    total_count: Number(publishPage.total_count) || 0,
-    page_message_count: pageMessageCount,
-    completed: pageMessageCount === 0,
+    total_count: nextOffset,
+    page_message_count: messageCount,
+    completed: Number(raw.can_msg_continue) !== 1 || messageCount === 0,
+    next_offset: nextOffset,
   };
 }
 
@@ -1019,6 +1025,10 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
   const account = payload.account;
   const fakeid = String(account.fakeid || '');
   const nickname = String(account.nickname || fakeid);
+  const credential = account.credential;
+  if (!credential?.uin || !credential?.key || !credential?.pass_ticket) {
+    throw new Error('缺少可用 Credential，请先用 Charles 导入该公众号的抓包数据');
+  }
   const originalLastUpdateTime = Number(account.last_update_time) || 0;
   const effectiveSyncTimestamp = Math.max(Number(payload.syncTimestamp) || 0, originalLastUpdateTime);
   let begin = 0;
@@ -1038,27 +1048,22 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
   for (;;) {
     ensureNotCanceled();
     const size = begin === 0 ? 1 : 10;
-    const resp = await fetchAppmsgPublishDirect(
-      payload.token,
-      payload.cookie,
+    const resp = await fetchProfileGetMsgDirect(
+      credential,
       fakeid,
       begin,
       size,
-      payload.userAgent,
-      payload.privateProxyList,
-      payload.privateProxyAuthorization,
       payload.timeoutMs,
       payload.maxJsonBytes
     );
-    if (Number(resp.base_resp.ret) === 200003) {
-      throw new Error('session expired');
-    }
     if (Number(resp.base_resp.ret) !== 0) {
-      throw new Error(`${resp.base_resp.ret}:${resp.base_resp.err_msg || 'appmsgpublish failed'}`);
+      throw new Error(
+        `Credential 已失效或 profile_ext 请求失败：${resp.base_resp.ret}:${resp.base_resp.err_msg || ''}`
+      );
     }
 
     const articles = Array.isArray(resp.articles) ? resp.articles : [];
-    const totalCount = Number(resp.total_count) || latestTotalCount;
+    const totalCount = Math.max(Number(resp.total_count) || 0, latestTotalCount);
     const pageMessageCount = Number(resp.page_message_count) || 0;
     const completed = Boolean(resp.completed);
     latestTotalCount = totalCount;
@@ -1111,7 +1116,7 @@ async function syncOneAccount(db: Database, payload: ReaderBatchAccountChildInpu
     if (step <= 0) {
       step = 1;
     }
-    begin += step;
+    begin = Math.max(begin + step, Number(resp.next_offset) || 0);
 
     let shouldLoadMore = true;
     let cacheBoundaryCreateTime = 0;

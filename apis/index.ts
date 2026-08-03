@@ -1,32 +1,16 @@
-﻿import { request } from '#shared/utils/request';
+﻿import { parseProfileArticlePage } from '#shared/utils/profile-getmsg';
+import { request } from '#shared/utils/request';
 import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE } from '~/config';
 import type { ReaderArticle } from '~/server/repositories/reader';
 import { upsertArticlePage } from '~/store/v2/article';
 import { type MpAccount, updateLastUpdateTime } from '~/store/v2/info';
 import type { CommentResponse } from '~/types/comment';
 import type { ParsedCredential } from '~/types/credential';
-import type { ParsedProfileGetMsg, ProfileGetMsgResponse } from '~/types/profile_getmsg';
-import type {
-  AccountInfo,
-  AppMsgEx,
-  BaseResp,
-  GetAuthKeyResult,
-  PublishInfo,
-  PublishPage,
-  SearchBizResponse,
-} from '~/types/types';
+import type { ProfileGetMsgResponse } from '~/types/profile_getmsg';
+import type { AccountInfo, AppMsgEx, BaseResp, GetAuthKeyResult, SearchBizResponse } from '~/types/types';
 
 const loginAccount = useLoginAccount();
 const credentials = useLocalStorage<ParsedCredential[]>('auto-detect-credentials:credentials', []);
-
-interface AppMsgPublishLiteResponse {
-  base_resp: BaseResp;
-  articles?: AppMsgEx[];
-  completed?: boolean;
-  total_count?: number;
-  page_message_count?: number;
-  publish_page?: string;
-}
 
 export interface RssSyncResult {
   account: MpAccount;
@@ -158,87 +142,37 @@ export interface AiDailyReportItem {
 const FIRST_PAGE_PROBE_SIZE = 1;
 export const INITIAL_SUBSCRIBE_PAGE_SIZE = 20;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
-const MAX_OOM_RETRY_TIMES = 3;
 
-function isMemoryPressureMessage(message: string): boolean {
-  return message.includes('heap pressure') || message.includes('内存接近上限');
-}
-
-function normalizeMpErrorMessage(message: string): string {
-  if (isWorkerOutOfMemoryError({ message })) {
-    return '服务进程内存不足，请重启开发服务并使用 yarn dev --no-fork';
-  }
-  if (isMemoryPressureMessage(message)) {
-    return '服务进程内存接近上限，已自动停止同步，请稍后重试或重启开发服务';
-  }
-  return message;
-}
-
-function isWorkerOutOfMemoryError(error: unknown): boolean {
-  const message = String((error as any)?.message || '');
-  return (
-    message.includes('ERR_WORKER_OUT_OF_MEMORY') ||
-    message.includes('Worker terminated due to reaching memory limit') ||
-    message.includes('JS heap out of memory')
-  );
-}
-
-async function requestArticleListPage(
-  account: MpAccount,
-  begin: number,
-  keyword: string,
-  pageSizeHint = ARTICLE_LIST_PAGE_SIZE
-): Promise<AppMsgPublishLiteResponse> {
-  let pageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Number(pageSizeHint) || ARTICLE_LIST_PAGE_SIZE);
-
-  for (let attempt = 0; attempt <= MAX_OOM_RETRY_TIMES; attempt++) {
-    try {
-      return await request<AppMsgPublishLiteResponse>('/api/web/mp/appmsgpublish', {
-        query: {
-          id: account.fakeid,
-          begin,
-          size: pageSize,
-          keyword,
-        },
-      });
-    } catch (error) {
-      if (!isWorkerOutOfMemoryError(error)) {
-        throw error;
-      }
-
-      const canRetry = attempt < MAX_OOM_RETRY_TIMES && pageSize > MIN_SAFE_ARTICLE_PAGE_SIZE;
-      if (!canRetry) {
-        throw error;
-      }
-
-      pageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Math.floor(pageSize / 2));
-      await new Promise(resolve => setTimeout(resolve, 200));
+function getValidCredential(fakeid: string): ParsedCredential {
+  const target = credentials.value.find(item => item.biz === fakeid);
+  const valid = Boolean(target && Date.now() < Number(target.timestamp || 0) + 1000 * 60 * 25);
+  if (!target || !valid || !target.uin || !target.key || !target.pass_ticket) {
+    if (target) {
+      target.valid = false;
     }
+    throw new Error('目标公众号的 Credential 缺失或已过期，请重新抓取后再同步');
   }
-
-  throw new Error('failed to request article list');
+  target.valid = true;
+  return target;
 }
 
-function compactArticlePayload(article: Partial<AppMsgEx>): AppMsgEx {
-  return {
-    aid: String(article?.aid || ''),
-    appmsgid: Number(article?.appmsgid) || 0,
-    itemidx: Number(article?.itemidx) || 0,
-    link: String(article?.link || ''),
-    title: String(article?.title || ''),
-    digest: String(article?.digest || ''),
-    author_name: String(article?.author_name || ''),
-    cover: String((article as any)?.cover || ''),
-    create_time: Number(article?.create_time) || 0,
-    update_time: Number(article?.update_time) || 0,
-    item_show_type: Number(article?.item_show_type) || 0,
-    media_duration: String((article as any)?.media_duration || ''),
-    appmsg_album_infos: Array.isArray((article as any)?.appmsg_album_infos) ? (article as any).appmsg_album_infos : [],
-    copyright_stat: Number((article as any)?.copyright_stat) || 0,
-    copyright_type: Number((article as any)?.copyright_type) || 0,
-    is_deleted: Boolean((article as any)?.is_deleted),
-    _status: String((article as any)?._status || ''),
-  } as unknown as AppMsgEx;
+async function requestProfileArticleListPage(fakeid: string, begin: number, size: number) {
+  const target = getValidCredential(fakeid);
+  const resp = await request<ProfileGetMsgResponse>('/api/web/mp/profile_ext_getmsg', {
+    method: 'POST',
+    body: {
+      id: fakeid,
+      begin,
+      size: Math.min(10, Math.max(1, Number(size) || ARTICLE_LIST_PAGE_SIZE)),
+      uin: target.uin,
+      key: target.key,
+      pass_ticket: target.pass_ticket,
+    },
+  });
+  if (Number(resp.ret) !== 0) {
+    throw new Error(`${resp.ret}:${resp.errmsg || 'Credential 已失效，请重新抓取'}`);
+  }
+  return parseProfileArticlePage(resp, fakeid, begin);
 }
 
 async function hasValidAuthKey() {
@@ -276,60 +210,29 @@ export async function getArticleList(
     pageSize?: number;
   } = {}
 ): Promise<[AppMsgEx[], boolean, number, number, number]> {
+  if (keyword) {
+    throw new Error('Credential 抓取模式暂不支持微信端关键词搜索');
+  }
   const initialPageSize = Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, Number(options.initialPageSize) || 0);
   const rawExplicitPageSize = Number(options.pageSize) || 0;
   const explicitPageSize = rawExplicitPageSize > 0 ? Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, rawExplicitPageSize) : 0;
   const pageSizeHint =
     explicitPageSize || (begin === 0 && !keyword ? initialPageSize || FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE);
-  const resp = await requestArticleListPage(account, begin, keyword, pageSizeHint);
+  const page = await requestProfileArticleListPage(account.fakeid, begin, pageSizeHint);
+  const totalCount = page.completed ? page.nextOffset : Math.max(Number(account.total_count) || 0, page.nextOffset);
+  let inserted = 0;
 
-  if (resp.base_resp.ret === 0) {
-    let articles: AppMsgEx[] = [];
-    let isCompleted = false;
-    let totalCount = 0;
-    let pageMessageCount = 0;
-    let inserted = 0;
-
-    if (Array.isArray(resp.articles)) {
-      articles = resp.articles.map(compactArticlePayload);
-      isCompleted = Boolean(resp.completed);
-      totalCount = Number(resp.total_count) || 0;
-      pageMessageCount = Number(resp.page_message_count) || 0;
-    } else {
-      const publish_page: PublishPage = JSON.parse(resp.publish_page || '{}');
-      const publish_list = Array.isArray(publish_page.publish_list)
-        ? publish_page.publish_list.filter(item => !!item.publish_info)
-        : [];
-      pageMessageCount = publish_list.length;
-      isCompleted = publish_list.length === 0;
-      totalCount = Number(publish_page.total_count) || 0;
-      articles = publish_list.flatMap(item => {
-        const publish_info: PublishInfo = JSON.parse(item.publish_info);
-        return publish_info.appmsgex.map(compactArticlePayload);
-      });
+  try {
+    const upsertResult = await upsertArticlePage(account, page.articles, totalCount, page.completed);
+    inserted = Number(upsertResult.inserted) || 0;
+    if (begin === 0 && inserted > 0) {
+      await updateLastUpdateTime(account.fakeid);
     }
-
-    if (!keyword) {
-      try {
-        const upsertResult = await upsertArticlePage(account, articles, totalCount, isCompleted);
-        inserted = Number(upsertResult.inserted) || 0;
-
-        if (begin === 0 && inserted > 0) {
-          await updateLastUpdateTime(account.fakeid);
-        }
-      } catch (e) {
-        console.error('写入文章缓存失败:', e);
-      }
-    }
-
-    return [articles, isCompleted, totalCount, pageMessageCount, inserted];
-  } else if (resp.base_resp.ret === 200003) {
-    await handleMpSessionError();
-  } else {
-    const errMsg = normalizeMpErrorMessage(String(resp.base_resp.err_msg || 'unknown error'));
-    throw new Error(`${resp.base_resp.ret}:${errMsg}`);
+  } catch (e) {
+    console.error('写入文章缓存失败:', e);
   }
-  throw new Error('failed to load article list');
+
+  return [page.articles, page.completed, totalCount, page.messageCount, inserted];
 }
 
 export async function subscribeRssFeed(url: string): Promise<RssSyncResult> {
@@ -538,24 +441,5 @@ export async function getComment(commentId: string) {
  * @param begin
  */
 export async function getArticleListWithCredential(fakeid: string, begin = 0) {
-  const targetCredential = credentials.value.find(item => item.biz === fakeid);
-  if (!targetCredential) {
-    throw new Error('target account credential not configured');
-  }
-
-  const resp = await request<ProfileGetMsgResponse>('/api/web/mp/profile_ext_getmsg', {
-    query: {
-      id: fakeid,
-      begin: begin,
-      size: 10,
-      uin: targetCredential.uin,
-      key: targetCredential.key,
-      pass_ticket: targetCredential.pass_ticket,
-    },
-  });
-  if (resp.ret === 0) {
-    return JSON.parse(resp.general_msg_list) as ParsedProfileGetMsg[];
-  } else {
-    throw new Error(`${resp.ret}:${resp.errmsg}`);
-  }
+  return (await requestProfileArticleListPage(fakeid, begin, ARTICLE_LIST_PAGE_SIZE)).articles;
 }

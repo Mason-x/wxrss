@@ -1,102 +1,93 @@
-import { getTokenFromStore } from '~/server/utils/CookieStore';
-import { proxyMpRequest } from '~/server/utils/proxy-request';
+import { parseProfileArticlePage } from '#shared/utils/profile-getmsg';
+import { getAuthKeyFromRequest, proxyMpRequest } from '~/server/utils/proxy-request';
+import type { ProfileGetMsgResponse } from '~/types/profile_getmsg';
 
-interface AppMsgPublishQuery {
+interface ProfileArticleQuery {
   fakeid: string;
   begin?: number;
   size?: number;
   keyword?: string;
 }
 
-export default defineEventHandler(async event => {
-  const token = await getTokenFromStore(event);
+function errorResponse(message: string, ret = -1) {
+  return {
+    base_resp: {
+      ret,
+      err_msg: message,
+    },
+  };
+}
 
-  if (!token) {
-    return {
-      base_resp: {
-        ret: -1,
-        err_msg: '认证信息无效',
-      },
-    };
+export default defineEventHandler(async event => {
+  if (!getAuthKeyFromRequest(event)) {
+    return errorResponse('认证信息无效');
   }
 
-  const query = getQuery<AppMsgPublishQuery>(event);
+  const query = getQuery<ProfileArticleQuery>(event);
   const fakeid = String(query.fakeid || '').trim();
   if (!fakeid) {
-    return {
-      base_resp: {
-        ret: -1,
-        err_msg: 'fakeid不能为空',
-      },
-    };
+    return errorResponse('fakeid 不能为空');
+  }
+  if (String(query.keyword || '').trim()) {
+    return errorResponse('Credential 抓取模式不支持微信端关键词搜索');
   }
 
-  const keyword = String(query.keyword || '').trim();
   const begin = Number(query.begin ?? 0);
   if (!Number.isInteger(begin) || begin < 0) {
-    return {
-      base_resp: {
-        ret: -1,
-        err_msg: 'begin必须是大于等于0的整数',
-      },
-    };
+    return errorResponse('begin 必须是大于等于 0 的整数');
   }
-
   const size = Number(query.size ?? 5);
-  if (!Number.isInteger(size) || size < 0 || size > 20) {
-    return {
-      base_resp: {
-        ret: -1,
-        err_msg: 'size必须是0到20之间的整数',
-      },
-    };
+  if (!Number.isInteger(size) || size < 1 || size > 10) {
+    return errorResponse('size 必须是 1 到 10 之间的整数');
   }
 
-  const isSearching = !!keyword;
+  const uin = String(getHeader(event, 'x-wechat-uin') || '').trim();
+  const key = String(getHeader(event, 'x-wechat-key') || '').trim();
+  const passTicket = String(getHeader(event, 'x-wechat-pass-ticket') || '').trim();
+  if (!uin || !key || !passTicket) {
+    return errorResponse('缺少 x-wechat-uin、x-wechat-key 或 x-wechat-pass-ticket 请求头');
+  }
 
-  const params: Record<string, string | number> = {
-    sub: isSearching ? 'search' : 'list',
-    search_field: isSearching ? '7' : 'null',
-    begin: begin,
-    count: size,
-    query: keyword,
-    fakeid: fakeid,
-    type: '101_1',
-    free_publish_type: 1,
-    sub_action: 'list_ex',
-    token: token,
-    lang: 'zh_CN',
-    f: 'json',
-    ajax: 1,
-  };
+  try {
+    const resp = (await proxyMpRequest({
+      event,
+      method: 'GET',
+      endpoint: 'https://mp.weixin.qq.com/mp/profile_ext',
+      query: {
+        action: 'getmsg',
+        __biz: fakeid,
+        offset: begin,
+        count: size,
+        uin,
+        key,
+        pass_ticket: passTicket,
+        f: 'json',
+        is_ok: '1',
+        scene: '124',
+      },
+      parseJson: true,
+      allowDirect: true,
+      cookie: '',
+    })) as ProfileGetMsgResponse;
 
-  const resp = await proxyMpRequest({
-    event: event,
-    method: 'GET',
-    endpoint: 'https://mp.weixin.qq.com/cgi-bin/appmsgpublish',
-    query: params,
-    parseJson: true,
-  }).catch(e => {
+    if (Number(resp.ret) !== 0) {
+      return errorResponse(String(resp.errmsg || 'Credential 已失效'), Number(resp.ret) || -1);
+    }
+
+    const page = parseProfileArticlePage(resp, fakeid, begin);
     return {
       base_resp: {
-        ret: -1,
-        err_msg: '获取文章列表接口失败，请重试',
+        ret: 0,
+        err_msg: String(resp.errmsg || 'ok'),
       },
+      articles: page.articles,
+      completed: page.completed,
+      total_count: page.nextOffset,
+      page_message_count: page.messageCount,
+      next_offset: page.nextOffset,
     };
-  });
-
-  if (resp.base_resp.ret === 0) {
-    const publish_page = JSON.parse(resp.publish_page);
-    const articles = publish_page.publish_list
-      .filter((item: any) => !!item.publish_info)
-      .flatMap((item: any) => {
-        const publish_info = JSON.parse(item.publish_info);
-        return publish_info.appmsgex;
-      });
-    return {
-      base_resp: resp.base_resp,
-      articles: articles,
-    };
+  } catch (error) {
+    console.error('public profile_ext article request failed:', String((error as Error)?.message || error));
+    return errorResponse('获取文章列表失败，请重试');
   }
-  return resp;
 });

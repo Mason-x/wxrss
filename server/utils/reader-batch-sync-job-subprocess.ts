@@ -6,6 +6,7 @@ import {
   READER_BATCH_SYNC_ACCOUNT_CHILD_SOURCE,
   READER_BATCH_SYNC_JOB_CHILD_SOURCE,
 } from '~/server/utils/runtime-child-sources.generated';
+import type { ProfileCredential } from '~/types/credential';
 
 export interface ReaderBatchSyncJobSubprocessAccount {
   fakeid: string;
@@ -20,16 +21,12 @@ export interface ReaderBatchSyncJobSubprocessAccount {
   create_time?: number;
   update_time?: number;
   last_update_time?: number;
+  credential?: ProfileCredential;
 }
 
 export interface ReaderBatchSyncJobSubprocessInput {
   authKey: string;
   jobId: string;
-  token: string;
-  cookie: string;
-  userAgent: string;
-  privateProxyList: string[];
-  privateProxyAuthorization: string;
   accounts: ReaderBatchSyncJobSubprocessAccount[];
   syncTimestamp: number;
   accountSyncMinSeconds: number;

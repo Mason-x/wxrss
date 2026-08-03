@@ -1,8 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { USER_AGENT } from '~/config';
-import { PRIVATE_PROXY_REQUIRED_MESSAGE, sanitizePrivateProxyList } from '~/config/proxy';
-import { getMpCookie } from '~/server/kv/cookie';
-import { getStoredPreferencesByAuthKey } from '~/server/repositories/preferences';
 import { getAccountByFakeid, type ReaderAccount } from '~/server/repositories/reader';
 import { logMemory } from '~/server/utils/memory-debug';
 import {
@@ -341,13 +337,6 @@ function getPrimaryFailureMessage(job: BatchJobRuntime): string {
   return '';
 }
 
-function buildCookieString(auth: NonNullable<Awaited<ReturnType<typeof getMpCookie>>>): string {
-  return auth.cookies
-    .filter(item => item && item.value && item.value !== 'EXPIRED')
-    .map(item => `${item.name}=${item.value}`)
-    .join('; ');
-}
-
 function normalizeBatchJobAccount(
   account: Partial<ReaderBatchSyncJobSubprocessAccount> | null | undefined
 ): ReaderBatchSyncJobSubprocessAccount | null {
@@ -369,6 +358,15 @@ function normalizeBatchJobAccount(
     create_time: Number(account?.create_time) || 0,
     update_time: Number(account?.update_time) || 0,
     last_update_time: Number(account?.last_update_time) || 0,
+    credential:
+      account?.credential?.uin && account?.credential?.key && account?.credential?.pass_ticket
+        ? {
+            uin: String(account.credential.uin),
+            key: String(account.credential.key),
+            pass_ticket: String(account.credential.pass_ticket),
+            timestamp: Number(account.credential.timestamp) || 0,
+          }
+        : undefined,
   };
 }
 
@@ -453,16 +451,6 @@ function applyChildProgress(job: BatchJobRuntime, progress: ReaderBatchSyncJobSu
 
 async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Promise<void> {
   ensureJobNotCanceled(job);
-  const auth = await getMpCookie(job.authKey);
-  if (!auth?.token || !Array.isArray(auth.cookies) || auth.cookies.length === 0) {
-    throw new Error('session expired');
-  }
-
-  const cookie = buildCookieString(auth);
-  if (!cookie) {
-    throw new Error('session expired');
-  }
-
   const providedAccounts = normalizeBatchJobAccounts(options.accounts);
   const providedAccountMap = new Map(providedAccounts.map(account => [account.fakeid, account]));
   const accounts: ReaderBatchSyncJobSubprocessAccount[] = [];
@@ -485,22 +473,10 @@ async function runBatchJob(job: BatchJobRuntime, options: BatchJobOptions): Prom
     throw new Error('no accounts available for batch sync');
   }
 
-  const storedPreferences = await getStoredPreferencesByAuthKey(job.authKey);
-  const privateProxyList = sanitizePrivateProxyList(storedPreferences.preferences.privateProxyList || []);
-  if (privateProxyList.length === 0) {
-    throw new Error(PRIVATE_PROXY_REQUIRED_MESSAGE);
-  }
-  const privateProxyAuthorization = String(storedPreferences.preferences.privateProxyAuthorization || '').trim();
-
   const controller = startReaderBatchSyncInSubprocess(
     {
       authKey: job.authKey,
       jobId: job.jobId,
-      token: auth.token,
-      cookie,
-      userAgent: USER_AGENT,
-      privateProxyList,
-      privateProxyAuthorization,
       accounts,
       syncTimestamp: options.syncTimestamp,
       accountSyncMinSeconds: options.accountSyncMinSeconds,

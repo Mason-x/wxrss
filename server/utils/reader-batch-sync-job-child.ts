@@ -61,11 +61,6 @@ type ChildOutboundMessage =
 interface ReaderBatchSyncJobChildInput {
   authKey: string;
   jobId: string;
-  token: string;
-  cookie: string;
-  userAgent: string;
-  privateProxyList: string[];
-  privateProxyAuthorization: string;
   accounts: ReaderBatchAccountRecord[];
   syncTimestamp: number;
   accountSyncMinSeconds: number;
@@ -88,15 +83,18 @@ interface ReaderBatchAccountRecord {
   create_time?: number;
   update_time?: number;
   last_update_time?: number;
+  credential?: ProfileCredential;
+}
+
+interface ProfileCredential {
+  uin: string;
+  key: string;
+  pass_ticket: string;
+  timestamp?: number;
 }
 
 interface ReaderBatchAccountSubprocessInput {
   authKey: string;
-  token: string;
-  cookie: string;
-  userAgent: string;
-  privateProxyList: string[];
-  privateProxyAuthorization: string;
   timeoutMs: number;
   maxJsonBytes: number;
   syncTimestamp: number;
@@ -344,16 +342,13 @@ function syncReaderBatchAccountInSubprocess(
       payload: input,
     });
 
-    killTimer = setTimeout(
-      () => {
-        if (settled) {
-          return;
-        }
-        child.kill();
-        finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${accountTimeoutMs})`));
-      },
-      accountTimeoutMs
-    );
+    killTimer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      child.kill();
+      finish(new Error(`account subprocess timeout(fakeid=${input.account.fakeid}, timeoutMs=${accountTimeoutMs})`));
+    }, accountTimeoutMs);
   });
 
   const cancel = () => {
@@ -389,11 +384,6 @@ async function runBatch(payload: ReaderBatchSyncJobChildInput): Promise<void> {
       const controller = syncReaderBatchAccountInSubprocess(
         {
           authKey: payload.authKey,
-          token: payload.token,
-          cookie: payload.cookie,
-          userAgent: payload.userAgent,
-          privateProxyList: payload.privateProxyList,
-          privateProxyAuthorization: payload.privateProxyAuthorization,
           timeoutMs: payload.requestTimeoutMs,
           maxJsonBytes: payload.maxJsonBytes,
           syncTimestamp: payload.syncTimestamp,
@@ -423,10 +413,6 @@ async function runBatch(payload: ReaderBatchSyncJobChildInput): Promise<void> {
         nickname,
         message,
       });
-
-      if (message === 'session expired' || message.includes('200003')) {
-        throw new Error(message);
-      }
     }
   }
 }
