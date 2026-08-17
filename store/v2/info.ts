@@ -52,23 +52,10 @@ function normalizeMpAccount(account: MpAccount): MpAccount {
   };
 }
 
-async function requestAccounts(query: Record<string, string | number>) {
-  try {
-    return await request<AccountListResponse>('/api/web/reader/accounts', {
-      query,
-    });
-  } catch (error: any) {
-    const statusCode = Number(error?.statusCode || error?.response?.status || 0);
-    if (statusCode === 401) {
-      return {
-        list: [],
-        total: 0,
-        offset: Number(query.offset) || 0,
-        limit: Number(query.limit) || 0,
-      };
-    }
-    throw error;
-  }
+async function requestAccounts(query: Record<string, string | number>): Promise<AccountListResponse> {
+  return await request<AccountListResponse>('/api/web/reader/accounts', {
+    query,
+  });
 }
 
 export async function updateInfoCache(mpAccount: MpAccount): Promise<boolean> {
@@ -137,6 +124,10 @@ export async function getInfoCache(fakeid: string): Promise<MpAccount | undefine
 }
 
 export async function getAllInfo(): Promise<MpAccount[]> {
+  if (import.meta.client) {
+    window.localStorage.removeItem('reader-account-directory:v1');
+  }
+
   const pageSize = 200;
   let offset = 0;
   let total = Infinity;

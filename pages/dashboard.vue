@@ -24,7 +24,7 @@
           </header>
 
           <div class="min-h-0 flex-1 overflow-hidden pt-3">
-            <NuxtPage />
+            <NuxtPage :keepalive="dashboardKeepAlive" />
           </div>
         </div>
 
@@ -40,7 +40,7 @@
             </div>
 
             <div class="flex-1 overflow-hidden">
-              <NuxtPage />
+              <NuxtPage :keepalive="dashboardKeepAlive" />
             </div>
           </div>
         </div>
@@ -54,6 +54,9 @@ import GlobalActions from '~/components/dashboard/Actions.vue';
 import SideBar from '~/components/dashboard/SideBar.vue';
 
 const route = useRoute();
+const dashboardKeepAlive = {
+  include: ['dashboard-account'],
+};
 const readerMode = computed(() => route.path.startsWith('/dashboard/reader'));
 const mobileShellStyle = computed(() => ({
   paddingTop: 'max(0.75rem, env(safe-area-inset-top))',

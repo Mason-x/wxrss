@@ -320,6 +320,10 @@ async function resolveReaderOwner(authKey: string) {
   return resolveAccountOwnerScope(authKey);
 }
 
+function getAccessibleOwnerKeys(owner: { ownerKey: string; authKey: string }): string[] {
+  return Array.from(new Set([owner.ownerKey, owner.authKey ? `auth:${owner.authKey}` : ''].filter(Boolean)));
+}
+
 const OWNER_SCOPED_DATA_TABLES = [
   'scheduler_state',
   'scheduler_articles',
@@ -646,15 +650,19 @@ export async function updateLastUpdateTime(authKey: string, fakeid: string): Pro
 
 export async function getAccountByFakeid(authKey: string, fakeid: string): Promise<ReaderAccount | null> {
   const owner = await resolveReaderOwner(authKey);
+  const ownerKeys = getAccessibleOwnerKeys(owner);
   const db = await getSqliteDb();
   const row = await db.get<any>(
     `
     SELECT *
     FROM reader_accounts
-    WHERE owner_key = ? AND fakeid = ?
+    WHERE fakeid = ? AND owner_key IN (${ownerKeys.map(() => '?').join(', ')})
+    ORDER BY CASE WHEN owner_key = ? THEN 0 ELSE 1 END
+    LIMIT 1
     `,
-    owner.ownerKey,
-    fakeid
+    fakeid,
+    ...ownerKeys,
+    owner.ownerKey
   );
   return row ? mapAccountRow(row) : null;
 }
@@ -669,13 +677,14 @@ export async function listAccounts(
     console.error('adopt legacy accounts failed:', error);
   }
   const owner = await resolveReaderOwner(authKey);
+  const ownerKeys = getAccessibleOwnerKeys(owner);
   const db = await getSqliteDb();
   const offset = normalizeOffset(options.offset);
   const limit = normalizeLimit(options.limit, 200, 2000);
   const keyword = (options.keyword || '').trim();
 
-  const where: string[] = ['owner_key = ?'];
-  const params: any[] = [owner.ownerKey];
+  const where: string[] = [`owner_key IN (${ownerKeys.map(() => '?').join(', ')})`];
+  const params: any[] = [...ownerKeys];
 
   if (keyword) {
     where.push('(nickname LIKE ? OR source_url LIKE ? OR site_url LIKE ?)');
@@ -712,8 +721,19 @@ export async function listAccounts(
     offset
   );
 
+  const seen = new Set<string>();
+  const list = rows
+    .map(mapAccountRow)
+    .filter(account => {
+      if (!account.fakeid || seen.has(account.fakeid)) {
+        return false;
+      }
+      seen.add(account.fakeid);
+      return true;
+    });
+
   return {
-    list: rows.map(mapAccountRow),
+    list,
     total,
     offset,
     limit,

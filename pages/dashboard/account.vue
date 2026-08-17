@@ -50,6 +50,10 @@ import type { AccountInfo } from '~/types/types';
 import { exportAccountJsonFile } from '~/utils/exporter';
 import { createBooleanColumnFilterParams, createDateColumnFilterParams } from '~/utils/grid';
 
+defineOptions({
+  name: 'dashboard-account',
+});
+
 useHead({
   title: `公众号管理 | ${websiteName}`,
 });
@@ -127,9 +131,9 @@ const aiAutoSummaryOnSyncEnabled = computed(() => preferences.value.aiAutoSummar
 
 // 账号事件总线，用于和 Credentials 面板保持列表同步
 const { accountEventBus } = useAccountEventBus();
-accountEventBus.on(event => {
+const stopAccountEventBus = accountEventBus.on(event => {
   if (event === 'account-added' || event === 'account-removed') {
-    refresh();
+    void refresh();
   }
 });
 
@@ -620,12 +624,18 @@ function restoreColumnState() {
 }
 
 async function refresh() {
+  const hadRows = globalRowData.value.length > 0;
   try {
-    globalRowData.value = (await getAllInfo()).map(buildAccountRow);
+    const list = (await getAllInfo()).map(buildAccountRow);
+    globalRowData.value = list;
     gridApi.value?.setGridOption('rowData', globalRowData.value);
     const rowIdSet = new Set(globalRowData.value.map(row => row.fakeid));
     selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
   } catch (error: any) {
+    if (hadRows) {
+      listLoading.value = false;
+      return;
+    }
     const statusCode = Number(error?.statusCode || error?.response?.status || 0);
     if (statusCode === 401) {
       void navigateToLogin(route.fullPath);
@@ -1125,11 +1135,15 @@ watch(
 );
 
 onMounted(() => {
-  void refresh();
   void syncRemoteBatchSyncStatus();
 });
 
+onActivated(() => {
+  void refresh();
+});
+
 onUnmounted(() => {
+  stopAccountEventBus();
   clearRemoteBatchSyncPollTimer();
 });
 
