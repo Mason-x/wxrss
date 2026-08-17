@@ -320,6 +320,125 @@ async function resolveReaderOwner(authKey: string) {
   return resolveAccountOwnerScope(authKey);
 }
 
+const OWNER_SCOPED_DATA_TABLES = [
+  'scheduler_state',
+  'scheduler_articles',
+  'reader_accounts',
+  'reader_articles',
+  'reader_ai_reports',
+  'cache_html',
+  'cache_comment',
+  'cache_resource',
+  'cache_metadata',
+  'cache_resource_map',
+  'cache_asset',
+  'cache_comment_reply',
+  'cache_debug',
+] as const;
+
+async function listUnboundAuthOwnerKeys(db: Awaited<ReturnType<typeof getSqliteDb>>): Promise<string[]> {
+  const boundRows = await db.all<{ auth_key: string }>(
+    `
+    SELECT DISTINCT auth_key
+    FROM mp_account_identity
+    WHERE TRIM(COALESCE(auth_key, '')) <> ''
+    `
+  );
+  const boundAuthKeys = new Set(boundRows.map(row => String(row.auth_key || '').trim()).filter(Boolean));
+  const sourceRows = await db.all<{ owner_key: string; auth_key: string }>(
+    `
+    SELECT DISTINCT owner_key, auth_key
+    FROM reader_accounts
+    WHERE owner_key LIKE 'auth:%'
+    `
+  );
+  return sourceRows
+    .filter(row => {
+      const authKey = String(row.auth_key || '').trim();
+      return Boolean(authKey) && !boundAuthKeys.has(authKey);
+    })
+    .map(row => String(row.owner_key || '').trim())
+    .filter(Boolean);
+}
+
+async function reassignOwnerScopedRows(
+  db: Awaited<ReturnType<typeof getSqliteDb>>,
+  sourceOwnerKey: string,
+  owner: { ownerKey: string; identityKey: string; authKey: string }
+): Promise<void> {
+  if (!sourceOwnerKey || sourceOwnerKey === owner.ownerKey) {
+    return;
+  }
+
+  for (const tableName of OWNER_SCOPED_DATA_TABLES) {
+    const destExists = await db.get<{ present: number }>(
+      `
+      SELECT 1 AS present
+      FROM ${tableName}
+      WHERE owner_key = ?
+      LIMIT 1
+      `,
+      owner.ownerKey
+    );
+    if (destExists) {
+      continue;
+    }
+
+    await db.run(
+      `
+      UPDATE ${tableName}
+      SET owner_key = ?, identity_key = ?, auth_key = ?
+      WHERE owner_key = ?
+      `,
+      owner.ownerKey,
+      owner.identityKey,
+      owner.authKey,
+      sourceOwnerKey
+    );
+  }
+}
+
+async function adoptLegacyOwnerScopedData(authKey: string): Promise<void> {
+  const owner = await resolveReaderOwner(authKey);
+  if (!owner.identityKey) {
+    return;
+  }
+
+  const db = await getSqliteDb();
+  const current = await db.get<{ total: number }>(
+    `
+    SELECT COUNT(1) AS total
+    FROM reader_accounts
+    WHERE owner_key = ?
+    `,
+    owner.ownerKey
+  );
+  if (Number(current?.total) > 0) {
+    return;
+  }
+
+  const sourceKeys = new Set<string>([`auth:${owner.authKey}`]);
+  for (const sourceKey of await listUnboundAuthOwnerKeys(db)) {
+    sourceKeys.add(sourceKey);
+  }
+  sourceKeys.delete(owner.ownerKey);
+
+  if (sourceKeys.size === 0) {
+    return;
+  }
+
+  await db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const sourceKey of sourceKeys) {
+      await reassignOwnerScopedRows(db, sourceKey, owner);
+    }
+    await db.exec('COMMIT');
+  } catch (error) {
+    await db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 async function applyAccountDelta(
   authKey: string,
   payload: Partial<ReaderAccount> & { fakeid: string; total_count?: number; completed?: boolean },
@@ -544,6 +663,11 @@ export async function listAccounts(
   authKey: string,
   options: { offset?: number; limit?: number; keyword?: string } = {}
 ): Promise<{ list: ReaderAccount[]; total: number; offset: number; limit: number }> {
+  try {
+    await adoptLegacyOwnerScopedData(authKey);
+  } catch (error) {
+    console.error('adopt legacy accounts failed:', error);
+  }
   const owner = await resolveReaderOwner(authKey);
   const db = await getSqliteDb();
   const offset = normalizeOffset(options.offset);

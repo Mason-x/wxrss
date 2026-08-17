@@ -118,6 +118,7 @@ const modal = useModal();
 const { checkLogin } = useLoginCheck();
 const route = useRoute();
 const { navigateToLogin } = useMpAuth();
+const loginAccount = useLoginAccount();
 
 const { getSyncTimestamp } = useSyncDeadline();
 
@@ -408,6 +409,7 @@ async function loadSelectedAccountArticle() {
 }
 
 const globalRowData = ref<AccountRow[]>([]);
+const listLoading = ref(true);
 
 const columnDefs = ref<ColDef[]>([
   {
@@ -583,7 +585,6 @@ function onGridReady(params: GridReadyEvent) {
       node.setSelected(idSet.has(String(node.data?.fakeid)));
     });
   }
-  refresh();
 }
 
 function onColumnStateChange() {
@@ -636,6 +637,8 @@ async function refresh() {
         ? '服务进程内存接近上限，已自动停止同步，请稍后重试或重启开发服务'
         : rawMessage;
     toast.error('加载公众号失败', message);
+  } finally {
+    listLoading.value = false;
   }
 }
 
@@ -1112,7 +1115,17 @@ watch(selectedRowIds, ids => {
   });
 });
 
+watch(
+  () => Boolean(loginAccount.value),
+  loggedIn => {
+    if (loggedIn) {
+      void refresh();
+    }
+  }
+);
+
 onMounted(() => {
+  void refresh();
   void syncRemoteBatchSyncStatus();
 });
 
@@ -1356,9 +1369,11 @@ const { getActualDateRange } = useSyncDeadline();
       </header>
 
       <div class="min-h-0 flex-1">
-        <div
-          v-if="globalRowData.length === 0"
-        >
+        <div v-if="listLoading" class="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+          正在加载公众号列表...
+        </div>
+
+        <div v-else-if="globalRowData.length === 0">
           <EmptyStatePanel
             icon="i-lucide-users"
             title="还没有公众号账号"
