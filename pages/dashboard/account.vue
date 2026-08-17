@@ -414,6 +414,7 @@ async function loadSelectedAccountArticle() {
 
 const globalRowData = ref<AccountRow[]>([]);
 const listLoading = ref(true);
+let refreshSeq = 0;
 
 const columnDefs = ref<ColDef[]>([
   {
@@ -625,13 +626,20 @@ function restoreColumnState() {
 
 async function refresh() {
   const hadRows = globalRowData.value.length > 0;
+  const seq = ++refreshSeq;
   try {
     const list = (await getAllInfo()).map(buildAccountRow);
+    if (seq !== refreshSeq) {
+      return;
+    }
     globalRowData.value = list;
     gridApi.value?.setGridOption('rowData', globalRowData.value);
     const rowIdSet = new Set(globalRowData.value.map(row => row.fakeid));
     selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
   } catch (error: any) {
+    if (seq !== refreshSeq) {
+      return;
+    }
     if (hadRows) {
       listLoading.value = false;
       return;
@@ -1131,10 +1139,12 @@ watch(
     if (loggedIn) {
       void refresh();
     }
-  }
+  },
+  { immediate: true }
 );
 
 onMounted(() => {
+  void refresh();
   void syncRemoteBatchSyncStatus();
 });
 
@@ -1383,7 +1393,10 @@ const { getActualDateRange } = useSyncDeadline();
       </header>
 
       <div class="min-h-0 flex-1">
-        <div v-if="listLoading" class="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+        <div
+          v-if="listLoading && globalRowData.length === 0"
+          class="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400"
+        >
           正在加载公众号列表...
         </div>
 
