@@ -12,14 +12,21 @@ import type {
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
-import { request } from '#shared/utils/request';
 import { formatTimeStamp } from '#shared/utils/helpers';
+import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
-import { bootstrapAccountAi, getArticleList, INITIAL_SUBSCRIBE_PAGE_SIZE, syncRssFeed } from '~/apis';
+import {
+  bootstrapAccountAi,
+  getArticleList,
+  hasValidCredential,
+  INITIAL_SUBSCRIBE_PAGE_SIZE,
+  syncRssFeed,
+} from '~/apis';
+import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
 import GridAccountActions from '~/components/grid/AccountActions.vue';
-import GridLoadProgress from '~/components/grid/LoadProgress.vue';
 import GridAccountSyncStatus from '~/components/grid/AccountSyncStatus.vue';
+import GridLoadProgress from '~/components/grid/LoadProgress.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
@@ -44,7 +51,7 @@ import { exportAccountJsonFile } from '~/utils/exporter';
 import { createBooleanColumnFilterParams, createDateColumnFilterParams } from '~/utils/grid';
 
 useHead({
-  title: `订阅源管理 | ${websiteName}`,
+  title: `公众号管理 | ${websiteName}`,
 });
 
 interface PromiseInstance {
@@ -126,6 +133,9 @@ accountEventBus.on(event => {
 });
 
 const searchAccountDialogRef = ref<typeof GlobalSearchAccountDialog | null>(null);
+const credentialsDialogOpen = ref(false);
+const credentialState = ref<CredentialState>('inactive');
+const credentialPendingCount = ref(0);
 
 const addBtnLoading = ref(false);
 function addAccount() {
@@ -133,7 +143,16 @@ function addAccount() {
 
   searchAccountDialogRef.value!.open();
 }
+function openCredentialsDialog() {
+  credentialsDialogOpen.value = true;
+}
 async function onSelectAccount(account: MpAccount | AccountInfo) {
+  if (!isRssAccount(account) && !hasValidCredential(account.fakeid)) {
+    toast.warning('请先导入 Credential', `添加【${account.nickname}】需要先导入该公众号的 Credential`);
+    openCredentialsDialog();
+    return;
+  }
+
   addBtnLoading.value = true;
   try {
     if (!isRssAccount(account)) {
@@ -149,7 +168,11 @@ async function onSelectAccount(account: MpAccount | AccountInfo) {
     );
     accountEventBus.emit('account-added', { fakeid: account.fakeid });
   } catch (error: any) {
-    toast.error(isRssAccount(account) ? '添加 RSS 失败' : '添加公众号失败', String(error?.message || '未知错误'));
+    const message = String(error?.message || '未知错误');
+    toast.error(isRssAccount(account) ? '添加 RSS 失败' : '添加公众号失败', message);
+    if (message.includes('Credential')) {
+      openCredentialsDialog();
+    }
   } finally {
     addBtnLoading.value = false;
   }
@@ -170,6 +193,9 @@ const lastRemoteBatchTerminalKey = ref('');
 const syncingRowId = ref<string | null>(null);
 
 const syncTimer = ref<number | null>(null);
+const { scrapeUncachedAccountHtml, stop: stopArticleScrape } = useSyncArticleScraper({
+  isCanceled: () => isCanceled.value,
+});
 
 async function _load(
   account: MpAccount,
@@ -285,7 +311,7 @@ async function loadAccountArticle(account: MpAccount, loadMore = true, initialPa
     }
   }
 
-  return new Promise((resolve, reject) => {
+  const syncedAccount = await new Promise<MpAccount>((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
 
     _load(account, 0, loadMore, promise, initialPageSize).catch(e => {
@@ -301,6 +327,11 @@ async function loadAccountArticle(account: MpAccount, loadMore = true, initialPa
       reject(e);
     });
   });
+
+  if (!isCanceled.value) {
+    await scrapeUncachedAccountHtml(account.fakeid, account.nickname || account.fakeid);
+  }
+  return syncedAccount;
 }
 
 // 同步所有公众号
@@ -712,7 +743,11 @@ function setAccountRuntimeSyncRunning(
   syncAccountRuntimeStateToRow(account.fakeid);
 }
 
-function setAccountRuntimeSyncError(fakeid: string, message: string, source: AccountSyncRuntimeState['source'] = 'local') {
+function setAccountRuntimeSyncError(
+  fakeid: string,
+  message: string,
+  source: AccountSyncRuntimeState['source'] = 'local'
+) {
   const current = globalRowData.value.find(item => item.fakeid === fakeid);
   const previous = accountRuntimeSyncStates[fakeid];
   accountRuntimeSyncStates[fakeid] = {
@@ -850,10 +885,13 @@ function scheduleRemoteBatchSyncPoll(delayMs: number) {
     return;
   }
   clearRemoteBatchSyncPollTimer();
-  remoteBatchSyncPollTimer.value = window.setTimeout(() => {
-    remoteBatchSyncPollTimer.value = null;
-    void syncRemoteBatchSyncStatus();
-  }, Math.max(1000, delayMs || 3000));
+  remoteBatchSyncPollTimer.value = window.setTimeout(
+    () => {
+      remoteBatchSyncPollTimer.value = null;
+      void syncRemoteBatchSyncStatus();
+    },
+    Math.max(1000, delayMs || 3000)
+  );
 }
 
 function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | null) {
@@ -863,10 +901,16 @@ function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | nul
       ? String(snapshot.currentAccount.fakeid || '')
       : '';
   const nextFailedFakeids = new Set(
-    (Array.isArray(snapshot?.failedAccounts) ? snapshot.failedAccounts : []).map(account => String(account.fakeid || ''))
+    (Array.isArray(snapshot?.failedAccounts) ? snapshot.failedAccounts : []).map(account =>
+      String(account.fakeid || '')
+    )
   );
 
-  if (previousRunningFakeid && previousRunningFakeid !== nextRunningFakeid && !nextFailedFakeids.has(previousRunningFakeid)) {
+  if (
+    previousRunningFakeid &&
+    previousRunningFakeid !== nextRunningFakeid &&
+    !nextFailedFakeids.has(previousRunningFakeid)
+  ) {
     clearRemoteAccountRuntimeSyncState(previousRunningFakeid);
   }
 
@@ -961,8 +1005,9 @@ async function syncRemoteBatchSyncStatus() {
 
     scheduleRemoteBatchSyncPoll(REMOTE_BATCH_SYNC_IDLE_POLL_MS);
   } catch (error) {
-    const statusCode = Number((error as { statusCode?: number; response?: { status?: number } })?.statusCode || 0)
-      || Number((error as { response?: { status?: number } })?.response?.status || 0);
+    const statusCode =
+      Number((error as { statusCode?: number; response?: { status?: number } })?.statusCode || 0) ||
+      Number((error as { response?: { status?: number } })?.response?.status || 0);
     if (statusCode === 401) {
       applyRemoteBatchSyncSnapshot(null);
       return;
@@ -1032,6 +1077,7 @@ async function bootstrapAiAfterAddingAccount(fakeid: string) {
 function stopSync() {
   const activeFakeid = syncingRowId.value;
   isCanceled.value = true;
+  stopArticleScrape();
   if (syncTimer.value) {
     window.clearTimeout(syncTimer.value);
     syncTimer.value = null;
@@ -1158,7 +1204,7 @@ const { getActualDateRange } = useSyncDeadline();
 <template>
   <div class="h-full">
     <Teleport defer to="#title">
-      <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">订阅源管理</h1>
+      <h1 class="text-[28px] leading-[34px] text-slate-12 dark:text-slate-50 font-bold">公众号管理</h1>
     </Teleport>
 
     <div class="flex h-full flex-col divide-y divide-gray-200 dark:divide-slate-800">
@@ -1173,6 +1219,15 @@ const { getActualDateRange } = useSyncDeadline();
               @click="addAccount"
             >
               {{ addBtnLoading ? '添加中...' : '添加账号' }}
+            </UButton>
+            <UButton
+              size="sm"
+              icon="i-lucide:key-round"
+              color="gray"
+              variant="soft"
+              @click="openCredentialsDialog"
+            >
+              导入 Credential<span v-if="credentialPendingCount > 0">（{{ credentialPendingCount }}）</span>
             </UButton>
             <UButton
               class="hidden md:inline-flex"
@@ -1487,7 +1542,16 @@ const { getActualDateRange } = useSyncDeadline();
     </div>
 
     <ScrollTopFab :visible="showScrollTop" @click="scrollMobileListToTop" />
-    <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
+    <CredentialsDialog
+      v-model:open="credentialsDialogOpen"
+      v-model:state="credentialState"
+      @update:pending-count="credentialPendingCount = $event"
+    />
+    <GlobalSearchAccountDialog
+      ref="searchAccountDialogRef"
+      @select:account="onSelectAccount"
+      @request:credentials="openCredentialsDialog"
+    />
   </div>
 </template>
 

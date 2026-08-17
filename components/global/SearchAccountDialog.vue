@@ -69,6 +69,21 @@
           </button>
         </div>
 
+        <div
+          v-if="mode === 'mp'"
+          class="mb-3 rounded-2xl border px-3 py-2 text-[11px] leading-5"
+          :class="
+            hasAnyValidCredential()
+              ? 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
+              : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+          "
+        >
+          添加公众号需要先导入该号的 Credential。搜索只能找到账号，真正同步文章列表必须有有效凭据。
+          <button type="button" class="ml-1 font-medium underline underline-offset-2" @click="requestCredentials">
+            去导入
+          </button>
+        </div>
+
         <SearchAccountForm v-if="mode === 'mp'" v-model="accountQuery" @search="searchAccount" />
 
         <form v-else class="space-y-3" @submit.prevent="handleRssPrimaryAction">
@@ -690,6 +705,7 @@ import { Loader } from 'lucide-vue-next';
 import {
   getAccountList,
   getNewrankMpRecommendations,
+  hasAnyValidCredential,
   type NewrankMpCategoryItem,
   type NewrankMpRecommendationItem,
   type RsshubCategoryItem,
@@ -819,6 +835,7 @@ const dialogBackGesture = reactive({
 
 const emit = defineEmits<{
   'select:account': [account: AccountInfo | MpAccount];
+  'request:credentials': [];
 }>();
 
 const accountQuery = ref('');
@@ -1537,6 +1554,11 @@ async function submitSelectedRsshubRoute() {
       icon: 'i-octicon:alert-24',
     });
   }
+}
+
+function requestCredentials() {
+  isOpen.value = false;
+  emit('request:credentials');
 }
 
 function selectAccount(account: AccountInfo | MpAccount) {

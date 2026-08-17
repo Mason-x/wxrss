@@ -146,6 +146,29 @@ export async function getHtmlCache(authKey: string, url: string): Promise<HtmlCa
   };
 }
 
+export async function listUncachedArticleUrls(authKey: string, fakeid: string, limit = 200): Promise<string[]> {
+  const owner = await resolveCacheOwner(authKey);
+  const db = await getSqliteDb();
+  const safeLimit = Math.min(500, Math.max(1, Number(limit) || 200));
+  const rows = await db.all<{ link: string }>(
+    `
+    SELECT a.link
+    FROM reader_articles a
+    LEFT JOIN cache_html h ON h.owner_key = a.owner_key AND h.url = a.link
+    WHERE a.owner_key = ?
+      AND a.fakeid = ?
+      AND TRIM(COALESCE(a.link, '')) != ''
+      AND h.url IS NULL
+    ORDER BY a.update_time DESC, a.create_time DESC
+    LIMIT ?
+    `,
+    owner.ownerKey,
+    fakeid,
+    safeLimit
+  );
+  return rows.map(row => String(row.link || '').trim()).filter(Boolean);
+}
+
 export async function deleteHtmlCache(authKey: string, url: string): Promise<boolean> {
   const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();

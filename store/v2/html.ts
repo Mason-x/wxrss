@@ -94,6 +94,16 @@ export async function getHtmlCache(url: string): Promise<HtmlAsset | undefined> 
   return local;
 }
 
+export async function listUncachedArticleUrls(fakeid: string, limit = 200): Promise<string[]> {
+  const resp = await request<{ urls?: string[] }>('/api/web/reader/uncached-html', {
+    query: {
+      fakeid,
+      limit,
+    },
+  });
+  return Array.isArray(resp.urls) ? resp.urls.map(url => String(url || '').trim()).filter(Boolean) : [];
+}
+
 export async function deleteHtmlCache(url: string): Promise<boolean> {
   try {
     await request('/api/web/cache/html-delete', {

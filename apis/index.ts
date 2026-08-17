@@ -1,6 +1,6 @@
 ﻿import { parseProfileArticlePage } from '#shared/utils/profile-getmsg';
 import { request } from '#shared/utils/request';
-import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE } from '~/config';
+import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE, CREDENTIAL_LIVE_MINUTES } from '~/config';
 import type { ReaderArticle } from '~/server/repositories/reader';
 import { upsertArticlePage } from '~/store/v2/article';
 import { type MpAccount, updateLastUpdateTime } from '~/store/v2/info';
@@ -143,10 +143,31 @@ const FIRST_PAGE_PROBE_SIZE = 1;
 export const INITIAL_SUBSCRIBE_PAGE_SIZE = 20;
 const MIN_SAFE_ARTICLE_PAGE_SIZE = 1;
 
+function isCredentialFresh(item?: ParsedCredential | null): boolean {
+  return Boolean(
+    item?.uin &&
+      item?.key &&
+      item?.pass_ticket &&
+      Date.now() < Number(item.timestamp || 0) + 1000 * 60 * CREDENTIAL_LIVE_MINUTES
+  );
+}
+
+export function hasValidCredential(fakeid: string): boolean {
+  const target = credentials.value.find(item => item.biz === fakeid);
+  const valid = isCredentialFresh(target);
+  if (target) {
+    target.valid = valid;
+  }
+  return valid;
+}
+
+export function hasAnyValidCredential(): boolean {
+  return credentials.value.some(item => isCredentialFresh(item));
+}
+
 function getValidCredential(fakeid: string): ParsedCredential {
   const target = credentials.value.find(item => item.biz === fakeid);
-  const valid = Boolean(target && Date.now() < Number(target.timestamp || 0) + 1000 * 60 * 25);
-  if (!target || !valid || !target.uin || !target.key || !target.pass_ticket) {
+  if (!target || !isCredentialFresh(target)) {
     if (target) {
       target.valid = false;
     }

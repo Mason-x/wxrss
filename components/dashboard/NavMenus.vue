@@ -13,6 +13,7 @@ const items = computed<NavItem[]>(() => {
   const isAdmin = loginAccount.value?.role === 'admin';
   const list: NavItem[] = [
     { name: '阅读', icon: 'i-lucide:newspaper', href: '/dashboard/reader' },
+    { name: '公众号管理', icon: 'i-lucide:users', href: '/dashboard/account' },
     { name: '单篇', icon: 'i-lucide:file-text', href: '/dashboard/single' },
     { name: '文章', icon: 'i-lucide:table-properties', href: '/dashboard/article' },
     { name: '设置', icon: 'i-lucide:settings-2', href: '/dashboard/settings' },

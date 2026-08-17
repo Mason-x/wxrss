@@ -70,6 +70,7 @@ const standaloneMode = computed(() => readerMode.value || embeddedMode.value);
 
 const mobileCurrentTitle = computed(() => {
   if (route.path === '/dashboard/reader') return '阅读';
+  if (route.path === '/dashboard/account') return '公众号管理';
   if (route.path === '/dashboard/single') return '单篇';
   if (route.path === '/dashboard/article') return '文章';
   if (route.path === '/dashboard/settings') return '设置';

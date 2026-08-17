@@ -23,6 +23,7 @@ import {
   getAiDailyReport,
   getArticleList,
   getReaderArticleByLink,
+  hasValidCredential,
   INITIAL_SUBSCRIBE_PAGE_SIZE,
   listAiDailyReports,
   refreshAiDailyDigest,
@@ -299,6 +300,9 @@ const addBtnLoading = ref(false);
 const isDeleting = ref(false);
 const isSyncing = ref(false);
 const isCanceled = ref(false);
+const { scrapeUncachedAccountHtml } = useSyncArticleScraper({
+  isCanceled: () => isCanceled.value,
+});
 const syncingRowId = ref<string | null>(null);
 const syncTimer = ref<number | null>(null);
 const logoutBtnLoading = ref(false);
@@ -1285,7 +1289,7 @@ function normalizeSyncArticle(account: MpAccount, article: any): ReaderArticle {
     round_head_img: account.round_head_img || '',
     _status: String(article?._status || ''),
     is_deleted: Boolean(article?.is_deleted),
-    contentDownload: false,
+    contentDownload: Boolean(article?.contentDownload),
     commentDownload: false,
   } as ReaderArticle;
 }
@@ -2911,7 +2915,7 @@ async function loadArticlePage(
       accountName: item.accountName || findAccount(item.fakeid)?.nickname || item.fakeid,
       category: item.category || normalizeCategory(findAccount(item.fakeid) || ({ category: '' } as MpAccount)),
       round_head_img: item.round_head_img || findAccount(item.fakeid)?.round_head_img || '',
-      contentDownload: false,
+      contentDownload: Boolean(item.contentDownload),
       commentDownload: false,
     }));
 
@@ -3891,10 +3895,27 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
   selectedArticleHtml.value = '';
   contentLoading.value = true;
   const preferCachedHtml = String(article.fakeid || '').startsWith('rss:');
-  const shouldAvoidRemoteFetch = preferCachedHtml || isSyncing.value;
 
   try {
-    if (!shouldAvoidRemoteFetch) {
+    const cachedHtml = await loadCachedArticleHtml(article);
+    if (cachedHtml) {
+      selectedArticleHtml.value = cachedHtml;
+      article.contentDownload = true;
+      return;
+    }
+
+    if (isSyncing.value) {
+      selectedArticleHtml.value = SYNC_BLOCKED_ARTICLE_HTML;
+      return;
+    }
+
+    if (preferCachedHtml) {
+      selectedArticleHtml.value =
+        '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>';
+      return;
+    }
+
+    try {
       const html = await request<string>('/api/public/v1/download', {
         query: {
           url: article.link,
@@ -3902,35 +3923,34 @@ async function openArticle(article: ReaderArticle, options: { trackHistory?: boo
         },
       });
       selectedArticleHtml.value = stripWechatHeader(html);
-      contentLoading.value = false;
-      return;
+    } catch {
+      selectedArticleHtml.value =
+        '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
     }
   } catch {
-    // Fall through to cached html.
+    selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
+  } finally {
+    contentLoading.value = false;
+  }
+}
+
+async function loadCachedArticleHtml(article: ReaderArticle): Promise<string> {
+  if (!article?.link) {
+    return '';
   }
 
   try {
-    try {
-      const htmlCache = await getHtmlCache(article.link);
-      if (htmlCache) {
-        const rawHtml = await htmlCache.file.text();
-        selectedArticleHtml.value = preferCachedHtml
-          ? stripWechatHeader(normalizeCachedRssHtml(rawHtml))
-          : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
-      } else {
-        if (!preferCachedHtml && isSyncing.value) {
-          selectedArticleHtml.value = SYNC_BLOCKED_ARTICLE_HTML;
-        } else {
-          selectedArticleHtml.value = preferCachedHtml
-            ? '<div style="padding: 24px; color: #64748b;">内容加载失败，请先重新同步这个 RSS 订阅后再试。</div>'
-            : '<div style="padding: 24px; color: #64748b;">内容加载失败，请先在“文章列表”的抓取菜单中下载文章内容后再阅读。</div>';
-        }
-      }
-    } catch {
-      selectedArticleHtml.value = '<div style="padding: 24px; color: #64748b;">内容加载失败，请稍后重试。</div>';
+    const htmlCache = await getHtmlCache(article.link);
+    if (!htmlCache) {
+      return '';
     }
-  } finally {
-    contentLoading.value = false;
+    const rawHtml = await htmlCache.file.text();
+    const preferCachedHtml = String(article.fakeid || '').startsWith('rss:');
+    return preferCachedHtml
+      ? stripWechatHeader(normalizeCachedRssHtml(rawHtml))
+      : stripWechatHeader(normalizeHtml(rawHtml, 'html'));
+  } catch {
+    return '';
   }
 }
 
@@ -4297,21 +4317,12 @@ async function loadArticleSummarySourceHtml(article: ReaderArticle): Promise<str
     return selectedArticleHtml.value;
   }
 
-  const isRss = String(article.fakeid || '').startsWith('rss:');
-  if (isRss) {
-    try {
-      const htmlCache = await getHtmlCache(article.link);
-      if (htmlCache) {
-        const rawHtml = await htmlCache.file.text();
-        return stripWechatHeader(normalizeCachedRssHtml(rawHtml));
-      }
-    } catch {
-      return '';
-    }
-    return '';
+  const cachedHtml = await loadCachedArticleHtml(article);
+  if (cachedHtml) {
+    return cachedHtml;
   }
 
-  if (isSyncing.value) {
+  if (String(article.fakeid || '').startsWith('rss:') || isSyncing.value) {
     return '';
   }
 
@@ -5019,6 +5030,12 @@ function addAccount() {
 }
 
 async function onSelectAccount(account: AccountInfo | MpAccount) {
+  if (!isRssAccount(account as MpAccount) && !hasValidCredential(account.fakeid)) {
+    toast.warning('请先导入 Credential', `添加【${account.nickname}】需要先导入该公众号的 Credential`);
+    credentialsDialogOpen.value = true;
+    return;
+  }
+
   addBtnLoading.value = true;
   try {
     if (!isRssAccount(account as MpAccount)) {
@@ -5051,7 +5068,11 @@ async function onSelectAccount(account: AccountInfo | MpAccount) {
     }
     accountEventBus.emit('account-added', { fakeid: account.fakeid });
   } catch (error) {
-    toast.error(isRssAccount(account as MpAccount) ? '添加 RSS 失败' : '添加公众号失败', (error as Error).message);
+    const message = (error as Error).message;
+    toast.error(isRssAccount(account as MpAccount) ? '添加 RSS 失败' : '添加公众号失败', message);
+    if (message.includes('Credential')) {
+      credentialsDialogOpen.value = true;
+    }
   } finally {
     addBtnLoading.value = false;
   }
@@ -5360,7 +5381,7 @@ async function loadAccountArticle(
     }
   }
 
-  return new Promise((resolve, reject) => {
+  const syncedAccount = await new Promise((resolve, reject) => {
     const promise: PromiseInstance = { resolve, reject };
     _load(account, 0, loadMore, promise, {
       ...options,
@@ -5379,6 +5400,11 @@ async function loadAccountArticle(
       reject(e);
     });
   });
+
+  if (!isCanceled.value) {
+    await scrapeUncachedAccountHtml(account.fakeid, account.nickname || account.fakeid);
+  }
+  return syncedAccount;
 }
 
 function applyRemoteBatchSyncSnapshot(snapshot: RemoteBatchSyncJobSnapshot | null) {
@@ -5703,6 +5729,33 @@ async function syncAllAccountsInCurrentScope() {
         5000
       );
       toast.warning('部分同步失败', failedDetails || `成功 ${totalSuccessCount} 个，失败 ${totalFailedCount} 个`);
+    }
+
+    if (!isCanceled.value && mpTargets.length > 0 && totalSuccessCount > 0) {
+      const failedFakeids = new Set(
+        (Array.isArray(finalSnapshot?.failedAccounts) ? finalSnapshot.failedAccounts : []).map(account =>
+          String(account.fakeid || '')
+        )
+      );
+      let scrapedCompleted = 0;
+      let scrapedFailed = 0;
+      for (const account of mpTargets) {
+        if (isCanceled.value || failedFakeids.has(account.fakeid)) {
+          continue;
+        }
+        const result = await scrapeUncachedAccountHtml(account.fakeid, account.nickname || account.fakeid, {
+          silent: true,
+        });
+        scrapedCompleted += result.completed;
+        scrapedFailed += result.failed;
+      }
+      if (scrapedCompleted > 0 || scrapedFailed > 0) {
+        if (scrapedFailed > 0) {
+          toast.warning('正文抓取完成（部分失败）', `成功 ${scrapedCompleted} 篇，失败 ${scrapedFailed} 篇`);
+        } else {
+          toast.success('正文抓取完成', `已抓取 ${scrapedCompleted} 篇文章内容`);
+        }
+      }
     }
   } finally {
     batchSyncProgress.value = {
@@ -7660,7 +7713,11 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <GlobalSearchAccountDialog ref="searchAccountDialogRef" @select:account="onSelectAccount" />
+    <GlobalSearchAccountDialog
+      ref="searchAccountDialogRef"
+      @select:account="onSelectAccount"
+      @request:credentials="credentialsDialogOpen = true"
+    />
 
     <UModal
       v-model="articleSummaryDialogOpen"

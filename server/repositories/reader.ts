@@ -179,6 +179,7 @@ function mapArticleLiteRow(row: any): ReaderArticle {
     ai_summary: String(row.ai_summary || ''),
     ai_tags: resolveArticleAiTags(row.ai_tags_json, row.ai_summary),
     is_deleted: Boolean(row.is_deleted),
+    contentDownload: Boolean(row.content_download),
     round_head_img: row.account_round_head_img || '',
   };
 }
@@ -1243,11 +1244,13 @@ export async function listArticlesPage(
       a.ai_tags_json,
       a.is_deleted,
       a.status,
+      CASE WHEN h.url IS NULL THEN 0 ELSE 1 END AS content_download,
       ac.nickname AS account_nickname,
       ac.category AS account_category,
       ac.round_head_img AS account_round_head_img
     FROM reader_articles a
     LEFT JOIN reader_accounts ac ON ac.owner_key = a.owner_key AND ac.fakeid = a.fakeid
+    LEFT JOIN cache_html h ON h.owner_key = a.owner_key AND h.url = a.link
     WHERE ${whereSql}
     ORDER BY a.update_time DESC, a.create_time DESC
     LIMIT ? OFFSET ?
