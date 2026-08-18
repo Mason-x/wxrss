@@ -1,4 +1,17 @@
 ﻿<script setup lang="ts">
+import type {
+  CellValueChangedEvent,
+  ColDef,
+  GetRowIdParams,
+  GridApi,
+  GridOptions,
+  GridReadyEvent,
+  ICellRendererParams,
+  SelectionChangedEvent,
+  ValueGetterParams,
+} from 'ag-grid-community';
+import { AgGridVue } from 'ag-grid-vue3';
+import { defu } from 'defu';
 import { formatTimeStamp } from '#shared/utils/helpers';
 import { request } from '#shared/utils/request';
 import { pickRandomSyncDelayMs } from '#shared/utils/sync-delay';
@@ -11,12 +24,16 @@ import {
 } from '~/apis';
 import CredentialsDialog, { type CredentialState } from '~/components/global/CredentialsDialog.vue';
 import GlobalSearchAccountDialog from '~/components/global/SearchAccountDialog.vue';
+import GridAccountActions from '~/components/grid/AccountActions.vue';
+import GridAccountSyncStatus from '~/components/grid/AccountSyncStatus.vue';
+import GridLoadProgress from '~/components/grid/LoadProgress.vue';
 import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import ConfirmModal from '~/components/modal/Confirm.vue';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { IMAGE_PROXY, websiteName } from '~/config';
+import { sharedGridOptions } from '~/config/shared-grid-options';
 import { deleteAccountData } from '~/store/v2';
 import { getArticleCacheSummary } from '~/store/v2/article';
 import {
@@ -31,6 +48,7 @@ import type { AccountManifest } from '~/types/account';
 import type { Preferences } from '~/types/preferences';
 import type { AccountInfo } from '~/types/types';
 import { exportAccountJsonFile } from '~/utils/exporter';
+import { createBooleanColumnFilterParams, createDateColumnFilterParams } from '~/utils/grid';
 
 defineOptions({
   name: 'dashboard-account',
@@ -398,6 +416,214 @@ const globalRowData = ref<AccountRow[]>([]);
 const listLoading = ref(true);
 let refreshSeq = 0;
 
+const columnDefs = ref<ColDef[]>([
+  {
+    colId: 'fakeid',
+    headerName: 'fakeid',
+    field: 'fakeid',
+    cellDataType: 'text',
+    filter: 'agTextColumnFilter',
+    minWidth: 200,
+    cellClass: 'font-mono',
+    initialHide: true,
+  },
+  {
+    colId: 'round_head_img',
+    headerName: '头像',
+    field: 'round_head_img',
+    sortable: false,
+    filter: false,
+    cellRenderer: (params: ICellRendererParams) => {
+      return `<img alt="" src="${IMAGE_PROXY + params.value}" style="height: 30px; width: 30px; object-fit: cover; border: 1px solid #e5e7eb; border-radius: 100%;" />`;
+    },
+    cellClass: 'flex justify-center items-center',
+    minWidth: 80,
+  },
+  {
+    colId: 'nickname',
+    headerName: '名称',
+    field: 'nickname',
+    cellDataType: 'text',
+    filter: 'agTextColumnFilter',
+    tooltipField: 'nickname',
+    minWidth: 200,
+  },
+  {
+    colId: 'category',
+    headerName: '分类',
+    field: 'category',
+    cellDataType: 'text',
+    filter: 'agTextColumnFilter',
+    editable: true,
+    minWidth: 140,
+    tooltipField: 'category',
+    valueGetter: params => params.data?.category || '',
+  },
+  {
+    colId: 'create_time',
+    headerName: '添加时间',
+    field: 'create_time',
+    valueFormatter: p => (p.value ? formatTimeStamp(p.value) : ''),
+    filter: 'agDateColumnFilter',
+    filterParams: createDateColumnFilterParams(),
+    filterValueGetter: (params: ValueGetterParams) => {
+      return new Date(params.getValue('create_time') * 1000);
+    },
+    sort: 'desc',
+    minWidth: 180,
+    initialHide: true,
+    cellClass: 'flex justify-center items-center font-mono',
+  },
+  {
+    colId: 'update_time',
+    headerName: '最后同步时间',
+    field: 'update_time',
+    valueFormatter: p => (p.value ? formatTimeStamp(p.value) : ''),
+    filter: 'agDateColumnFilter',
+    filterParams: createDateColumnFilterParams(),
+    filterValueGetter: (params: ValueGetterParams) => {
+      return new Date(params.getValue('update_time') * 1000);
+    },
+    minWidth: 180,
+    cellClass: 'flex justify-center items-center font-mono',
+  },
+  {
+    colId: 'total_count',
+    headerName: '消息总数',
+    field: 'total_count',
+    cellDataType: 'number',
+    cellRenderer: 'agAnimateShowChangeCellRenderer',
+    filter: 'agNumberColumnFilter',
+    cellClass: 'flex justify-center items-center font-mono',
+    minWidth: 150,
+  },
+  {
+    colId: 'count',
+    headerName: '已同步消息数',
+    field: 'count',
+    cellDataType: 'number',
+    cellRenderer: 'agAnimateShowChangeCellRenderer',
+    filter: 'agNumberColumnFilter',
+    cellClass: 'flex justify-center items-center font-mono',
+    minWidth: 180,
+  },
+  {
+    colId: 'articles',
+    headerName: '已同步文章数',
+    field: 'articles',
+    cellDataType: 'number',
+    cellRenderer: 'agAnimateShowChangeCellRenderer',
+    filter: 'agNumberColumnFilter',
+    cellClass: 'flex justify-center items-center font-mono',
+    minWidth: 180,
+    initialHide: true,
+  },
+  {
+    colId: 'load_percent',
+    headerName: '同步进度',
+    valueGetter: params => (params.data.total_count === 0 ? 0 : params.data.count / params.data.total_count),
+    cellDataType: 'number',
+    cellRenderer: GridLoadProgress,
+    filter: 'agNumberColumnFilter',
+    minWidth: 200,
+  },
+  {
+    colId: 'runtime_sync_state',
+    headerName: '本次同步状态',
+    field: '_runtimeSync',
+    sortable: false,
+    filter: false,
+    cellRenderer: GridAccountSyncStatus,
+    minWidth: 220,
+  },
+  {
+    colId: 'completed',
+    headerName: '是否同步完成',
+    field: 'completed',
+    cellDataType: 'boolean',
+    filter: 'agSetColumnFilter',
+    filterParams: createBooleanColumnFilterParams('已同步完成', '未同步完成'),
+    cellClass: 'flex justify-center items-center',
+    headerClass: 'justify-center',
+    minWidth: 200,
+  },
+  {
+    colId: 'action',
+    headerName: '操作',
+    field: 'fakeid',
+    sortable: false,
+    filter: false,
+    cellRenderer: GridAccountActions,
+    cellRendererParams: {
+      onSync: (params: ICellRendererParams) => {
+        syncSingleAccount(params.data);
+      },
+      onStop: () => {
+        stopSync();
+      },
+      isDeleting: isDeleting,
+      isSyncing: isSyncing,
+      syncingRowId: syncingRowId,
+    },
+    cellClass: 'flex justify-center items-center',
+    maxWidth: 100,
+    pinned: 'right',
+  },
+]);
+
+// 注意，`defu`函数最左边的参数优先级最高
+const gridOptions: GridOptions = defu(
+  {
+    getRowId: (params: GetRowIdParams) => String(params.data.fakeid),
+  },
+  sharedGridOptions
+);
+
+const gridApi = shallowRef<GridApi | null>(null);
+function onGridReady(params: GridReadyEvent) {
+  gridApi.value = params.api;
+
+  restoreColumnState();
+  if (selectedRowIds.value.length > 0) {
+    const idSet = new Set(selectedRowIds.value);
+    gridApi.value.forEachNode(node => {
+      node.setSelected(idSet.has(String(node.data?.fakeid)));
+    });
+  }
+}
+
+function onColumnStateChange() {
+  if (gridApi.value) {
+    saveColumnState();
+  }
+}
+
+async function onCellValueChanged(evt: CellValueChangedEvent<MpAccount>) {
+  if (evt.colDef.colId !== 'category' || !evt.data) {
+    return;
+  }
+
+  const category = String(evt.newValue || '').trim();
+  evt.data.category = category;
+  await updateAccountCategory(evt.data.fakeid, category);
+}
+
+function saveColumnState() {
+  const state = gridApi.value?.getColumnState();
+  localStorage.setItem('agGridColumnState-account', JSON.stringify(state));
+}
+
+function restoreColumnState() {
+  const stateStr = localStorage.getItem('agGridColumnState-account');
+  if (stateStr) {
+    const state = JSON.parse(stateStr);
+    gridApi.value?.applyColumnState({
+      state,
+      applyOrder: true,
+    });
+  }
+}
+
 async function refresh() {
   const hadRows = globalRowData.value.length > 0;
   const seq = ++refreshSeq;
@@ -407,6 +633,7 @@ async function refresh() {
       return;
     }
     globalRowData.value = list;
+    gridApi.value?.setGridOption('rowData', globalRowData.value);
     const rowIdSet = new Set(globalRowData.value.map(row => row.fakeid));
     selectedRowIds.value = selectedRowIds.value.filter(id => rowIdSet.has(id));
   } catch (error: any) {
@@ -436,6 +663,10 @@ async function refresh() {
 async function updateRow(fakeid: string): Promise<AccountRow | null> {
   const info = await getInfoCache(fakeid);
   const nextRow = info ? buildAccountRow(info) : null;
+  const rowNode = gridApi.value?.getRowNode(fakeid);
+  if (rowNode && nextRow) {
+    rowNode.updateData(nextRow);
+  }
   const index = globalRowData.value.findIndex(item => item.fakeid === fakeid);
   if (index >= 0 && nextRow) {
     globalRowData.value = globalRowData.value.map(item => (item.fakeid === fakeid ? nextRow : item));
@@ -448,6 +679,9 @@ const hasSelectedRows = computed(() => selectedRowIds.value.length > 0);
 const selectedCount = computed(() => selectedRowIds.value.length);
 const mobileListRef = ref<HTMLElement | null>(null);
 const showScrollTop = ref(false);
+function onSelectionChanged(evt: SelectionChangedEvent) {
+  selectedRowIds.value = evt.api.getSelectedRows().map(row => String((row as MpAccount).fakeid));
+}
 function getSelectedRows() {
   const selectedIdSet = new Set(selectedRowIds.value);
   return globalRowData.value.filter(row => selectedIdSet.has(row.fakeid));
@@ -491,6 +725,14 @@ const accountRuntimeSyncStates = reactive<Record<string, AccountSyncRuntimeState
 
 function syncAccountRuntimeStateToRow(fakeid: string) {
   const runtimeState = accountRuntimeSyncStates[fakeid];
+  const rowNode = gridApi.value?.getRowNode(fakeid);
+  if (rowNode?.data) {
+    rowNode.updateData({
+      ...rowNode.data,
+      _runtimeSync: runtimeState ? { ...runtimeState } : null,
+    });
+  }
+
   const index = globalRowData.value.findIndex(item => item.fakeid === fakeid);
   if (index >= 0) {
     const current = globalRowData.value[index];
@@ -880,6 +1122,17 @@ async function updateCategoryFromCard(account: MpAccount, value: string) {
   await updateRow(account.fakeid);
 }
 
+watch(selectedRowIds, ids => {
+  if (!gridApi.value) return;
+  const idSet = new Set(ids);
+  gridApi.value.forEachNode(node => {
+    const shouldSelect = idSet.has(String(node.data?.fakeid));
+    if (node.isSelected() !== shouldSelect) {
+      node.setSelected(shouldSelect);
+    }
+  });
+});
+
 watch(
   () => Boolean(loginAccount.value),
   loggedIn => {
@@ -1027,7 +1280,7 @@ const { getActualDateRange } = useSyncDeadline();
             </UButton>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="hidden flex-wrap items-center gap-2 md:flex">
             <UButton
               size="sm"
               icon="i-lucide:arrow-up-from-line"
@@ -1158,7 +1411,7 @@ const { getActualDateRange } = useSyncDeadline();
         <div v-else class="h-full">
           <div
             ref="mobileListRef"
-            class="h-full overflow-y-auto px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)]"
+            class="h-full overflow-y-auto px-3 py-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:hidden"
             @scroll.passive="onMobileListScroll"
           >
             <div class="space-y-3">
@@ -1311,6 +1564,21 @@ const { getActualDateRange } = useSyncDeadline();
             </div>
           </div>
 
+          <div class="hidden h-full min-h-[480px] md:block">
+            <ag-grid-vue
+              style="width: 100%; height: 100%"
+              :rowData="globalRowData"
+              :columnDefs="columnDefs"
+              :gridOptions="gridOptions"
+              @grid-ready="onGridReady"
+              @cell-value-changed="onCellValueChanged"
+              @selection-changed="onSelectionChanged"
+              @column-moved="onColumnStateChange"
+              @column-visible="onColumnStateChange"
+              @column-pinned="onColumnStateChange"
+              @column-resized="onColumnStateChange"
+            />
+          </div>
         </div>
       </div>
     </div>
