@@ -116,6 +116,38 @@ export async function upsertHtmlCache(authKey: string, payload: HtmlCachePayload
   return true;
 }
 
+export async function getHtmlCacheByFakeid(authKey: string, fakeid: string): Promise<HtmlCacheEntity | null> {
+  const owner = await resolveCacheOwner(authKey);
+  const db = await getSqliteDb();
+  const row = await db.get<{
+    fakeid: string;
+    url: string;
+    title: string;
+    comment_id: string | null;
+    mime_type: string;
+    content_blob: Buffer;
+  }>(
+    `
+    SELECT fakeid, url, title, comment_id, mime_type, content_blob
+    FROM cache_html
+    WHERE owner_key = ? AND fakeid = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+    `,
+    owner.ownerKey,
+    String(fakeid || '').trim()
+  );
+  if (!row) return null;
+  return {
+    fakeid: row.fakeid || '',
+    url: row.url || '',
+    title: row.title || '',
+    commentID: row.comment_id || null,
+    mimeType: row.mime_type || 'text/html; charset=utf-8',
+    content: row.content_blob,
+  };
+}
+
 export async function getHtmlCache(authKey: string, url: string): Promise<HtmlCacheEntity | null> {
   const owner = await resolveCacheOwner(authKey);
   const db = await getSqliteDb();

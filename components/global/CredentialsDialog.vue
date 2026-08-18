@@ -154,7 +154,7 @@
 <script setup lang="ts">
 import dayjs from 'dayjs';
 import JSZip from 'jszip';
-import { getArticleList, getArticleListWithCredential } from '~/apis';
+import { getArticleList, getArticleListWithCredential, INITIAL_SUBSCRIBE_PAGE_SIZE } from '~/apis';
 import toastFactory from '~/composables/toast';
 import useLoginCheck from '~/composables/useLoginCheck';
 import { CREDENTIAL_API_HOST, CREDENTIAL_LIVE_MINUTES, isDev } from '~/config';
@@ -626,9 +626,16 @@ async function addAccount(credential: ParsedCredential) {
   };
 
   try {
-    await getArticleList(account, 0);
+    await getArticleList(account, 0, '', { initialPageSize: INITIAL_SUBSCRIBE_PAGE_SIZE });
+    const saved = await getInfoCache(credential.biz);
+    if (saved?.nickname) {
+      credential.nickname = saved.nickname;
+    }
+    if (saved?.round_head_img) {
+      credential.avatar = saved.round_head_img;
+    }
     credential.added = true;
-    toast.success('公众号添加成功', `已成功添加公众号【${nickname}】`);
+    toast.success('公众号添加成功', `已成功添加公众号【${saved?.nickname || nickname}】`);
     // 通知其他视图（如公众号管理列表）立即刷新
     accountEventBus.emit('account-added', { fakeid: credential.biz });
   } catch (error: any) {

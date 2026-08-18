@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { ICellRendererParams } from 'ag-grid-community';
+import { formatRunningSyncText, getKnownSyncPercent } from '#shared/utils/account-profile';
 
 interface AccountSyncRuntimeState {
   status: 'running' | 'error';
   syncedMessages: number;
+  scannedMessages?: number;
   totalMessages: number;
   syncedArticles: number;
   errorMessage: string;
@@ -23,12 +25,24 @@ const props = defineProps<Props>();
 const paramsRef = shallowRef(props.params);
 
 const state = computed<AccountSyncRuntimeState | null>(() => paramsRef.value.data?._runtimeSync || null);
-const percent = computed(() => {
-  if (!state.value || state.value.status !== 'running' || state.value.totalMessages <= 0) {
-    return 0;
-  }
-  return Math.min(100, Math.max(0, Math.round((state.value.syncedMessages / state.value.totalMessages) * 100)));
-});
+const percent = computed(() =>
+  state.value
+    ? getKnownSyncPercent({
+        syncedMessages: state.value.syncedMessages,
+        totalMessages: state.value.totalMessages,
+      })
+    : 0
+);
+const detail = computed(() =>
+  state.value
+    ? formatRunningSyncText({
+        syncedMessages: state.value.syncedMessages,
+        scannedMessages: Number(state.value.scannedMessages) || 0,
+        totalMessages: state.value.totalMessages,
+        syncedArticles: state.value.syncedArticles,
+      })
+    : ''
+);
 
 function refresh(params: ICellRendererParams<AccountRow>): boolean {
   paramsRef.value = params;
@@ -41,30 +55,25 @@ defineExpose({
 </script>
 
 <template>
-  <div v-if="state" class="py-1">
-    <div
-      v-if="state.status === 'running'"
-      class="space-y-1.5 rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 dark:border-blue-500/20 dark:bg-blue-500/10"
-    >
-      <div class="flex items-center justify-between gap-2 text-[11px] text-blue-700 dark:text-blue-300">
-        <span class="font-medium">&#21516;&#27493;&#20013;</span>
-        <span>{{ percent }}%</span>
-      </div>
-      <div class="h-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20">
-        <div class="h-1.5 rounded-full bg-blue-500 transition-all" :style="{ width: `${percent}%` }" />
-      </div>
-      <p class="truncate text-[11px] text-blue-700 dark:text-blue-300">
-        {{ state.syncedMessages }}/{{ state.totalMessages || 0 }}&#65292;&#25991;&#31456; {{ state.syncedArticles }}
-      </p>
+  <div v-if="state?.status === 'running'" class="flex h-full min-w-0 items-center gap-2 overflow-hidden py-0">
+    <span class="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-500/20 dark:text-blue-200">
+      同步中
+    </span>
+    <div class="h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+      <div
+        class="h-1.5 rounded-full bg-blue-500 transition-all"
+        :class="percent <= 0 ? 'w-1/3 animate-pulse' : ''"
+        :style="percent > 0 ? { width: `${percent}%` } : undefined"
+      />
     </div>
-    <div
-      v-else
-      class="rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2 text-[11px] leading-5 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200"
-      :title="state.errorMessage"
-    >
-      <p class="font-medium">&#21516;&#27493;&#22833;&#36133;</p>
-      <p class="truncate">{{ state.errorMessage }}</p>
-    </div>
+    <span class="max-w-[9.5rem] shrink-0 truncate text-[11px] text-slate-500" :title="detail">{{ detail }}</span>
   </div>
-  <div v-else class="text-xs text-slate-400">-</div>
+  <div
+    v-else-if="state?.status === 'error'"
+    class="flex h-full min-w-0 items-center overflow-hidden text-[11px] text-rose-600 dark:text-rose-300"
+    :title="state.errorMessage"
+  >
+    <span class="truncate">失败：{{ state.errorMessage }}</span>
+  </div>
+  <div v-else class="flex h-full items-center text-xs text-slate-400">-</div>
 </template>

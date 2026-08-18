@@ -14,7 +14,7 @@ import type {
 import { AgGridVue } from 'ag-grid-vue3';
 import { defu } from 'defu';
 import type { PreviewArticle } from '#components';
-import { durationToSeconds, formatItemShowType, formatTimeStamp, sleep } from '#shared/utils/helpers';
+import { durationToSeconds, formatItemShowType, formatTimeStamp } from '#shared/utils/helpers';
 import { validateHTMLContent } from '#shared/utils/html';
 import GridAlbum from '~/components/grid/Album.vue';
 import GridArticleActions from '~/components/grid/ArticleActions.vue';
@@ -24,18 +24,21 @@ import EmptyStatePanel from '~/components/mobile/EmptyStatePanel.vue';
 import LoadingCards from '~/components/mobile/LoadingCards.vue';
 import ScrollTopFab from '~/components/mobile/ScrollTopFab.vue';
 import AccountSelectorForArticle from '~/components/selector/AccountSelectorForArticle.vue';
+import toastFactory from '~/composables/toast';
 import { isDev, websiteName } from '~/config';
 import { sharedGridOptions } from '~/config/shared-grid-options';
 import { articleDeleted, getArticleCache, updateArticleStatus } from '~/store/v2/article';
-import { getCommentCache } from '~/store/v2/comment';
 import { getDebugCache } from '~/store/v2/debug';
-import { getHtmlCache } from '~/store/v2/html';
 import { type MpAccount } from '~/store/v2/info';
-import { getMetadataCache, type Metadata } from '~/store/v2/metadata';
+import { type Metadata } from '~/store/v2/metadata';
 import type { Preferences } from '~/types/preferences';
 import type { AppMsgExWithFakeID } from '~/types/types';
 import type { ArticleMetadata } from '~/utils/download/types';
 import { createBooleanColumnFilterParams, createDateColumnFilterParams } from '~/utils/grid';
+
+defineOptions({
+  name: 'dashboard-article',
+});
 
 useHead({
   title: `文章下载 | ${websiteName}`,
@@ -357,53 +360,60 @@ function preview(article: Article) {
   previewArticleRef.value?.open(article);
 }
 
+const toast = toastFactory();
 const loading = ref(false);
 const selectedAccount = ref<MpAccount | undefined>();
+let tableDataRequestId = 0;
 
 watch(selectedAccount, newVal => {
   if (!newVal?.fakeid) {
+    tableDataRequestId += 1;
     globalRowData.value = [];
     selectedArticleRowIds.value = [];
     gridApi.value?.setGridOption('rowData', []);
     return;
   }
-  switchTableData(newVal.fakeid).catch(() => {});
+  switchTableData(newVal.fakeid);
 });
 
 watch(hideDeleted, () => {
   if (selectedAccount.value?.fakeid) {
-    switchTableData(selectedAccount.value.fakeid).catch(() => {});
+    switchTableData(selectedAccount.value.fakeid);
   }
 });
 
-async function switchTableData(fakeid: string) {
-  loading.value = true;
-  const articles: Article[] = [];
-  const data = await getArticleCache(fakeid, Math.floor(Date.now() / 1000));
-  for (const article of data) {
-    const contentDownload = (await getHtmlCache(article.link)) !== undefined;
-    const commentDownload = (await getCommentCache(article.link)) !== undefined;
-    const metadata = await getMetadataCache(article.link);
-    if (metadata) {
-      articles.push({
-        ...metadata,
-        ...article,
-        contentDownload,
-        commentDownload,
-      });
-    } else {
-      articles.push({
-        ...article,
-        contentDownload,
-        commentDownload,
-      });
-    }
-  }
-  await sleep(200);
+function applyArticleRows(articles: Article[]) {
   globalRowData.value = articles.filter(article => (hideDeleted.value ? !article.is_deleted : true));
   selectedArticleRowIds.value = [];
   gridApi.value?.setGridOption('rowData', globalRowData.value);
-  loading.value = false;
+}
+
+async function switchTableData(fakeid: string) {
+  const requestId = ++tableDataRequestId;
+  loading.value = true;
+  try {
+    const data = await getArticleCache(fakeid, Math.floor(Date.now() / 1000) + 24 * 3600);
+    if (requestId !== tableDataRequestId) {
+      return;
+    }
+    applyArticleRows(
+      data.map(article => ({
+        ...article,
+        contentDownload: Boolean((article as Article).contentDownload),
+        commentDownload: Boolean((article as Article).commentDownload),
+      }))
+    );
+  } catch (error) {
+    if (requestId !== tableDataRequestId) {
+      return;
+    }
+    applyArticleRows([]);
+    toast.error('加载文章列表失败', error instanceof Error ? error.message : '请稍后重试');
+  } finally {
+    if (requestId === tableDataRequestId) {
+      loading.value = false;
+    }
+  }
 }
 
 function getArticleRowId(article: Article) {

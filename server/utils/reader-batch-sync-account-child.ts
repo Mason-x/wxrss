@@ -377,7 +377,7 @@ function normalizeArticleForStorage(article: any): Record<string, any> {
   compact.author_name = String(compact.author_name || '');
   compact.create_time = Number(compact.create_time) || 0;
   compact.update_time = Number(compact.update_time) || 0;
-  compact.is_deleted = Boolean(compact.is_deleted);
+  compact.is_deleted = compact.is_deleted === true || compact.is_deleted === 1 || compact.is_deleted === '1';
   compact._status = String(compact._status || '');
   return compact;
 }
@@ -399,7 +399,7 @@ function compactArticlePayload(article: Record<string, any>): Record<string, any
     appmsg_album_infos: Array.isArray(article?.appmsg_album_infos) ? article.appmsg_album_infos : [],
     copyright_stat: Number(article?.copyright_stat) || 0,
     copyright_type: Number(article?.copyright_type) || 0,
-    is_deleted: Boolean(article?.is_deleted),
+    is_deleted: article?.is_deleted === true || article?.is_deleted === 1 || article?.is_deleted === '1',
     _status: String(article?._status || ''),
   };
 }
@@ -844,7 +844,8 @@ function compactProfileArticle(
     appmsg_album_infos: [],
     copyright_stat: Number(item?.copyright_stat) || 0,
     copyright_type: 0,
-    is_deleted: Boolean(item?.del_flag),
+    // getmsg 的 del_flag 对正常已发布文章通常是 1，不是删除标记。
+    is_deleted: false,
     _status: '',
   });
 }

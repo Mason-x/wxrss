@@ -85,6 +85,10 @@ import SettingScheduler from '~/components/setting/Scheduler.vue';
 import { websiteName } from '~/config';
 import toastFactory from '~/composables/toast';
 
+defineOptions({
+  name: 'dashboard-settings',
+});
+
 useHead({
   title: `设置 | ${websiteName}`,
 });

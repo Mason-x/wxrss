@@ -10,8 +10,17 @@ const selectedRowCount = ref(0);
 const displayedRowCount = ref(0);
 
 function refresh() {
-  selectedRowCount.value = props.params.api.getSelectedRows().length;
-  displayedRowCount.value = props.params.api.getDisplayedRowCount();
+  const api = props.params?.api;
+  if (!api) {
+    return;
+  }
+  try {
+    selectedRowCount.value = api.getSelectedRows()?.length || 0;
+    displayedRowCount.value = api.getDisplayedRowCount() || 0;
+  } catch {
+    selectedRowCount.value = 0;
+    displayedRowCount.value = 0;
+  }
 }
 
 onMounted(() => {

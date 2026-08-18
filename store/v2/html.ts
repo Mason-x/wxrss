@@ -69,6 +69,34 @@ export async function updateHtmlCache(html: HtmlAsset): Promise<boolean> {
   return true;
 }
 
+export async function getHtmlCacheByFakeid(fakeid: string): Promise<HtmlAsset | undefined> {
+  const normalizedFakeid = String(fakeid || '').trim();
+  if (!normalizedFakeid) {
+    return undefined;
+  }
+
+  try {
+    const response = await fetch(`/api/web/cache/html-by-fakeid?fakeid=${encodeURIComponent(normalizedFakeid)}`, {
+      method: 'GET',
+    });
+    if (response.status === 404 || response.status === 401) {
+      return undefined;
+    }
+    if (!response.ok) {
+      throw new Error(`cache html by fakeid failed: ${response.status}`);
+    }
+    return {
+      fakeid: decodeHeaderValue(response.headers.get('x-cache-fakeid-uri')) || normalizedFakeid,
+      url: decodeHeaderValue(response.headers.get('x-cache-url-uri')),
+      title: decodeHeaderValue(response.headers.get('x-cache-title-uri')),
+      commentID: decodeHeaderValue(response.headers.get('x-cache-comment-id-uri')) || null,
+      file: await response.blob(),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getHtmlCache(url: string): Promise<HtmlAsset | undefined> {
   try {
     const remote = await getHtmlRemote(url);

@@ -29,6 +29,10 @@ import { Downloader } from '~/utils/download/Downloader';
 import { Exporter } from '~/utils/download/Exporter';
 import type { ArticleMetadata, DownloaderStatus } from '~/utils/download/types';
 
+defineOptions({
+  name: 'dashboard-single',
+});
+
 useHead({
   title: `单篇文章下载 | ${websiteName}`,
 });

@@ -1,3 +1,4 @@
+import { isArticleListPageCompleted } from '#shared/utils/account-profile';
 import type {
   app_msg_item,
   ParsedProfileGetMsg,
@@ -74,7 +75,8 @@ function toArticle(
     appmsg_album_infos: [],
     copyright_stat: Number(item?.copyright_stat) || 0,
     copyright_type: 0,
-    is_deleted: Boolean(item?.del_flag),
+    // getmsg 的 del_flag 对正常已发布文章通常是 1，不是删除标记。
+    is_deleted: false,
     _status: '',
   } as unknown as AppMsgEx;
 }
@@ -94,7 +96,8 @@ export function parseProfileGeneralMessageList(value: string): ParsedProfileGetM
 export function parseProfileArticlePage(
   response: ProfileGetMsgResponse,
   fakeid: string,
-  offset = 0
+  offset = 0,
+  requestedSize = 0
 ): ParsedProfileArticlePage {
   const messages = parseProfileGeneralMessageList(response?.general_msg_list || '');
   const articles: AppMsgEx[] = [];
@@ -123,7 +126,7 @@ export function parseProfileArticlePage(
   const nextOffset = Math.max(offset + messageCount, Number(response?.next_offset) || 0);
   return {
     articles,
-    completed: Number(response?.can_msg_continue) !== 1 || messageCount === 0,
+    completed: isArticleListPageCompleted(Number(response?.can_msg_continue), messageCount, requestedSize),
     messageCount,
     nextOffset,
   };

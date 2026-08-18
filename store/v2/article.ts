@@ -32,7 +32,8 @@ function compactArticlePayload(article: Partial<AppMsgEx>): AppMsgEx {
     appmsg_album_infos: Array.isArray((article as any)?.appmsg_album_infos) ? (article as any).appmsg_album_infos : [],
     copyright_stat: Number((article as any)?.copyright_stat) || 0,
     copyright_type: Number((article as any)?.copyright_type) || 0,
-    is_deleted: Boolean((article as any)?.is_deleted),
+    is_deleted:
+      (article as any)?.is_deleted === true || (article as any)?.is_deleted === 1 || (article as any)?.is_deleted === '1',
     _status: String((article as any)?._status || ''),
   } as unknown as AppMsgEx;
 }

@@ -55,7 +55,7 @@ import SideBar from '~/components/dashboard/SideBar.vue';
 
 const route = useRoute();
 const dashboardKeepAlive = {
-  include: ['dashboard-account'],
+  include: ['dashboard-account', 'dashboard-article', 'dashboard-settings', 'dashboard-single', 'dashboard-users'],
 };
 const readerMode = computed(() => route.path.startsWith('/dashboard/reader'));
 const mobileShellStyle = computed(() => ({

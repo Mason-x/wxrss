@@ -1,8 +1,10 @@
-﻿import { parseProfileArticlePage } from '#shared/utils/profile-getmsg';
+﻿import { extractAccountProfileFromHtml } from '#shared/utils/account-profile';
+import { parseProfileArticlePage } from '#shared/utils/profile-getmsg';
 import { request } from '#shared/utils/request';
 import { ACCOUNT_LIST_PAGE_SIZE, ARTICLE_LIST_PAGE_SIZE, CREDENTIAL_LIVE_MINUTES } from '~/config';
 import type { ReaderArticle } from '~/server/repositories/reader';
-import { upsertArticlePage } from '~/store/v2/article';
+import { getArticleCache, upsertArticlePage } from '~/store/v2/article';
+import { getHtmlCache, getHtmlCacheByFakeid } from '~/store/v2/html';
 import { type MpAccount, updateLastUpdateTime } from '~/store/v2/info';
 import type { CommentResponse } from '~/types/comment';
 import type { ParsedCredential } from '~/types/credential';
@@ -193,7 +195,12 @@ async function requestProfileArticleListPage(fakeid: string, begin: number, size
   if (Number(resp.ret) !== 0) {
     throw new Error(`${resp.ret}:${resp.errmsg || 'Credential 已失效，请重新抓取'}`);
   }
-  return parseProfileArticlePage(resp, fakeid, begin);
+  return parseProfileArticlePage(
+    resp,
+    fakeid,
+    begin,
+    Math.min(10, Math.max(1, Number(size) || ARTICLE_LIST_PAGE_SIZE))
+  );
 }
 
 async function hasValidAuthKey() {
@@ -222,6 +229,163 @@ async function handleMpSessionError() {
  * @param keyword
  * @return [鏂囩珷鍒楄〃, 鏄惁鍔犺浇瀹屾瘯, 鏂囩珷鎬绘暟, 褰撳墠椤甸潰娑堟伅鏁?, 鏂板鏂囩珷鏁?]
  */
+function hasAccountProfile(account: Pick<MpAccount, 'nickname' | 'round_head_img'>): boolean {
+  return Boolean(String(account.nickname || '').trim() && String(account.round_head_img || '').trim());
+}
+
+async function fetchAccountProfileByCredential(
+  fakeid: string,
+  articleUrl = ''
+): Promise<{ nickname: string; round_head_img: string } | null> {
+  try {
+    const target = getValidCredential(fakeid);
+    const resp = await request<{ nickname?: string; round_head_img?: string }>('/api/web/mp/profile_ext_home', {
+      method: 'POST',
+      body: {
+        id: fakeid,
+        uin: target.uin,
+        key: target.key,
+        pass_ticket: target.pass_ticket,
+        url: articleUrl || '',
+      },
+    });
+    const nickname = String(resp?.nickname || '').trim();
+    const roundHeadImg = String(resp?.round_head_img || '').trim();
+    if (!nickname && !roundHeadImg) {
+      return null;
+    }
+    return {
+      nickname,
+      round_head_img: roundHeadImg,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveAccountProfile(
+  fakeid: string,
+  articleUrl = ''
+): Promise<{ nickname: string; round_head_img: string } | null> {
+  const normalizedFakeid = String(fakeid || '').trim();
+  if (!normalizedFakeid) {
+    return null;
+  }
+
+  const credentialProfile = await fetchAccountProfileByCredential(normalizedFakeid, articleUrl);
+  if (credentialProfile?.nickname || credentialProfile?.round_head_img) {
+    return credentialProfile;
+  }
+
+  try {
+    const [accounts] = await getAccountList(0, normalizedFakeid);
+    const matched = accounts.find(item => String(item.fakeid || '') === normalizedFakeid);
+    if (matched && (matched.nickname || matched.round_head_img)) {
+      return {
+        nickname: String(matched.nickname || '').trim(),
+        round_head_img: String(matched.round_head_img || '').trim(),
+      };
+    }
+  } catch {
+    // ignore search failures and fall back to the article page
+  }
+
+  const url = String(articleUrl || '').trim();
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const resp = await request<{ nickname?: string; round_head_img?: string }>('/api/web/misc/account-profile', {
+      query: {
+        url,
+      },
+    });
+    const nickname = String(resp?.nickname || '').trim();
+    const roundHeadImg = String(resp?.round_head_img || '').trim();
+    if (!nickname && !roundHeadImg) {
+      return null;
+    }
+    return {
+      nickname,
+      round_head_img: roundHeadImg,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function enrichMpAccountProfile(account: MpAccount, articleUrl = ''): Promise<MpAccount> {
+  if (hasAccountProfile(account)) {
+    return account;
+  }
+
+  const profile = await resolveAccountProfile(account.fakeid, articleUrl);
+  if (!profile) {
+    return account;
+  }
+
+  return {
+    ...account,
+    nickname: String(account.nickname || '').trim() || profile.nickname || account.nickname,
+    round_head_img: String(account.round_head_img || '').trim() || profile.round_head_img || account.round_head_img,
+  };
+}
+
+export async function refreshMissingAccountProfile(account: MpAccount): Promise<MpAccount> {
+  if (hasAccountProfile(account)) {
+    return account;
+  }
+
+  let nextAccount = await enrichMpAccountProfile(account);
+  if (!hasAccountProfile(nextAccount)) {
+    const cachedByFakeid = await getHtmlCacheByFakeid(account.fakeid);
+    if (cachedByFakeid) {
+      const extracted = extractAccountProfileFromHtml(await cachedByFakeid.file.text());
+      if (extracted.nickname || extracted.round_head_img) {
+        nextAccount = {
+          ...nextAccount,
+          nickname: String(nextAccount.nickname || '').trim() || extracted.nickname,
+          round_head_img: String(nextAccount.round_head_img || '').trim() || extracted.round_head_img,
+        };
+      }
+    }
+  }
+  if (!hasAccountProfile(nextAccount)) {
+    const articles = await getArticleCache(account.fakeid, Math.floor(Date.now() / 1000) + 24 * 3600);
+    const link = articles.find(item => item.link)?.link || '';
+    if (link) {
+      nextAccount = await enrichMpAccountProfile(nextAccount, link);
+      if (!hasAccountProfile(nextAccount)) {
+        const cached = await getHtmlCache(link);
+        if (cached) {
+          const extracted = extractAccountProfileFromHtml(await cached.file.text());
+          if (extracted.nickname || extracted.round_head_img) {
+            nextAccount = {
+              ...nextAccount,
+              nickname: String(nextAccount.nickname || '').trim() || extracted.nickname,
+              round_head_img: String(nextAccount.round_head_img || '').trim() || extracted.round_head_img,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  if (
+    String(nextAccount.nickname || '') !== String(account.nickname || '') ||
+    String(nextAccount.round_head_img || '') !== String(account.round_head_img || '')
+  ) {
+    try {
+      await upsertArticlePage(nextAccount, [], nextAccount.total_count, Boolean(nextAccount.completed));
+    } catch (error) {
+      console.error('回写公众号资料失败:', error);
+    }
+  }
+
+  return nextAccount;
+}
+
 export async function getArticleList(
   account: MpAccount,
   begin = 0,
@@ -239,12 +403,18 @@ export async function getArticleList(
   const explicitPageSize = rawExplicitPageSize > 0 ? Math.max(MIN_SAFE_ARTICLE_PAGE_SIZE, rawExplicitPageSize) : 0;
   const pageSizeHint =
     explicitPageSize || (begin === 0 && !keyword ? initialPageSize || FIRST_PAGE_PROBE_SIZE : ARTICLE_LIST_PAGE_SIZE);
+  let syncedAccount = hasAccountProfile(account) ? account : await enrichMpAccountProfile(account);
   const page = await requestProfileArticleListPage(account.fakeid, begin, pageSizeHint);
-  const totalCount = page.completed ? page.nextOffset : Math.max(Number(account.total_count) || 0, page.nextOffset);
+  const totalCount = page.completed
+    ? page.nextOffset
+    : Math.max(Number(account.total_count) || 0, Number(account.count) || 0);
+  if (!hasAccountProfile(syncedAccount) && page.articles[0]?.link) {
+    syncedAccount = await enrichMpAccountProfile(syncedAccount, page.articles[0].link);
+  }
   let inserted = 0;
 
   try {
-    const upsertResult = await upsertArticlePage(account, page.articles, totalCount, page.completed);
+    const upsertResult = await upsertArticlePage(syncedAccount, page.articles, totalCount, page.completed);
     inserted = Number(upsertResult.inserted) || 0;
     if (begin === 0 && inserted > 0) {
       await updateLastUpdateTime(account.fakeid);

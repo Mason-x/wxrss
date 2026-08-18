@@ -159,6 +159,8 @@ function mapArticleRow(row: any): ReaderArticle {
     ai_summary: String(row.ai_summary || ''),
     ai_tags: resolveArticleAiTags(row.ai_tags_json, row.ai_summary),
     is_deleted: Boolean(row.is_deleted),
+    contentDownload: Boolean(row.content_download),
+    commentDownload: Boolean(row.comment_download),
   };
 }
 
@@ -267,7 +269,7 @@ function normalizeArticleForStorage(article: any): Record<string, any> {
   compact.author_name = String(compact.author_name || '');
   compact.create_time = Number(compact.create_time) || 0;
   compact.update_time = Number(compact.update_time) || 0;
-  compact.is_deleted = Boolean(compact.is_deleted);
+  compact.is_deleted = compact.is_deleted === true || compact.is_deleted === 1 || compact.is_deleted === '1';
   compact._status = String(compact._status || '');
   return compact;
 }
@@ -535,7 +537,7 @@ async function applyAccountDelta(
 
   const updated: ReaderAccount = {
     fakeid: payload.fakeid,
-    completed: Boolean(current.completed) || Boolean(payload.completed),
+    completed: typeof payload.completed === 'boolean' ? Boolean(payload.completed) : Boolean(current.completed),
     count: (Number(current.count) || 0) + safeMessageDelta,
     articles: (Number(current.articles) || 0) + safeArticleDelta,
     source_type: normalizeSourceType(String(payload.source_type || current.source_type || 'mp')),
@@ -722,15 +724,13 @@ export async function listAccounts(
   );
 
   const seen = new Set<string>();
-  const list = rows
-    .map(mapAccountRow)
-    .filter(account => {
-      if (!account.fakeid || seen.has(account.fakeid)) {
-        return false;
-      }
-      seen.add(account.fakeid);
-      return true;
-    });
+  const list = rows.map(mapAccountRow).filter(account => {
+    if (!account.fakeid || seen.has(account.fakeid)) {
+      return false;
+    }
+    seen.add(account.fakeid);
+    return true;
+  });
 
   return {
     list,
@@ -1105,10 +1105,15 @@ export async function listArticleCache(
   const db = await getSqliteDb();
   const rows = await db.all<any>(
     `
-    SELECT *
-    FROM reader_articles
-    WHERE owner_key = ? AND fakeid = ? AND create_time < ?
-    ORDER BY create_time DESC
+    SELECT
+      a.*,
+      CASE WHEN h.url IS NULL THEN 0 ELSE 1 END AS content_download,
+      CASE WHEN c.url IS NULL THEN 0 ELSE 1 END AS comment_download
+    FROM reader_articles a
+    LEFT JOIN cache_html h ON h.owner_key = a.owner_key AND h.url = a.link
+    LEFT JOIN cache_comment c ON c.owner_key = a.owner_key AND c.url = a.link
+    WHERE a.owner_key = ? AND a.fakeid = ? AND a.create_time < ?
+    ORDER BY a.create_time DESC
     LIMIT ?
     `,
     owner.ownerKey,

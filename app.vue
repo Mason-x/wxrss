@@ -4,6 +4,7 @@
       <NuxtPage />
     </NuxtLayout>
 
+    <GlobalSyncProgressBanner />
     <UNotifications />
     <UModals />
   </div>
@@ -12,6 +13,7 @@
 <script setup lang="ts">
 import { ModuleRegistry } from 'ag-grid-community';
 import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
+import GlobalSyncProgressBanner from '~/components/global/SyncProgressBanner.vue';
 import { isDev } from '~/config';
 
 const runtimeConfig = useRuntimeConfig();

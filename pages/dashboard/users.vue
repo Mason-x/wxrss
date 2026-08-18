@@ -169,6 +169,10 @@ interface AdminUserItem {
   isCurrentUser: boolean;
 }
 
+defineOptions({
+  name: 'dashboard-users',
+});
+
 useHead({
   title: `用户管理 | ${websiteName}`,
 });

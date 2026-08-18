@@ -19,8 +19,31 @@ function sync() {
 function stop() {
   props.params.onStop && props.params.onStop(props.params);
 }
-const isDisabled = computed(() => props.params.isDeleting || props.params.isSyncing);
-const isLoading = computed(() => props.params.isSyncing && props.params.node.id === props.params.syncingRowId);
+function unwrapFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value && typeof value === 'object' && 'value' in (value as { value?: unknown })) {
+    return Boolean((value as { value?: unknown }).value);
+  }
+  return Boolean(value);
+}
+
+function unwrapText(value: unknown): string | null {
+  if (typeof value === 'string' || value === null) {
+    return value;
+  }
+  if (value && typeof value === 'object' && 'value' in (value as { value?: unknown })) {
+    const inner = (value as { value?: unknown }).value;
+    return inner == null ? null : String(inner);
+  }
+  return value == null ? null : String(value);
+}
+
+const isDisabled = computed(() => unwrapFlag(props.params.isDeleting) || unwrapFlag(props.params.isSyncing));
+const isLoading = computed(
+  () => unwrapFlag(props.params.isSyncing) && props.params.node.id === unwrapText(props.params.syncingRowId)
+);
 </script>
 
 <template>

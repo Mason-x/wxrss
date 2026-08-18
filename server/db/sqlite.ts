@@ -114,7 +114,7 @@ function compactLegacyArticlePayload(source: Record<string, any>): Record<string
     appmsg_album_infos: Array.isArray(source?.appmsg_album_infos) ? source.appmsg_album_infos : [],
     copyright_stat: Number(source?.copyright_stat) || 0,
     copyright_type: Number(source?.copyright_type) || 0,
-    is_deleted: Boolean(source?.is_deleted),
+    is_deleted: source?.is_deleted === true || source?.is_deleted === 1 || source?.is_deleted === '1',
     _status: String(source?._status || ''),
   };
   return compact;
@@ -187,6 +187,55 @@ async function compactLegacyArticleJsonIfNeeded(db: SqliteDb): Promise<void> {
       await db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  await db.run(
+    `
+    INSERT INTO system_flags(key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = excluded.updated_at
+    `,
+    FLAG_KEY,
+    '1',
+    Date.now()
+  );
+}
+
+async function repairFalseDeletedProfileArticlesIfNeeded(db: SqliteDb): Promise<void> {
+  const FLAG_KEY = 'reader_articles_del_flag_false_positive_v1';
+  const marked = await db.get<{ value: string }>(
+    `
+    SELECT value
+    FROM system_flags
+    WHERE key = ?
+    `,
+    FLAG_KEY
+  );
+  if (marked?.value === '1') {
+    return;
+  }
+
+  try {
+    await db.exec(`
+      UPDATE reader_articles
+      SET
+        is_deleted = 0,
+        data_json = CASE
+          WHEN json_valid(data_json) THEN json_set(data_json, '$.is_deleted', json('false'))
+          ELSE data_json
+        END
+      WHERE is_deleted = 1
+        AND IFNULL(status, '') != '已删除'
+    `);
+  } catch {
+    await db.exec(`
+      UPDATE reader_articles
+      SET is_deleted = 0
+      WHERE is_deleted = 1
+        AND IFNULL(status, '') != '已删除'
+    `);
   }
 
   await db.run(
@@ -798,6 +847,7 @@ async function initSqlite(): Promise<SqliteDb> {
 
   await ensureOwnerScopedTables(db);
   await compactLegacyArticleJsonIfNeeded(db);
+  await repairFalseDeletedProfileArticlesIfNeeded(db);
 
   return db;
 }
