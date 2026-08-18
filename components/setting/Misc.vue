@@ -130,62 +130,6 @@
         </div>
       </section>
 
-      <section v-if="isAdmin" class="app-shell-muted rounded-[26px] p-4 sm:p-5">
-        <div class="mb-4">
-          <p class="text-sm font-medium text-slate-900 dark:text-slate-100">新榜推荐</p>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            用于“添加订阅 → 公众号”里的新榜月榜推荐。填写你在新榜官网登录后的完整 Cookie 后，系统会按分类拉取公众号指数榜月榜并支持一键添加。
-          </p>
-        </div>
-
-        <div class="space-y-3">
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <UButton size="xs" color="gray" variant="soft" icon="i-lucide:clipboard-paste" @click="pasteNewrankCookie">
-              粘贴
-            </UButton>
-            <UButton size="xs" color="gray" variant="soft" icon="i-lucide:trash-2" @click="clearNewrankCookie">
-              清空
-            </UButton>
-          </div>
-
-          <UTextarea
-            v-model="preferences.newrankCookie"
-            :rows="3"
-            autoresize
-            placeholder="示例：acw_tc=...; Hm_lvt_xxx=...; token=...;"
-            class="font-mono"
-          />
-          <p class="text-sm text-slate-500 dark:text-slate-400">
-            建议直接粘贴浏览器里复制出的完整 Cookie。Cookie 过期后，新榜推荐会返回空榜单或提示重新配置。
-          </p>
-          <div class="flex flex-wrap items-center justify-end gap-3">
-            <span
-              v-if="newrankCookieStatusText"
-              class="text-xs"
-              :class="
-                newrankCookieStatus === 'success'
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : newrankCookieStatus === 'error'
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-slate-500 dark:text-slate-400'
-              "
-            >
-              {{ newrankCookieStatusText }}
-            </span>
-            <UButton
-              size="sm"
-              color="gray"
-              variant="soft"
-              icon="i-lucide:badge-check"
-              :loading="testingNewrankCookie"
-              @click="verifyNewrankCookie"
-            >
-              检测 Cookie
-            </UButton>
-          </div>
-        </div>
-      </section>
-
       <section class="app-shell-muted rounded-[26px] p-4 sm:p-5">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -227,7 +171,6 @@
 
 <script setup lang="ts">
 import dayjs from 'dayjs';
-import { testNewrankCookie } from '~/apis';
 import toastFactory from '~/composables/toast';
 import useSavePreferences from '~/composables/useSavePreferences';
 import type { Preferences } from '~/types/preferences';
@@ -238,9 +181,6 @@ const preferences: Ref<Preferences> = usePreferences() as unknown as Ref<Prefere
 const preferenceAccess = usePreferencesAccess();
 const { saveNow, saving: savingPreferences } = useSavePreferences();
 const toast = toastFactory();
-const testingNewrankCookie = ref(false);
-const newrankCookieStatus = ref<'idle' | 'success' | 'error'>('idle');
-const newrankCookieStatusText = ref('');
 const isAdmin = computed(() => preferenceAccess.value.role === 'admin');
 const cardUi = {
   ring: '',
@@ -255,22 +195,6 @@ function formatDate() {
   return dayjs.unix(preferences.value.syncDatePoint).format('YYYY-MM-DD');
 }
 
-async function pasteNewrankCookie() {
-  try {
-    preferences.value.newrankCookie = await navigator.clipboard.readText();
-    toast.success('已粘贴 Cookie', '新榜 Cookie 已从剪贴板填入。');
-  } catch (error: any) {
-    toast.warning('无法读取剪贴板', String(error?.message || '请检查浏览器剪贴板权限。'));
-  }
-}
-
-function clearNewrankCookie() {
-  preferences.value.newrankCookie = '';
-  newrankCookieStatus.value = 'idle';
-  newrankCookieStatusText.value = '';
-  toast.info('已清空 Cookie', '新榜 Cookie 已清空。');
-}
-
 async function saveMiscSettings() {
   try {
     await saveNow();
@@ -279,37 +203,6 @@ async function saveMiscSettings() {
     toast.error(String(error?.data?.statusMessage || error?.statusMessage || error?.message || '保存失败'));
   }
 }
-
-async function verifyNewrankCookie() {
-  if (testingNewrankCookie.value) {
-    return;
-  }
-
-  testingNewrankCookie.value = true;
-  newrankCookieStatus.value = 'idle';
-  newrankCookieStatusText.value = '检测中...';
-
-  try {
-    const result = await testNewrankCookie(String(preferences.value.newrankCookie || '').trim());
-    newrankCookieStatus.value = result.ok ? 'success' : 'error';
-    newrankCookieStatusText.value = result.text || (result.ok ? 'Cookie 有效' : 'Cookie 无效');
-  } catch (error: any) {
-    newrankCookieStatus.value = 'error';
-    newrankCookieStatusText.value = String(
-      error?.data?.statusMessage || error?.statusMessage || error?.message || '新榜 Cookie 检测失败'
-    );
-  } finally {
-    testingNewrankCookie.value = false;
-  }
-}
-
-watch(
-  () => preferences.value.newrankCookie,
-  () => {
-    newrankCookieStatus.value = 'idle';
-    newrankCookieStatusText.value = '';
-  }
-);
 </script>
 
 

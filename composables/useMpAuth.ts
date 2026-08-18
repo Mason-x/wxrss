@@ -14,16 +14,11 @@ function normalizeRedirectTarget(value: unknown): string | null {
   return target;
 }
 
-function getLoginExpiresAt(account: LoginAccount | null | undefined): number {
-  const expiresAt = new Date(String(account?.expires || '')).getTime();
-  return Number.isFinite(expiresAt) ? expiresAt : 0;
-}
-
 function normalizeLoginAccount(account: LoginAccount | null | undefined, authKey?: string): LoginAccount | null {
   const expires = String(account?.expires || '').trim();
   const normalizedAuthKey = String(authKey || account?.auth_key || '').trim();
 
-  if (!expires || !normalizedAuthKey) {
+  if (!normalizedAuthKey) {
     return null;
   }
 
@@ -47,7 +42,7 @@ export default function useMpAuth() {
   }
 
   function isLoginExpired(account: LoginAccount | null | undefined = loginAccount.value): boolean {
-    return getLoginExpiresAt(account) <= Date.now();
+    return !String(account?.auth_key || '').trim();
   }
 
   function clearLoginState() {

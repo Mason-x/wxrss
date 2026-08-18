@@ -1,4 +1,4 @@
-import { getRequestHeader, type H3Event } from 'h3';
+import { type H3Event } from 'h3';
 import { getMpCookie } from '~/server/kv/cookie';
 import {
   findAuthKeyBindingByAccountInfo,
@@ -8,7 +8,12 @@ import {
 } from '~/server/repositories/auth-key-binding';
 import { getUserAccessByIdentity } from '~/server/repositories/user-access';
 import { cookieStore, getCookieFromResponse, getCookiesFromRequest } from '~/server/utils/CookieStore';
-import { clearMpSession, resolvePreferenceRole } from '~/server/utils/mp-session';
+import {
+  clearMpSession,
+  createAuthKeyCookie,
+  resolveAppSessionExpiresAt,
+  resolvePreferenceRole,
+} from '~/server/utils/mp-session';
 import { getAuthKeyFromRequest, proxyMpRequest } from '~/server/utils/proxy-request';
 
 interface LoginMpInfo {
@@ -182,21 +187,6 @@ function normalizeAuthKey(value: unknown): string {
     return '';
   }
   return normalized;
-}
-
-function isHttpsRequest(event: H3Event): boolean {
-  const forwardedProto = getRequestHeader(event, 'x-forwarded-proto');
-  if (forwardedProto) {
-    return forwardedProto.split(',')[0]?.trim() === 'https';
-  }
-  const encrypted = (event.node.req.socket as { encrypted?: boolean } | undefined)?.encrypted;
-  return Boolean(encrypted);
-}
-
-function createAuthKeyCookie(event: H3Event, authKey: string, expiresAt: number): string {
-  const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
-  const expires = new Date(expiresAt).toUTCString();
-  return `auth-key=${authKey}; Path=/; Expires=${expires}; HttpOnly; SameSite=Lax${secureAttr}`;
 }
 
 function replaceAuthKeySetCookie(headers: Headers, authKey: string, event: H3Event, expiresAt: number): void {
@@ -385,7 +375,13 @@ export default defineEventHandler(async event => {
     }
 
     const promotedSession = await promoteTemporarySession(temporaryAuthKey, canonicalAuthKey);
-    const sessionExpiresAt = Number(promotedSession?.expiresAt) || Date.now();
+    const sessionExpiresAt = resolveAppSessionExpiresAt();
+    if (promotedSession) {
+      await cookieStore.setCookieValue(canonicalAuthKey, {
+        ...promotedSession,
+        expiresAt: sessionExpiresAt,
+      });
+    }
 
     if (effectiveIdentityKey) {
       await upsertAuthKeyBinding({

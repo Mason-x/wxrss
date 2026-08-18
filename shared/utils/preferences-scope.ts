@@ -2,8 +2,6 @@ import { normalizePreferences } from '#shared/utils/preferences';
 import type { PreferenceKey, PreferenceRole, Preferences } from '~/types/preferences';
 
 export const USER_MANAGED_PREFERENCE_KEYS = [
-  'dailySyncEnabled',
-  'dailySyncTime',
   'aiTagDefinitions',
   'syncDateRange',
   'syncDatePoint',
@@ -15,7 +13,6 @@ export const ADMIN_MANAGED_PREFERENCE_KEYS = [
   'privateProxyList',
   'privateProxyAuthorization',
   'rsshubBaseUrl',
-  'newrankCookie',
   'aiSummaryBaseUrl',
   'aiSummaryApiKey',
   'aiSummaryModel',
@@ -30,7 +27,6 @@ export const ADMIN_MANAGED_PREFERENCE_KEYS = [
 export const USER_HIDDEN_PREFERENCE_KEYS = [
   'privateProxyList',
   'privateProxyAuthorization',
-  'newrankCookie',
   'aiSummaryBaseUrl',
   'aiSummaryApiKey',
   'aiSummaryModel',

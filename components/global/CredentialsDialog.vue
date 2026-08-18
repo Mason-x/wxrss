@@ -16,13 +16,22 @@
           :ui="{ list: { marker: { background: 'bg-blue-500 text-white' }, tab: { active: 'text-white' } } }"
         >
           <template #item="{ item }">
-            <div v-if="item.key === 'wxdown'" class="space-y-5">
+            <div v-if="item.key === 'wxdown'" class="space-y-4">
               <p class="flex items-center text-sm">
-                <span class="text-rose-500 font-semibold">所需软件：</span>
+                <span class="text-rose-500 font-semibold">推荐：</span>
                 <UButton @click="downloadProgram" variant="ghost" color="gray"
-                  >去下载 wxdown-service 程序
+                  >下载 wxdown-service
                   <UIcon name="i-lucide:arrow-up-right" class="size-5" />
                 </UButton>
+              </p>
+              <ol class="list-decimal space-y-1 pl-5 text-sm text-slate-600 dark:text-slate-300">
+                <li>启动 wxdown-service，按提示安装证书，并把系统代理指到 <code>127.0.0.1:65000</code></li>
+                <li>点「开始监控」，确认状态变成已连接</li>
+                <li>用微信电脑版或手机（同一 Wi‑Fi 代理）打开要同步的公众号文章</li>
+                <li>凭据会自动出现在下方，无需再导出 Charles 文件</li>
+              </ol>
+              <p class="text-xs text-rose-500">
+                不要用 Chrome / Edge 直接打开文章。普通浏览器没有 uin、key、pass_ticket。
               </p>
               <div class="flex justify-between items-center gap-3">
                 <UInput
@@ -31,7 +40,7 @@
                   type="url"
                   v-model="wsURL"
                   :disabled="monitoring || wsMonitoring"
-                  placeholder="请输入 ws 监听地址"
+                  placeholder="wss://127.0.0.1:65001"
                 />
                 <UButton
                   v-if="!wsMonitoring"
@@ -45,6 +54,9 @@
                   >监控中，结束监控</UButton
                 >
               </div>
+              <p class="text-xs" :class="wsMonitoring ? 'text-green-600' : 'text-slate-500'">
+                {{ wsMonitoring ? '已连接 wxdown-service，用微信打开文章即可自动抓取' : '未连上 wxdown-service，请先启动本地程序' }}
+              </p>
             </div>
             <div v-if="item.key === 'mitmproxy'">
               <p class="flex items-center text-sm">
@@ -105,6 +117,45 @@
               >
                 选择 Charles 会话
               </UButton>
+            </div>
+            <div v-if="item.key === 'file'" class="space-y-4">
+              <p class="text-sm text-gray-600 dark:text-gray-300">
+                导入 wxdown-service 生成的 <code>exports/wechat-credentials.json</code>。也可以先在本机网站导出后再拿到服务器导入。文件只在当前浏览器解析，不会上传到服务器。
+              </p>
+              <p class="text-xs text-rose-500">文件含短期登录票据，大约 25 分钟失效，不要发给别人。</p>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  color="blue"
+                  icon="i-lucide:download"
+                  :disabled="credentials.length === 0"
+                  @click="exportCredentialDocument()"
+                >
+                  导出全部
+                </UButton>
+                <UButton
+                  color="white"
+                  icon="i-lucide:download"
+                  :disabled="validCredentialCount === 0"
+                  @click="exportCredentialDocument(true)"
+                >
+                  只导出未过期
+                </UButton>
+                <input
+                  ref="credentialFileInput"
+                  class="hidden"
+                  type="file"
+                  accept=".json,.wxcred.json,application/json"
+                  @change="importCredentialDocument"
+                />
+                <UButton
+                  color="green"
+                  icon="i-lucide:file-up"
+                  :loading="importingCredentialFile"
+                  @click="credentialFileInput?.click()"
+                >
+                  导入 JSON
+                </UButton>
+              </div>
             </div>
           </template>
         </UTabs>
@@ -191,6 +242,10 @@ const tabs = [
     key: 'charles',
     label: 'Charles 导入',
   },
+  {
+    key: 'file',
+    label: '文件导入/导出',
+  },
 ];
 
 const { checkLogin } = useLoginCheck();
@@ -266,6 +321,7 @@ interface Credential {
   set_cookie?: string;
   timestamp?: number;
   name?: string;
+  nickname?: string;
   avatar?: string;
   biz?: string;
   uin?: string;
@@ -279,6 +335,9 @@ interface Credential {
   referer?: string;
   acct_mode?: string;
 }
+
+const CREDENTIAL_DOCUMENT_FORMAT = 'wechat-article-exporter.credentials';
+const CREDENTIAL_DOCUMENT_VERSION = 1;
 
 function decodeRepeated(value: string): string {
   let current = String(value || '');
@@ -299,17 +358,27 @@ function getQueryValue(query: string, key: string): string {
   return decodeRepeated(value);
 }
 
-async function parseCapturedCredential(item: Credential): Promise<ParsedCredential | null> {
-  let searchParams = new URLSearchParams();
-  if (item.url) {
+function collectSearchParams(item: Credential): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const raw of [item.url, item.referer]) {
+    if (!raw) continue;
     try {
-      searchParams = new URL(item.url).searchParams;
+      const next = new URL(raw).searchParams;
+      next.forEach((value, key) => {
+        if (value && !params.get(key)) {
+          params.set(key, value);
+        }
+      });
     } catch {
-      return null;
+      // ignore invalid urls
     }
   }
+  return params;
+}
 
-  const biz = decodeRepeated(item.biz || searchParams.get('__biz') || '');
+async function parseCapturedCredential(item: Credential): Promise<ParsedCredential | null> {
+  const searchParams = collectSearchParams(item);
+  const biz = decodeRepeated(item.biz || searchParams.get('__biz') || searchParams.get('biz') || '');
   const uin = decodeRepeated(item.uin || searchParams.get('uin') || '');
   const key = decodeRepeated(item.key || searchParams.get('key') || '');
   const passTicket = decodeRepeated(item.pass_ticket || searchParams.get('pass_ticket') || '');
@@ -321,9 +390,14 @@ async function parseCapturedCredential(item: Credential): Promise<ParsedCredenti
   const parsedCookie = parseSetCookie(setCookie);
   const wapSidMatch = setCookie.match(/wap_sid2=(?<wap_sid2>.+?);/);
   const timestamp = Number(item.timestamp) || Date.now();
-  const info = await getInfoCache(biz);
+  let info: MpAccount | undefined;
+  try {
+    info = await getInfoCache(biz);
+  } catch {
+    info = undefined;
+  }
   return {
-    nickname: item.name || info?.nickname,
+    nickname: item.nickname || item.name || info?.nickname,
     avatar: item.avatar || info?.round_head_img,
     biz,
     uin,
@@ -344,8 +418,10 @@ async function parseCapturedCredential(item: Credential): Promise<ParsedCredenti
 }
 
 async function applyCapturedCredentials(items: Credential[]): Promise<number> {
-  const parsed = await Promise.all(items.map(item => parseCapturedCredential(item)));
-  const validItems = parsed.filter((item): item is ParsedCredential => Boolean(item));
+  const parsed = await Promise.allSettled(items.map(item => parseCapturedCredential(item)));
+  const validItems = parsed
+    .map(item => (item.status === 'fulfilled' ? item.value : null))
+    .filter((item): item is ParsedCredential => Boolean(item));
   const merged = new Map(credentials.value.map(item => [item.biz, item]));
   for (const item of validItems) {
     const previous = merged.get(item.biz);
@@ -361,8 +437,112 @@ async function applyCapturedCredentials(items: Credential[]): Promise<number> {
   return new Set(validItems.map(item => item.biz)).size;
 }
 
+function buildCredentialDocument(items: ParsedCredential[]) {
+  return {
+    format: CREDENTIAL_DOCUMENT_FORMAT,
+    version: CREDENTIAL_DOCUMENT_VERSION,
+    exportedAt: Date.now(),
+    credentials: items.map(item => ({
+      biz: item.biz,
+      uin: item.uin,
+      key: item.key,
+      pass_ticket: item.pass_ticket,
+      nickname: item.nickname || '',
+      avatar: item.avatar || '',
+      timestamp: item.timestamp,
+      cookie: item.cookie || '',
+      appmsg_token: item.appmsg_token || '',
+      wap_sid2: item.wap_sid2 || '',
+      exportkey: item.exportkey || '',
+      user_agent: item.user_agent || '',
+      referer: item.referer || '',
+      acct_mode: item.acct_mode || '',
+    })),
+  };
+}
+
+function normalizeCredentialDocument(raw: unknown): Credential[] {
+  const payload = raw as { format?: string; credentials?: unknown; items?: unknown } | unknown[];
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as { credentials?: unknown }).credentials)
+      ? (payload as { credentials: unknown[] }).credentials
+      : Array.isArray((payload as { items?: unknown }).items)
+        ? (payload as { items: unknown[] }).items
+        : [];
+
+  return list
+    .map(item => {
+      const row = (item || {}) as Record<string, unknown>;
+      return {
+        biz: String(row.biz || row.__biz || ''),
+        uin: String(row.uin || ''),
+        key: String(row.key || ''),
+        pass_ticket: String(row.pass_ticket || ''),
+        nickname: String(row.nickname || row.name || ''),
+        name: String(row.name || row.nickname || ''),
+        avatar: String(row.avatar || ''),
+        timestamp: Number(row.timestamp) || 0,
+        cookie: String(row.cookie || ''),
+        appmsg_token: String(row.appmsg_token || ''),
+        wap_sid2: String(row.wap_sid2 || ''),
+        exportkey: String(row.exportkey || ''),
+        user_agent: String(row.user_agent || ''),
+        referer: String(row.referer || ''),
+        acct_mode: String(row.acct_mode || ''),
+        url: String(row.url || ''),
+      } satisfies Credential;
+    })
+    .filter(item => item.biz && item.uin && item.key && item.pass_ticket);
+}
+
+function exportCredentialDocument(onlyValid = false) {
+  const items = onlyValid ? credentials.value.filter(item => item.valid) : credentials.value;
+  if (items.length === 0) {
+    toast.warning('没有可导出的凭证');
+    return;
+  }
+
+  const documentPayload = buildCredentialDocument(items);
+  const stamp = dayjs().format('YYYYMMDD-HHmmss');
+  const suffix = onlyValid ? 'valid' : 'all';
+  const blob = new Blob([`${JSON.stringify(documentPayload, null, 2)}\n`], { type: 'application/json' });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = `wechat-credentials-${suffix}-${stamp}.json`;
+  link.click();
+  URL.revokeObjectURL(href);
+  toast.success('凭证已导出', `已保存 ${items.length} 条，请尽快在服务器网站导入`);
+}
+
 const charlesFileInput = ref<HTMLInputElement | null>(null);
+const credentialFileInput = ref<HTMLInputElement | null>(null);
 const importingCharles = ref(false);
+const importingCredentialFile = ref(false);
+
+async function importCredentialDocument(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file || importingCredentialFile.value) return;
+
+  importingCredentialFile.value = true;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const captured = normalizeCredentialDocument(parsed);
+    if (captured.length === 0) {
+      throw new Error('文件里没有完整的 biz、uin、key、pass_ticket');
+    }
+    const imported = await applyCapturedCredentials(captured);
+    toast.success('凭证导入成功', `已导入 ${imported} 个公众号的 Credential`);
+  } catch (error: any) {
+    toast.error('凭证导入失败', String(error?.message || error || '无法解析 JSON 文件'));
+  } finally {
+    importingCredentialFile.value = false;
+    input.value = '';
+  }
+}
 
 async function importCharlesSession(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -559,9 +739,13 @@ async function fetchCredentials() {
   await applyCapturedCredentials(result);
 }
 
-const wsURL = ref('wss://127.0.0.1:65001');
+const wsURL = ref(localStorage.getItem('auto-detect-credentials:ws-url') || 'wss://127.0.0.1:65001');
 const wsMonitoring = ref(false);
 let _ws: WebSocket | null = null;
+
+watch(wsURL, value => {
+  localStorage.setItem('auto-detect-credentials:ws-url', value.trim());
+});
 
 // 启动监听服务
 async function startListenService(isManual = false) {
@@ -586,7 +770,12 @@ async function startListenService(isManual = false) {
     } catch (e) {
       console.warn('解析失败: ', e);
     }
-    await applyCapturedCredentials(result);
+    const previous = new Map(credentials.value.map(item => [item.biz, item.timestamp]));
+    await applyCapturedCredentials(Array.isArray(result) ? result : []);
+    const incoming = credentials.value.filter(item => item.timestamp > (previous.get(item.biz) || 0)).length;
+    if (incoming > 0) {
+      toast.success('已捕获 Credential', `本次更新 ${incoming} 个公众号的有效凭据`);
+    }
   });
   ws.addEventListener('close', () => {
     wsMonitoring.value = false;

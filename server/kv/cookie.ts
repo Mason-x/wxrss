@@ -1,3 +1,4 @@
+import { APP_SESSION_TTL_MS } from '~/config';
 import { getSqliteDb } from '~/server/db/sqlite';
 import { type CookieEntity } from '~/server/utils/CookieStore';
 
@@ -9,7 +10,8 @@ export interface CookieKVValue {
   expiresAt?: number;
 }
 
-const COOKIE_TTL_FALLBACK_MS = 60 * 60 * 24 * 4 * 1000;
+const COOKIE_TTL_FALLBACK_MS = APP_SESSION_TTL_MS;
+const SESSION_REFRESH_WINDOW_MS = 1000 * 60 * 60 * 24 * 30;
 
 export async function setMpCookie(key: CookieKVKey, data: CookieKVValue): Promise<boolean> {
   try {
@@ -66,11 +68,6 @@ export async function getMpCookie(key: CookieKVKey): Promise<CookieKVValue | nul
       return legacy || null;
     }
 
-    if (row.expires_at <= now) {
-      await db.run(`DELETE FROM mp_cookie WHERE auth_key = ?`, key);
-      return null;
-    }
-
     let cookies: CookieEntity[] = [];
     try {
       const parsed = JSON.parse(row.cookies_json || '[]');
@@ -79,10 +76,25 @@ export async function getMpCookie(key: CookieKVKey): Promise<CookieKVValue | nul
       cookies = [];
     }
 
+    let expiresAt = Number(row.expires_at) || 0;
+    if (!Number.isFinite(expiresAt) || expiresAt <= now + SESSION_REFRESH_WINDOW_MS) {
+      expiresAt = now + COOKIE_TTL_FALLBACK_MS;
+      await db.run(
+        `
+        UPDATE mp_cookie
+        SET expires_at = ?, updated_at = ?
+        WHERE auth_key = ?
+        `,
+        expiresAt,
+        now,
+        key
+      );
+    }
+
     return {
       token: row.token,
       cookies,
-      expiresAt: Number(row.expires_at) || 0,
+      expiresAt,
     };
   } catch (err) {
     console.error('sqlite getMpCookie failed:', err);

@@ -49,7 +49,6 @@ import {
   getArticleCacheSummary,
   updateArticleFavorite,
   updateArticleStatus,
-  upsertArticlesFromRemote,
 } from '~/store/v2/article';
 import { getHtmlCache } from '~/store/v2/html';
 import {
@@ -271,15 +270,6 @@ interface RemoteBatchSyncJobSnapshot {
   pollAfterMs: number;
 }
 
-interface SchedulerArticleEntry {
-  fakeid: string;
-  articles: any[];
-  totalCount: number;
-  updatedAt: number;
-}
-
-type SchedulerArticleMap = Record<string, SchedulerArticleEntry>;
-
 const toast = toastFactory();
 const modal = useModal();
 const { checkLogin } = useLoginCheck();
@@ -307,9 +297,6 @@ const syncingRowId = ref<string | null>(null);
 const syncTimer = ref<number | null>(null);
 const logoutBtnLoading = ref(false);
 const nowTick = ref(Date.now());
-const schedulerSyncTimer = ref<number | null>(null);
-const schedulerHydrationStarted = ref(false);
-const schedulerHydrationRunning = ref(false);
 const syncProgressByFakeid = ref<Record<string, AccountSyncProgress>>({});
 const batchSyncProgress = ref<BatchSyncProgress>({
   running: false,
@@ -341,7 +328,6 @@ const runtimeStateSync = useAccountSyncedState<ReaderRuntimeState>({
 const runtimeState = runtimeStateSync.state;
 const legacyMigrationDone = useLocalStorage<boolean>('reader-legacy-migration-v2', false);
 const legacyLargeCacheMigrationDone = useLocalStorage<boolean>('reader-legacy-large-cache-migration-v1', false);
-const schedulerHydrationDone = useLocalStorage<boolean>('reader-scheduler-hydration-v1', false);
 const knownArticleMap = ref<Record<string, true>>({});
 const unreadArticleMap = ref<Record<string, true>>({});
 const accountNewArticleMap = ref<Record<string, true>>({});
@@ -2720,38 +2706,7 @@ function clearMobileUnderlay(context?: MobileInteractiveSwipeContext) {
 }
 
 const cookieRemainText = computed(() => {
-  if (!loginAccount.value?.expires) {
-    return '未登录';
-  }
-
-  const remain = new Date(loginAccount.value.expires).getTime() - nowTick.value;
-  if (remain <= 0) {
-    return '已过期';
-  }
-
-  const totalSeconds = Math.floor(remain / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (days > 0) {
-    return `${days}天 ${hours}小时`;
-  }
-  if (hours > 0) {
-    return `${hours}小时 ${minutes}分钟`;
-  }
-  if (minutes > 0) {
-    return `${minutes}分钟 ${seconds}秒`;
-  }
-  return `${seconds}秒`;
-});
-
-const cookieExpireAt = computed(() => {
-  if (!loginAccount.value?.expires) {
-    return '--';
-  }
-  return format(new Date(loginAccount.value.expires), 'yyyy-MM-dd HH:mm:ss');
+  return loginAccount.value?.auth_key ? '长期有效' : '未登录';
 });
 
 const {
@@ -2977,118 +2932,6 @@ function markArticleAsRead(article: ReaderArticle) {
   persistRuntimeState();
 }
 
-async function syncSchedulerState(accountList: MpAccount[]) {
-  try {
-    await request('/api/web/scheduler/upsert', {
-      method: 'POST',
-      body: {
-        config: {
-          dailySyncEnabled: Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
-          dailySyncTime: String((preferences.value as unknown as Preferences).dailySyncTime || '03:00'),
-          accountSyncMinSeconds: Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
-          accountSyncMaxSeconds: Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
-          syncDateRange: (preferences.value as unknown as Preferences).syncDateRange,
-          syncDatePoint: Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
-        },
-        accounts: accountList.map(account => ({
-          fakeid: account.fakeid,
-          source_type: account.source_type || 'mp',
-          source_url: account.source_url || '',
-          site_url: account.site_url || '',
-          description: account.description || '',
-          nickname: account.nickname || '',
-          round_head_img: account.round_head_img || '',
-          category: account.category || '',
-          focused: Boolean(account.focused),
-        })),
-      },
-    });
-  } catch {
-    // Ignore when user has not logged in or auth-key is unavailable.
-  }
-}
-
-async function pullSchedulerArticles(accountList: MpAccount[]) {
-  if (accountList.length === 0) {
-    return;
-  }
-  if (isSyncing.value) {
-    return;
-  }
-
-  try {
-    for (const account of accountList) {
-      if (isSyncing.value) {
-        break;
-      }
-      const resp = await request<{ data: SchedulerArticleMap }>('/api/web/scheduler/articles', {
-        query: {
-          fakeid: account.fakeid,
-        },
-        timeout: 20000,
-      });
-      const map = (resp?.data || {}) as SchedulerArticleMap;
-      const entry = map[account.fakeid];
-      if (!entry || !Array.isArray(entry.articles) || entry.articles.length === 0) {
-        continue;
-      }
-
-      const totalCount = Number(entry.totalCount || 0);
-      const source = entry.articles as any[];
-      const batchSize = 30;
-      for (let offset = 0; offset < source.length; offset += batchSize) {
-        if (isSyncing.value) {
-          return;
-        }
-        const chunk = source.slice(offset, offset + batchSize);
-        await upsertArticlesFromRemote(account, chunk, totalCount);
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-  } catch {
-    // Ignore when user has not logged in or no scheduler data is available.
-  }
-}
-
-async function hydrateSchedulerArticlesInBackground(accountList: MpAccount[]) {
-  if (
-    accountList.length === 0 ||
-    schedulerHydrationDone.value ||
-    schedulerHydrationStarted.value ||
-    schedulerHydrationRunning.value
-  ) {
-    return;
-  }
-
-  // Scheduler backfill is a one-off bootstrap task and should not run on every startup.
-  schedulerHydrationDone.value = true;
-  schedulerHydrationStarted.value = true;
-  schedulerHydrationRunning.value = true;
-  try {
-    await pullSchedulerArticles(accountList);
-
-    const refreshed = await getAllInfo();
-    accounts.value = refreshed;
-    await loadArticlePage(true);
-    clearSelectionOutOfScope();
-  } catch {
-    // Ignore when user has not logged in or scheduler payload is unavailable.
-  } finally {
-    schedulerHydrationRunning.value = false;
-  }
-}
-
-function scheduleSyncSchedulerState() {
-  if (schedulerSyncTimer.value) {
-    window.clearTimeout(schedulerSyncTimer.value);
-  }
-
-  schedulerSyncTimer.value = window.setTimeout(() => {
-    syncSchedulerState(accounts.value);
-  }, 300);
-}
-
 function clearSelectionOutOfScope() {
   if (!selectionMode.value) {
     if (selectedArticleKeys.value.size > 0) {
@@ -3259,25 +3102,9 @@ watch(
 );
 
 watch(
-  () => [
-    Number((preferences.value as unknown as Preferences).accountSyncMinSeconds || 3),
-    Number((preferences.value as unknown as Preferences).accountSyncMaxSeconds || 5),
-    Boolean((preferences.value as unknown as Preferences).dailySyncEnabled),
-    String((preferences.value as unknown as Preferences).dailySyncTime || '03:00'),
-    String((preferences.value as unknown as Preferences).syncDateRange || 'all'),
-    Number((preferences.value as unknown as Preferences).syncDatePoint || 0),
-  ],
-  () => {
-    scheduleSyncSchedulerState();
-  }
-);
-
-watch(
   () => Boolean(loginAccount.value),
   async loggedIn => {
     if (!loggedIn) {
-      schedulerHydrationStarted.value = false;
-      schedulerHydrationRunning.value = false;
       syncProgressByFakeid.value = {};
       await runtimeStateSync.hydrate();
       await favoriteOnlySync.hydrate();
@@ -3299,11 +3126,6 @@ async function refreshData() {
     accounts.value = accountList;
     await loadArticlePage(true);
     clearSelectionOutOfScope();
-
-    void syncSchedulerState(accountList);
-    if (!schedulerHydrationDone.value) {
-      void hydrateSchedulerArticlesInBackground(accountList);
-    }
   } catch (error: any) {
     const statusCode = Number(error?.statusCode || error?.response?.status || 0);
     if (statusCode === 401) {
@@ -5862,10 +5684,6 @@ onUnmounted(() => {
   if (realtimeBatchRefreshTimer !== null) {
     window.clearTimeout(realtimeBatchRefreshTimer);
     realtimeBatchRefreshTimer = null;
-  }
-  if (schedulerSyncTimer.value) {
-    window.clearTimeout(schedulerSyncTimer.value);
-    schedulerSyncTimer.value = null;
   }
   clearBatchSyncNoticeTimer();
   document.removeEventListener('pointerdown', onAvatarMenuPointerDown);

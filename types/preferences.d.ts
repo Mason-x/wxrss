@@ -16,7 +16,6 @@ export interface Preferences {
   privateProxyAuthorization: string;
 
   rsshubBaseUrl: string;
-  newrankCookie: string;
 
   aiSummaryBaseUrl: string;
   aiSummaryApiKey: string;
@@ -34,9 +33,6 @@ export interface Preferences {
   accountSyncMinSeconds: number;
   accountSyncMaxSeconds: number;
 
-  dailySyncEnabled: boolean;
-  dailySyncTime: string;
-
   syncDateRange: '24h' | '1d' | '3d' | '7d' | '1m' | '3m' | '6m' | '1y' | 'all' | 'point';
   syncDatePoint: number;
 }
@@ -50,7 +46,6 @@ export interface PreferencesAccess {
 
 export interface PreferencesCapabilities {
   aiConfigured: boolean;
-  newrankConfigured: boolean;
   privateProxyConfigured: boolean;
   privateProxyCount: number;
 }

@@ -10,7 +10,7 @@ import {
   USER_MANAGED_PREFERENCE_KEYS,
 } from '#shared/utils/preferences-scope';
 import { getSqliteDb } from '~/server/db/sqlite';
-import { getSchedulerState } from '~/server/kv/scheduler';
+
 import { resolveAccountOwnerScope } from '~/server/repositories/account-owner';
 import { getAuthKeyBindingByIdentity } from '~/server/repositories/auth-key-binding';
 import { getSystemPreference, upsertSystemPreference } from '~/server/repositories/system-preferences';
@@ -238,20 +238,7 @@ async function loadPreferencesRow(options: {
   return migrateAlternateOwnerRow(options);
 }
 
-async function buildSchedulerFallback(authKey: string): Promise<Partial<Preferences>> {
-  return getSchedulerState(authKey)
-    .then(state =>
-      normalizePreferences({
-        dailySyncEnabled: state?.config.dailySyncEnabled,
-        dailySyncTime: state?.config.dailySyncTime,
-        accountSyncMinSeconds: state?.config.accountSyncMinSeconds,
-        accountSyncMaxSeconds: state?.config.accountSyncMaxSeconds,
-        syncDateRange: state?.config.syncDateRange,
-        syncDatePoint: state?.config.syncDatePoint,
-      })
-    )
-    .catch(() => normalizePreferences());
-}
+
 
 async function getUserPreferencesState(authKey: string): Promise<UserPreferencesState & { ownerKey: string; identityKey: string }> {
   const owner = await resolveAccountOwnerScope(authKey);
@@ -272,7 +259,7 @@ async function getUserPreferencesState(authKey: string): Promise<UserPreferences
     identityKey: owner.identityKey,
     exists: false,
     source: 'default',
-    preferences: normalizeUserManagedPreferences(await buildSchedulerFallback(owner.authKey)),
+    preferences: normalizeUserManagedPreferences(),
     updatedAt: 0,
   };
 }
@@ -322,7 +309,7 @@ async function resolveManagedPreferencesSeed(adminIdentityKey?: string): Promise
 
   return {
     ...seed,
-    ...pickAdminManagedPreferences(await buildSchedulerFallback(adminAuthKey)),
+    ...pickAdminManagedPreferences(),
   };
 }
 
@@ -394,7 +381,6 @@ function createPreferencesCapabilities(preferences: Preferences): PreferencesCap
         String(preferences.aiSummaryBaseUrl || '').trim() &&
         String(preferences.aiSummaryModel || '').trim()
     ),
-    newrankConfigured: Boolean(String(preferences.newrankCookie || '').trim()),
     privateProxyConfigured: privateProxyCount > 0,
     privateProxyCount,
   };
@@ -413,9 +399,6 @@ function projectPreferencesForRole(preferences: Preferences, role: PreferencesAc
         break;
       case 'privateProxyAuthorization':
         projected.privateProxyAuthorization = '';
-        break;
-      case 'newrankCookie':
-        projected.newrankCookie = '';
         break;
       case 'aiSummaryBaseUrl':
         projected.aiSummaryBaseUrl = '';

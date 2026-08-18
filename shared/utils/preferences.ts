@@ -87,7 +87,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   privateProxyList: [],
   privateProxyAuthorization: '',
   rsshubBaseUrl: '',
-  newrankCookie: '',
   aiSummaryBaseUrl: 'https://api.openai.com/v1',
   aiSummaryApiKey: '',
   aiSummaryModel: 'gpt-4.1-mini',
@@ -111,8 +110,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   accountSyncMinSeconds: 3,
   accountSyncMaxSeconds: 5,
-  dailySyncEnabled: true,
-  dailySyncTime: '03:00',
   syncDateRange: '1y',
   syncDatePoint: MP_ORIGIN_TIMESTAMP,
 };
@@ -132,32 +129,6 @@ function normalizeSyncDateRange(value?: string): Preferences['syncDateRange'] {
     return value as Preferences['syncDateRange'];
   }
   return DEFAULT_PREFERENCES.syncDateRange;
-}
-
-function normalizeDailySyncTime(value?: string): string {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value || '').trim());
-  if (!match) {
-    return DEFAULT_PREFERENCES.dailySyncTime;
-  }
-  return `${match[1]}:${match[2]}`;
-}
-
-function resolveDailySyncConfig(source: PreferencesInput): Pick<Preferences, 'dailySyncEnabled' | 'dailySyncTime'> {
-  const rawTime = String(source.dailySyncTime || '').trim();
-  const normalizedTime = normalizeDailySyncTime(source.dailySyncTime);
-  const hasLegacyDefaultCombo = source.dailySyncEnabled === false && (!rawTime || normalizedTime === '06:00');
-
-  if (hasLegacyDefaultCombo) {
-    return {
-      dailySyncEnabled: true,
-      dailySyncTime: DEFAULT_PREFERENCES.dailySyncTime,
-    };
-  }
-
-  return {
-    dailySyncEnabled: source.dailySyncEnabled ?? DEFAULT_PREFERENCES.dailySyncEnabled,
-    dailySyncTime: normalizedTime,
-  };
 }
 
 function normalizeProxyList(value?: string[]): string[] {
@@ -440,7 +411,6 @@ function normalizeStoredDailyPrompt(value: unknown, fallback: string): string {
 export function normalizePreferences(input?: PreferencesInput | null): Preferences {
   const source = input || {};
   const syncDelayRange = normalizeSyncDelayRange(source, DEFAULT_PREFERENCES);
-  const dailySyncConfig = resolveDailySyncConfig(source);
   const legacyCombinedPrompt = normalizeAiPrompt(source.aiTagReportSystemPrompt, DEFAULT_PREFERENCES.aiTagSystemPrompt);
   const aiTagDefinitions = normalizeAiTagDefinitions(source.aiTagDefinitions, source.aiTagListText);
 
@@ -449,7 +419,6 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     privateProxyList: normalizeProxyList(source.privateProxyList),
     privateProxyAuthorization: String(source.privateProxyAuthorization || '').trim(),
     rsshubBaseUrl: String(source.rsshubBaseUrl || '').trim(),
-    newrankCookie: String(source.newrankCookie || '').trim(),
     aiSummaryBaseUrl: String(source.aiSummaryBaseUrl || DEFAULT_PREFERENCES.aiSummaryBaseUrl).trim(),
     aiSummaryApiKey: String(source.aiSummaryApiKey || '').trim(),
     aiSummaryModel: String(source.aiSummaryModel || DEFAULT_PREFERENCES.aiSummaryModel).trim(),
@@ -488,8 +457,6 @@ export function normalizePreferences(input?: PreferencesInput | null): Preferenc
     },
     accountSyncMinSeconds: syncDelayRange.accountSyncMinSeconds,
     accountSyncMaxSeconds: syncDelayRange.accountSyncMaxSeconds,
-    dailySyncEnabled: dailySyncConfig.dailySyncEnabled,
-    dailySyncTime: dailySyncConfig.dailySyncTime,
     syncDateRange: normalizeSyncDateRange(source.syncDateRange),
     syncDatePoint: Number.isFinite(source.syncDatePoint)
       ? Number(source.syncDatePoint)

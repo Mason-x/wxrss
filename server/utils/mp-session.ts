@@ -1,5 +1,6 @@
 import dayjs from 'dayjs';
 import { appendResponseHeader, createError, getRequestHeader, type H3Event } from 'h3';
+import { APP_SESSION_TTL_MS } from '~/config';
 import { getAuthKeyBindingByAuthKey } from '~/server/repositories/auth-key-binding';
 import { getUserAccessByIdentity } from '~/server/repositories/user-access';
 import { cookieStore } from '~/server/utils/CookieStore';
@@ -25,6 +26,19 @@ function isHttpsRequest(event: H3Event): boolean {
 function createExpiredCookie(event: H3Event, name: string): string {
   const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
   return `${name}=EXPIRED; Path=/; Expires=${dayjs().subtract(1, 'days').toDate().toUTCString()}; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
+export function resolveAppSessionExpiresAt(now = Date.now()): number {
+  return now + APP_SESSION_TTL_MS;
+}
+
+export function createAuthKeyCookie(event: H3Event, authKey: string, expiresAt = resolveAppSessionExpiresAt()): string {
+  const secureAttr = isHttpsRequest(event) ? '; Secure' : '';
+  return `auth-key=${authKey}; Path=/; Expires=${new Date(expiresAt).toUTCString()}; HttpOnly; SameSite=Lax${secureAttr}`;
+}
+
+export function appendAuthKeyCookie(event: H3Event, authKey: string, expiresAt = resolveAppSessionExpiresAt()): void {
+  appendResponseHeader(event, 'set-cookie', createAuthKeyCookie(event, authKey, expiresAt));
 }
 
 function getCachedSession(event: H3Event): MpSession | null | undefined {

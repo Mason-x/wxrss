@@ -35,6 +35,11 @@ export const ACCOUNT_TYPE: Record<number, string> = {
 export const CREDENTIAL_LIVE_MINUTES: number = 25;
 
 /**
+ * 扫码授权后的应用登录有效期。与微信后台 Cookie、Credential 无关。
+ */
+export const APP_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 365 * 10;
+
+/**
  * Credentials 鏈嶅姟鍣ㄤ富鏈哄湴鍧€
  */
 export const CREDENTIAL_API_HOST = 'http://127.0.0.1:8088';

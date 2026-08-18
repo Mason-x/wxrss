@@ -1,6 +1,6 @@
 import { getMpCookie } from '~/server/kv/cookie';
 import { getAuthKeyBindingByAuthKey } from '~/server/repositories/auth-key-binding';
-import { clearMpSession, resolveMpSessionByAuthKey } from '~/server/utils/mp-session';
+import { appendAuthKeyCookie, clearMpSession, resolveMpSessionByAuthKey } from '~/server/utils/mp-session';
 import { getAuthKeyFromRequest } from '~/server/utils/proxy-request';
 
 export default defineEventHandler(async event => {
@@ -25,6 +25,7 @@ export default defineEventHandler(async event => {
 
   const binding = await getAuthKeyBindingByAuthKey(authKey);
   const expiresAt = Number(cookie.expiresAt) || Date.now();
+  appendAuthKeyCookie(event, authKey, expiresAt);
 
   return {
     code: 0,

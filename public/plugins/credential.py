@@ -18,10 +18,23 @@ class ExtractSetCookie:
 
         parsed_url = urlparse(flow.request.url)
         query_params = parse_qs(parsed_url.query)
-        biz = query_params.get('__biz', [None])[0]
-        pass_ticket = query_params.get('pass_ticket', [None])[0]
-        uin = query_params.get('uin', [None])[0] or flow.request.headers.get("x-wechat-uin")
-        key = query_params.get('key', [None])[0] or flow.request.headers.get("x-wechat-key")
+        referer_params = parse_qs(urlparse(flow.request.headers.get("referer", "")).query)
+        biz = (
+            (query_params.get('__biz') or [None])[0]
+            or (query_params.get('biz') or [None])[0]
+            or (referer_params.get('__biz') or [None])[0]
+        )
+        pass_ticket = (query_params.get('pass_ticket') or [None])[0] or (referer_params.get('pass_ticket') or [None])[0]
+        uin = (
+            (query_params.get('uin') or [None])[0]
+            or flow.request.headers.get("x-wechat-uin")
+            or (referer_params.get('uin') or [None])[0]
+        )
+        key = (
+            (query_params.get('key') or [None])[0]
+            or flow.request.headers.get("x-wechat-key")
+            or (referer_params.get('key') or [None])[0]
+        )
         if not all([biz, pass_ticket, uin, key]):
             return
 

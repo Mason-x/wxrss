@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatDistance } from 'date-fns';
 import { request } from '#shared/utils/request';
 import StorageUsage from '~/components/StorageUsage.vue';
 import { IMAGE_PROXY } from '~/config';
@@ -8,68 +7,6 @@ import type { LogoutResponse } from '~/types/types';
 const loginAccount = useLoginAccount();
 const route = useRoute();
 const { navigateToLogin } = useMpAuth();
-
-const now = ref(new Date());
-const distance = computed(() => {
-  return (
-    loginAccount.value &&
-    formatDistance(new Date(loginAccount.value.expires), now.value, {
-      includeSeconds: true,
-      locale: {
-        formatDistance: function (token, count, options) {
-          if (now.value >= new Date(loginAccount.value.expires)) {
-            window.clearInterval(timer);
-            setTimeout(() => {
-              loginAccount.value = null;
-            }, 0);
-            return '已过期';
-          }
-
-          switch (token) {
-            case 'aboutXHours':
-              return '大约' + count + '个小时';
-            case 'aboutXMonths':
-              return '大约' + count + '个月';
-            case 'aboutXWeeks':
-              return '大约' + count + '周';
-            case 'aboutXYears':
-              return '大约' + count + '年';
-            case 'lessThanXMinutes':
-              return '小于' + count + '分钟';
-            case 'almostXYears':
-              return '接近' + count + '年';
-            case 'halfAMinute':
-              return '半分钟';
-            case 'lessThanXSeconds':
-              return '小于' + count + '秒';
-            case 'overXYears':
-              return '超过' + count + '年';
-            case 'xDays':
-              return count + '天';
-            case 'xHours':
-              return count + '个小时';
-            case 'xMinutes':
-              return count + '分钟';
-            case 'xMonths':
-              return count + '个月';
-            case 'xSeconds':
-              return count + '秒';
-            case 'xWeeks':
-              return count + '周';
-            case 'xYears':
-              return count + '年';
-            default:
-              return 'unknown';
-          }
-        },
-      },
-    })
-  );
-});
-const warning = computed(() => {
-  const value = distance.value;
-  return value === '已过期' || value.includes('分钟') || value.includes('秒');
-});
 
 function login() {
   void navigateToLogin(route.fullPath);
@@ -87,16 +24,6 @@ async function logout() {
   }
   logoutBtnLoading.value = false;
 }
-
-let timer: number;
-onMounted(() => {
-  timer = window.setInterval(() => {
-    now.value = new Date();
-  }, 1000);
-});
-onUnmounted(() => {
-  window.clearInterval(timer);
-});
 </script>
 
 <template>
@@ -131,8 +58,8 @@ onUnmounted(() => {
         </UButton>
       </div>
       <div class="flex items-center justify-between gap-3 text-sm">
-        <span>登录信息过期时间还剩: </span>
-        <span class="font-mono" :class="warning ? 'text-rose-500' : 'text-green-500'">{{ distance }}</span>
+        <span>登录状态</span>
+        <span class="font-mono text-green-500">已登录</span>
       </div>
     </div>
     <div v-else class="login-card app-shell-muted rounded-[24px] p-3">

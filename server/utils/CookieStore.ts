@@ -1,10 +1,11 @@
 import { getRequestHeader, H3Event, parseCookies } from 'h3';
+import { APP_SESSION_TTL_MS } from '~/config';
 import type { CookieKVValue } from '~/server/kv/cookie';
 import { deleteMpCookie, getMpCookie, setMpCookie } from '~/server/kv/cookie';
 
 export type CookieEntity = Record<string, string | number>;
 
-const FALLBACK_COOKIE_TTL_MS = 60 * 60 * 24 * 4 * 1000;
+const FALLBACK_COOKIE_TTL_MS = APP_SESSION_TTL_MS;
 
 function getCookieTimestamp(value: unknown): number {
   const normalized = Number(value);
@@ -43,16 +44,7 @@ export class AccountCookie {
     return value;
   }
 
-  static resolveExpiresAt(cookies: CookieEntity[], now = Date.now()): number {
-    const candidates = cookies
-      .filter(cookie => String(cookie.value || '') !== 'EXPIRED')
-      .map(cookie => getCookieTimestamp(cookie.expires_timestamp))
-      .filter(timestamp => timestamp > now);
-
-    if (candidates.length > 0) {
-      return Math.min(...candidates);
-    }
-
+  static resolveExpiresAt(_cookies: CookieEntity[] = [], now = Date.now()): number {
     return now + FALLBACK_COOKIE_TTL_MS;
   }
 

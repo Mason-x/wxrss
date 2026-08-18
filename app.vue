@@ -18,7 +18,7 @@ import { isDev } from '~/config';
 
 const runtimeConfig = useRuntimeConfig();
 const route = useRoute();
-const { loginAccount, isLoginExpired, isPublicRoute, navigateToLogin } = useMpAuth();
+const { loginAccount, isPublicRoute, validateLogin, navigateToLogin } = useMpAuth();
 
 if (import.meta.client) {
   document.documentElement.classList.remove('dark');
@@ -35,8 +35,8 @@ async function ensureProtectedRouteAuth() {
     return;
   }
 
-  if (!loginAccount.value || isLoginExpired(loginAccount.value)) {
-    loginAccount.value = null;
+  const ok = await validateLogin();
+  if (!ok) {
     authRedirecting.value = true;
     try {
       await navigateToLogin(route.fullPath);

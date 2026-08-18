@@ -21,42 +21,7 @@ export interface RssSyncResult {
   sourceUrl: string;
 }
 
-export interface NewrankMpCategoryItem {
-  id: string;
-  label: string;
-  description: string;
-  rankName: string;
-  rankGroup: string;
-  accentFrom: string;
-  accentTo: string;
-}
 
-export interface NewrankMpRecommendationItem {
-  id: string;
-  nickname: string;
-  alias: string;
-  avatar: string;
-  uuid: string;
-  score: number | null;
-  rank: number;
-  sourceLabel: string;
-  searchKeyword: string;
-}
-
-export interface NewrankMpRecommendationsResult {
-  state: 'ready' | 'missing_cookie' | 'empty' | 'error';
-  message: string;
-  selectedCategory: string;
-  latestMonth: string;
-  latestMonthLabel: string;
-  categories: NewrankMpCategoryItem[];
-  items: NewrankMpRecommendationItem[];
-}
-
-export interface NewrankCookieTestResult {
-  ok: boolean;
-  text: string;
-}
 
 export interface RsshubDiscoverParamOption {
   label: string;
@@ -574,27 +539,7 @@ export async function getAccountList(begin = 0, keyword = ''): Promise<[AccountI
   throw new Error('failed to load account list');
 }
 
-export async function getNewrankMpRecommendations(options?: {
-  category?: string;
-  limit?: number;
-}): Promise<NewrankMpRecommendationsResult> {
-  return await request<NewrankMpRecommendationsResult>('/api/web/mp/newrank-recommendations', {
-    query: {
-      category: String(options?.category || '').trim(),
-      limit: Number(options?.limit) || 30,
-    },
-  });
-}
 
-export async function testNewrankCookie(cookie: string): Promise<NewrankCookieTestResult> {
-  const resp = await request<{ data: NewrankCookieTestResult }>('/api/web/mp/newrank-cookie-test', {
-    method: 'POST',
-    body: {
-      cookie,
-    },
-  });
-  return resp.data;
-}
 
 /**
  * 鑾峰彇璇勮

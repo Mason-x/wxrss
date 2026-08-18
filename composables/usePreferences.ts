@@ -36,7 +36,6 @@ export default () => {
   }));
   const capabilities = useState<PreferencesCapabilities>('preferences-capabilities', () => ({
     aiConfigured: false,
-    newrankConfigured: false,
     privateProxyConfigured: false,
     privateProxyCount: 0,
   }));
@@ -54,7 +53,6 @@ export default () => {
         };
         capabilities.value = response?.capabilities || {
           aiConfigured: false,
-          newrankConfigured: false,
           privateProxyConfigured: false,
           privateProxyCount: 0,
         };

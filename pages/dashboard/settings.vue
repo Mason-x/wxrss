@@ -81,7 +81,6 @@ import SettingAiSummary from '~/components/setting/AiSummary.vue';
 import SettingExport from '~/components/setting/Export.vue';
 import SettingMisc from '~/components/setting/Misc.vue';
 import SettingProxy from '~/components/setting/Proxy.vue';
-import SettingScheduler from '~/components/setting/Scheduler.vue';
 import { websiteName } from '~/config';
 import toastFactory from '~/composables/toast';
 
@@ -93,7 +92,7 @@ useHead({
   title: `设置 | ${websiteName}`,
 });
 
-type SettingsSectionId = 'scheduler' | 'ai' | 'proxy' | 'export' | 'misc';
+type SettingsSectionId = 'ai' | 'proxy' | 'export' | 'misc';
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -111,13 +110,6 @@ const currentIdentityKey = computed(() => String(loginAccount.value?.identity_ke
 
 const sections = computed<SettingsSection[]>(() => {
   const items: SettingsSection[] = [
-    {
-      id: 'scheduler',
-      label: '每日自动同步',
-      description: '个人同步开关与执行时间',
-      icon: 'i-lucide:calendar-clock',
-      component: SettingScheduler,
-    },
     {
       id: 'ai',
       label: 'AI 功能',
@@ -154,10 +146,9 @@ const sections = computed<SettingsSection[]>(() => {
   return items;
 });
 
-const activeSection = ref<SettingsSectionId>('scheduler');
+const activeSection = ref<SettingsSectionId>('ai');
 const scrollContainerRef = ref<HTMLElement | null>(null);
 const sectionRefs = reactive<Record<SettingsSectionId, HTMLElement | null>>({
-  scheduler: null,
   ai: null,
   proxy: null,
   export: null,
@@ -211,7 +202,7 @@ function syncActiveSectionFromScroll() {
 
   const availableSections = sections.value;
   const threshold = container.scrollTop + getScrollOffset() + 12;
-  let nextActive = availableSections[0]?.id || 'scheduler';
+  let nextActive = availableSections[0]?.id || 'ai';
 
   for (const section of availableSections) {
     const target = sectionRefs[section.id];
@@ -227,7 +218,7 @@ watch(
   sections,
   value => {
     if (!value.some(section => section.id === activeSection.value)) {
-      activeSection.value = value[0]?.id || 'scheduler';
+      activeSection.value = value[0]?.id || 'ai';
     }
   },
   { immediate: true }
