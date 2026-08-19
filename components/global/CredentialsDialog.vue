@@ -1,12 +1,47 @@
 <template>
-  <USlideover v-model="open" :ui="{ width: 'max-w-[500px]' }">
+  <USlideover
+    v-model="open"
+    :ui="{
+      width: 'w-screen max-w-none sm:max-w-[500px]',
+      overlay: { background: 'bg-slate-950/45' },
+    }"
+  >
     <UCard
       class="flex flex-col flex-1"
-      :ui="{ body: { base: 'flex-1' }, ring: '', divide: 'divide-y divide-gray-100 dark:divide-gray-800' }"
+      :ui="{
+        body: { base: 'flex-1 overflow-hidden' },
+        ring: '',
+        divide: 'divide-y divide-gray-100 dark:divide-gray-800',
+      }"
+      @touchstart.passive="onDialogTouchStart"
+      @touchend="onDialogTouchEnd"
+      @touchcancel="resetDialogSwipe"
     >
       <template #header>
-        <div class="flex justify-between items-center">
-          <h2 class="font-bold text-2xl">抓取 Credentials</h2>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="sm:hidden">
+              <UButton
+                size="sm"
+                color="gray"
+                variant="ghost"
+                icon="i-lucide:chevron-left"
+                class="icon-btn"
+                aria-label="返回"
+                @click="closeDialog"
+              />
+            </div>
+            <h2 class="truncate font-bold text-xl sm:text-2xl">抓取 Credentials</h2>
+          </div>
+          <UButton
+            size="sm"
+            color="gray"
+            variant="ghost"
+            icon="i-lucide:x"
+            class="icon-btn"
+            aria-label="关闭"
+            @click="closeDialog"
+          />
         </div>
       </template>
 
@@ -220,6 +255,92 @@ const emit = defineEmits<{
 
 const open = defineModel<boolean>('open', { default: false });
 const state = defineModel<CredentialState>('state', { default: 'inactive' });
+
+const HISTORY_FLAG = '__wxrss_credentials_dialog';
+let historyPushed = false;
+let closingFromPopstate = false;
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeTracking = false;
+
+function closeDialog() {
+  open.value = false;
+}
+
+function onDialogPopState() {
+  if (!open.value) {
+    return;
+  }
+  closingFromPopstate = true;
+  historyPushed = false;
+  open.value = false;
+}
+
+function syncDialogHistory(isOpen: boolean) {
+  if (!import.meta.client) {
+    return;
+  }
+
+  if (isOpen) {
+    if (!historyPushed) {
+      history.pushState({ ...(history.state || {}), [HISTORY_FLAG]: true }, '');
+      historyPushed = true;
+    }
+    window.addEventListener('popstate', onDialogPopState);
+    return;
+  }
+
+  window.removeEventListener('popstate', onDialogPopState);
+  if (closingFromPopstate) {
+    closingFromPopstate = false;
+    return;
+  }
+  if (historyPushed) {
+    historyPushed = false;
+    if (history.state?.[HISTORY_FLAG]) {
+      history.back();
+    }
+  }
+}
+
+function resetDialogSwipe() {
+  swipeTracking = false;
+  swipeStartX = 0;
+  swipeStartY = 0;
+}
+
+function onDialogTouchStart(event: TouchEvent) {
+  const touch = event.touches[0];
+  if (!touch || !import.meta.client || window.innerWidth >= 768) {
+    resetDialogSwipe();
+    return;
+  }
+  swipeTracking = touch.clientX <= 28;
+  swipeStartX = touch.clientX;
+  swipeStartY = touch.clientY;
+}
+
+function onDialogTouchEnd(event: TouchEvent) {
+  if (!swipeTracking) {
+    return;
+  }
+  const touch = event.changedTouches[0];
+  const startX = swipeStartX;
+  const startY = swipeStartY;
+  resetDialogSwipe();
+  if (!touch) {
+    return;
+  }
+  const deltaX = touch.clientX - startX;
+  const deltaY = touch.clientY - startY;
+  if (deltaX >= 56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+    closeDialog();
+  }
+}
+
+watch(open, isOpen => {
+  syncDialogHistory(Boolean(isOpen));
+});
 
 const pullArticleLoading = ref(false);
 async function pullData(fakeid: string) {
@@ -655,6 +776,11 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('popstate', onDialogPopState);
+  if (historyPushed && history.state?.[HISTORY_FLAG] && !closingFromPopstate) {
+    historyPushed = false;
+    history.back();
+  }
   clearRetryTimer();
 });
 
@@ -861,3 +987,11 @@ function copy(text: string) {
   }, 1000);
 }
 </script>
+
+<style scoped>
+.icon-btn {
+  @apply !inline-flex size-9 sm:size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200
+    bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900
+    dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white;
+}
+</style>
