@@ -153,6 +153,42 @@
                 选择 Charles 会话
               </UButton>
             </div>
+            <div v-if="item.key === 'paste'" class="space-y-3">
+              <p class="text-sm text-gray-600 dark:text-gray-300">
+                直接粘贴响应头（含 <code>x-wx-credentials</code>）或凭证 JSON。只在当前浏览器解析，不会上传到服务器。
+              </p>
+              <p class="text-xs text-rose-500">含短期登录票据，大约 25 分钟失效，不要发给别人。</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <UButton
+                  color="green"
+                  icon="i-lucide:clipboard-paste"
+                  :loading="importingPastedCredential"
+                  :disabled="!pasteCredentialText.trim()"
+                  @click="importPastedCredential"
+                >
+                  导入粘贴内容
+                </UButton>
+                <UButton
+                  color="gray"
+                  variant="ghost"
+                  :disabled="!pasteCredentialText.trim() || importingPastedCredential"
+                  @click="pasteCredentialText = ''"
+                >
+                  清空
+                </UButton>
+                <span v-if="pasteCredentialText.trim()" class="text-xs text-slate-500">
+                  已粘贴 {{ pasteCredentialText.length.toLocaleString() }} 字符
+                </span>
+              </div>
+              <UTextarea
+                v-model="pasteCredentialText"
+                :rows="6"
+                class="paste-credential-input"
+                placeholder="content-type: application/json; charset=UTF-8
+x-wx-count: 7
+x-wx-credentials: {&quot;format&quot;:&quot;wechat-article-exporter.credentials&quot;,&quot;version&quot;:1,&quot;credentials&quot;:[...]}"
+              />
+            </div>
             <div v-if="item.key === 'file'" class="space-y-4">
               <p class="text-sm text-gray-600 dark:text-gray-300">
                 导入 wxdown-service 生成的 <code>exports/wechat-credentials.json</code>。也可以先在本机网站导出后再拿到服务器导入。文件只在当前浏览器解析，不会上传到服务器。
@@ -362,6 +398,10 @@ const tabs = [
   {
     key: 'charles',
     label: 'Charles 导入',
+  },
+  {
+    key: 'paste',
+    label: '粘贴导入',
   },
   {
     key: 'file',
@@ -582,8 +622,97 @@ function buildCredentialDocument(items: ParsedCredential[]) {
   };
 }
 
+function extractJsonObject(text: string, start = 0): string {
+  const begin = text.indexOf('{', start);
+  if (begin < 0) {
+    throw new Error('未找到 JSON 对象');
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = begin; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(begin, i + 1);
+      }
+    }
+  }
+  throw new Error('凭证 JSON 不完整，请确认已完整复制');
+}
+
+function decodeHeaderValue(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('{') || !trimmed.startsWith('%')) {
+    return trimmed;
+  }
+  try {
+    return decodeURIComponent(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+function parseJsonValue(text: string): unknown {
+  const trimmed = decodeHeaderValue(text);
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    throw new Error('无法解析凭证 JSON');
+  }
+}
+
+function parsePastedCredentialText(text: string): unknown {
+  const raw = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .trim();
+  if (!raw) {
+    throw new Error('请粘贴 x-wx-credentials 响应头或凭证 JSON');
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch {
+    // not a raw JSON document
+  }
+
+  const headerMatch = /x-wx-credentials\s*[:=]\s*/i.exec(raw);
+  if (headerMatch && headerMatch.index !== undefined) {
+    const rest = decodeHeaderValue(raw.slice(headerMatch.index + headerMatch[0].length));
+    return parseJsonValue(extractJsonObject(rest));
+  }
+
+  if (raw.includes('{') || raw.includes('%7B') || raw.includes('%7b')) {
+    return parseJsonValue(extractJsonObject(decodeHeaderValue(raw)));
+  }
+
+  throw new Error('未找到 x-wx-credentials，请粘贴完整响应头或凭证 JSON');
+}
+
 function normalizeCredentialDocument(raw: unknown): Credential[] {
-  const payload = raw as { format?: string; credentials?: unknown; items?: unknown } | unknown[];
+  const payload = raw as { format?: string; credentials?: unknown; items?: unknown; exportedAt?: number } | unknown[];
+  const exportedAt = !Array.isArray(payload) ? Number((payload as { exportedAt?: number }).exportedAt) || 0 : 0;
   const list = Array.isArray(payload)
     ? payload
     : Array.isArray((payload as { credentials?: unknown }).credentials)
@@ -603,7 +732,7 @@ function normalizeCredentialDocument(raw: unknown): Credential[] {
         nickname: String(row.nickname || row.name || ''),
         name: String(row.name || row.nickname || ''),
         avatar: String(row.avatar || ''),
-        timestamp: Number(row.timestamp) || 0,
+        timestamp: Number(row.timestamp) || exportedAt || 0,
         cookie: String(row.cookie || ''),
         appmsg_token: String(row.appmsg_token || ''),
         wap_sid2: String(row.wap_sid2 || ''),
@@ -641,6 +770,29 @@ const charlesFileInput = ref<HTMLInputElement | null>(null);
 const credentialFileInput = ref<HTMLInputElement | null>(null);
 const importingCharles = ref(false);
 const importingCredentialFile = ref(false);
+const pasteCredentialText = ref('');
+const importingPastedCredential = ref(false);
+
+async function importPastedCredential() {
+  const text = pasteCredentialText.value;
+  if (!text.trim() || importingPastedCredential.value) return;
+
+  importingPastedCredential.value = true;
+  try {
+    const parsed = parsePastedCredentialText(text);
+    const captured = normalizeCredentialDocument(parsed);
+    if (captured.length === 0) {
+      throw new Error('粘贴内容里没有完整的 biz、uin、key、pass_ticket');
+    }
+    const imported = await applyCapturedCredentials(captured);
+    pasteCredentialText.value = '';
+    toast.success('凭证导入成功', `已导入 ${imported} 个公众号的 Credential`);
+  } catch (error: any) {
+    toast.error('凭证导入失败', String(error?.message || error || '无法解析粘贴内容'));
+  } finally {
+    importingPastedCredential.value = false;
+  }
+}
 
 async function importCredentialDocument(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -993,5 +1145,11 @@ function copy(text: string) {
   @apply !inline-flex size-9 sm:size-7 !p-0 !gap-0 items-center justify-center leading-none rounded-full border border-slate-200
     bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900
     dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white;
+}
+
+.paste-credential-input :deep(textarea) {
+    max-height: 10rem;
+    overflow-y: auto !important;
+    resize: none;
 }
 </style>
